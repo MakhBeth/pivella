@@ -12,6 +12,17 @@ import { DB_NAME, DB_VERSION, STORES } from '../constants/fiscali';
 
 const HASH_PREFIX = '#pivella-migration=';
 
+// Set to 'https://pivella.it' once the domain is live: every visit to a legacy
+// origin will then export its data and hop to the canonical origin via the
+// migration fragment. MUST stay null until the domain actually resolves,
+// otherwise users get redirected to a dead site.
+const CANONICAL_ORIGIN: string | null = null;
+const LEGACY_ORIGINS = [
+  'https://pivella.netlify.app',
+  'https://forfettino.netlify.app',
+  'https://forfettairo.netlify.app',
+];
+
 interface MigrationPayload {
   v: number;
   stores: Record<string, any[]>;
@@ -83,6 +94,73 @@ async function importStores(db: IDBDatabase, stores: Record<string, any[]>): Pro
     for (const item of items) {
       await requestToPromise(objectStore.put(item));
     }
+  }
+}
+
+async function gzipToBase64Url(text: string): Promise<string> {
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function dumpStores(db: IDBDatabase): Promise<Record<string, any[]>> {
+  const stores: Record<string, any[]> = {};
+  for (const store of STORES) {
+    if (!db.objectStoreNames.contains(store)) continue;
+    stores[store] = await requestToPromise(db.transaction(store).objectStore(store).getAll());
+  }
+  return stores;
+}
+
+/**
+ * When the app is served from a retired origin, export everything and hop to
+ * the canonical origin with the migration fragment. Returns true if a
+ * navigation was triggered (the caller should not render the app).
+ */
+export async function runLegacyOriginHandoff(): Promise<boolean> {
+  if (!CANONICAL_ORIGIN || window.location.origin === CANONICAL_ORIGIN) return false;
+  if (!LEGACY_ORIGINS.includes(window.location.origin)) return false;
+
+  try {
+    const db = await openDB();
+    let stores: Record<string, any[]>;
+    try {
+      stores = await dumpStores(db);
+    } finally {
+      db.close();
+    }
+
+    const hasData = Object.values(stores).some((items) => items.length > 0);
+    if (!hasData) {
+      window.location.replace(CANONICAL_ORIGIN + '/');
+      return true;
+    }
+
+    const payload: MigrationPayload = {
+      v: 1,
+      stores,
+      ls: {
+        theme:
+          localStorage.getItem('pivella-theme') ?? localStorage.getItem('forfettino-theme'),
+        currentUserId:
+          localStorage.getItem('pivella_current_user_id') ??
+          localStorage.getItem('forfettino_current_user_id'),
+      },
+    };
+    const encoded = await gzipToBase64Url(JSON.stringify(payload));
+    // Stay well below browser URL limits; huge datasets keep using the old
+    // origin, where Export/Import remains available as the manual path.
+    if (encoded.length >= 1500000) return false;
+
+    window.location.replace(CANONICAL_ORIGIN + '/' + HASH_PREFIX + encoded);
+    return true;
+  } catch (err) {
+    console.error('[migration] Handoff verso il dominio canonico fallita:', err);
+    return false;
   }
 }
 

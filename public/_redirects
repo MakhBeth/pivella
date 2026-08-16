@@ -1,4 +1,6 @@
 # Netlify redirects
-# Old domain redirect (if you set up forfettino/forfettairo as domain aliases)
-# https://forfettino.netlify.app/* https://pivella.netlify.app/:splat 301!
-# https://forfettairo.netlify.app/* https://pivella.netlify.app/:splat 301!
+# Keep serving the app on the .netlify.app subdomain even after a custom
+# primary domain is configured: this opts out of Netlify's automatic 301 to
+# the primary domain, so the in-app legacy-origin handoff (which exports the
+# user's IndexedDB data before hopping to the canonical origin) can run.
+https://pivella.netlify.app/* /index.html 200

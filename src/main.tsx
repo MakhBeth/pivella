@@ -2,9 +2,12 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { ThemeProvider } from './context/ThemeContext'
-import { runCrossDomainMigration } from './lib/utils/crossDomainMigration'
+import { runCrossDomainMigration, runLegacyOriginHandoff } from './lib/utils/crossDomainMigration'
 
-runCrossDomainMigration().finally(() => {
+async function boot() {
+  if (await runLegacyOriginHandoff()) return
+
+  await runCrossDomainMigration()
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <ThemeProvider>
@@ -12,4 +15,6 @@ runCrossDomainMigration().finally(() => {
       </ThemeProvider>
     </React.StrictMode>,
   )
-})
+}
+
+boot()
