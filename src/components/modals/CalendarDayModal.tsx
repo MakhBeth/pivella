@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Check, Clock, CalendarClock } from 'lucide-react';
+import { X, Check, Clock, CalendarClock } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
 import { useApp } from '../../context/AppContext';
 import type { WorkLog, Cliente, Scadenza } from '../../types';

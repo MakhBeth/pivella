@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Sparkles, Layers, Clock, Monitor, Gem } from 'lucide-react';
+import { Sparkles, Layers, Clock, Monitor, Gem } from './icons';
 
 import '../../styles/prototypes/refined.css';
 import '../../styles/prototypes/neomorphism.css';

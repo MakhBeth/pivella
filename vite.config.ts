@@ -75,7 +75,7 @@ export default defineConfig({
             return 'vendor-react';
           }
           // Icons
-          if (id.includes('lucide-react')) {
+          if (id.includes('@hugeicons')) {
             return 'vendor-icons';
           }
           // Don't manually chunk @react-pdf - let Vite handle it with dynamic imports

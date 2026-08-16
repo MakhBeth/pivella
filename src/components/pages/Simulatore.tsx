@@ -5,7 +5,7 @@ import {
   Percent,
   PiggyBank,
   Wallet,
-} from "lucide-react";
+} from '../shared/icons';
 import { useApp } from "../../context/AppContext";
 import {
   LIMITE_FATTURATO,

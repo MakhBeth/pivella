@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
-import { Upload, Download, FileText, ChevronDown, ChevronUp, Plus, Trash2, X, AlertTriangle } from 'lucide-react';
+import { Upload, Download, FileText, ChevronDown, ChevronUp, Plus, Trash2, X, AlertTriangle } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { parseXmlToInvoice } from '../../lib/pdf/xmlParser';
 import { saveAs } from 'file-saver';

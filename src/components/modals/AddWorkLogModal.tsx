@@ -1,4 +1,4 @@
-import { X, Check, Clock } from 'lucide-react';
+import { X, Check, Clock } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
 import type { WorkLog, Cliente } from '../../types';
 

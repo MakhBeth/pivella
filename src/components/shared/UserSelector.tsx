@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Plus, User } from 'lucide-react';
+import { ChevronDown, Plus, User } from './icons';
 import { useApp } from '../../context/AppContext';
 
 interface UserSelectorProps {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Plus, Trash2, Save } from 'lucide-react';
+import { X, Plus, Trash2, Save } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../hooks/useDialog';
 import type { ServiceTemplate } from '../../types';

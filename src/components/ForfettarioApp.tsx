@@ -11,7 +11,7 @@ import {
   CalendarClock,
   Calculator,
   MoreHorizontal,
-} from "lucide-react";
+} from './shared/icons';
 import { AppProvider, useApp } from "../context/AppContext";
 import { Toast } from "./shared/Toast";
 import { LoadingSpinner } from "./shared/LoadingSpinner";

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Github } from 'lucide-react';
+import { Github } from './shared/icons';
 import styles from './Header.module.css';
 
 interface HeaderProps {

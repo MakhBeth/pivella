@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Trash2, ArrowUpDown, Edit, Palmtree, CalendarClock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, ArrowUpDown, Edit, Palmtree, CalendarClock } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { getCalendarDays, formatDate, parseDateLocal } from '../../lib/utils/dateHelpers';
 import { getClientColor } from '../../lib/utils/colorUtils';

@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { X, Download, Plus, Trash2, AlertTriangle, Upload, RefreshCw } from 'lucide-react';
+import { X, Download, Plus, Trash2, AlertTriangle, Upload, RefreshCw } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../hooks/useDialog';
 import { generateFatturaXML, downloadXML, generateFileName, parseFatturaXMLForEdit } from '../../lib/xml/generator';

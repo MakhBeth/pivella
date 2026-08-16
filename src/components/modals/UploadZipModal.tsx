@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { X, FileArchive, Loader } from 'lucide-react';
+import { X, FileArchive, Loader } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
 import { useFileDrop } from '../../hooks/useFileDrop';
 

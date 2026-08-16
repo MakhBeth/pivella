@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check } from 'lucide-react';
+import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { calcolaFiscale } from '../../lib/utils/calculations';
 import { calcolaAccontiForfettario, calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, includeInpsInScadenze, usesFixedContributiPrevidenziali } from '../../lib/utils/forfettario';

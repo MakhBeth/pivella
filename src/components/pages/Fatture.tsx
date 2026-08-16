@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, FileText, Trash2, Edit, FileArchive, FilePlus, Landmark, ChevronDown } from 'lucide-react';
+import { Upload, FileText, Trash2, Edit, FileArchive, FilePlus, Landmark, ChevronDown } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { Currency } from '../ui/Currency';
 import type { Fattura } from '../../types';

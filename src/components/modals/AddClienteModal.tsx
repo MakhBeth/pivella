@@ -1,4 +1,4 @@
-import { X, Check } from 'lucide-react';
+import { X, Check } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
 import type { Cliente } from '../../types';
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Check, CalendarClock, Loader2 } from 'lucide-react';
+import { X, Check, CalendarClock, Loader2 } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
 import { useApp } from '../../context/AppContext';
 import { parseDateLocal } from '../../lib/utils/dateHelpers';

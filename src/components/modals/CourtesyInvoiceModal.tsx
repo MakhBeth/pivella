@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Check, Plus, Trash2, Upload, FileText, Edit2 } from 'lucide-react';
+import { X, Check, Plus, Trash2, Upload, FileText, Edit2 } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../hooks/useDialog';
 import { parseXmlToInvoice, validateInvoice } from '../../lib/pdf/xmlParser';

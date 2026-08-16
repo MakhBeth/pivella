@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Users, Clock, AlertTriangle } from 'lucide-react';
+import { Users, Clock, AlertTriangle } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { LIMITE_FATTURATO, MAX_HISTORICAL_YEARS } from '../../lib/constants/fiscali';
 import { calcolaFiscale } from '../../lib/utils/calculations';

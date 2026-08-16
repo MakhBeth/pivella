@@ -9,8 +9,8 @@ import {
   Settings,
   Check,
   X,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+} from '../shared/icons';
+import type { IconComponent } from '../shared/icons';
 import styles from "./Guida.module.css";
 
 export const GUIDE_DISMISSED_KEY = "pivella-guide-dismissed";
@@ -20,7 +20,7 @@ interface GuidaProps {
 }
 
 interface PageSection {
-  icon: LucideIcon;
+  icon: IconComponent;
   color: string;
   title: string;
   text: string;

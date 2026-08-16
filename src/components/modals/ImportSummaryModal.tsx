@@ -1,4 +1,4 @@
-import { X, Check, AlertTriangle } from 'lucide-react';
+import { X, Check, AlertTriangle } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
 import type { ImportSummary } from '../../types';
 
