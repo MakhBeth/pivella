@@ -1,0 +1,138 @@
+.hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent-primary) 18%, var(--bg-card)),
+    var(--bg-card) 65%
+  );
+  padding: 32px;
+}
+
+.heroDecor {
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent-secondary) 12%, transparent);
+  pointer-events: none;
+}
+
+.heroTitle {
+  font-size: 2.2rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  line-height: 1.15;
+}
+
+.heroTitle em {
+  font-style: italic;
+  color: var(--accent-primary);
+}
+
+.heroText {
+  color: var(--text-secondary);
+  max-width: 60ch;
+  line-height: 1.6;
+}
+
+.skipBtn {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.heroTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.sectionLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 32px 0 16px;
+}
+
+.pageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.pageCard:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--chip-color) 45%, var(--border));
+}
+
+.pageCard p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cardHead h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  color: var(--chip-color);
+  background: color-mix(in srgb, var(--chip-color) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chip-color) 30%, transparent);
+}
+
+.storyCard {
+  border-left: 3px solid var(--chip-color);
+}
+
+.storyCard p {
+  color: var(--text-secondary);
+  line-height: 1.7;
+  max-width: 75ch;
+}
+
+.dismissCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 32px;
+}
+
+.dismissHint {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 768px) {
+  .hero {
+    padding: 24px;
+  }
+
+  .heroTitle {
+    font-size: 1.7rem;
+  }
+}

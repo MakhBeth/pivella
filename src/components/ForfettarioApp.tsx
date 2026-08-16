@@ -52,6 +52,9 @@ const Scadenze = lazy(() =>
 const Simulatore = lazy(() =>
   import("./pages/Simulatore").then((m) => ({ default: m.Simulatore })),
 );
+const Guida = lazy(() =>
+  import("./pages/Guida").then((m) => ({ default: m.Guida })),
+);
 
 // Lazy load modals
 const UploadFatturaModal = lazy(() =>
@@ -156,6 +159,17 @@ function ForfettarioAppInner() {
   const clientiWithMisc = [...clienti, miscClient];
 
   const { currentRoute: currentPage, navigate: setCurrentPage } = useRoute();
+
+  // First launch: show the guide once, unless the user already dismissed it
+  // or landed on a specific route via deep link
+  useEffect(() => {
+    const dismissed = localStorage.getItem("pivella-guide-dismissed") === "true";
+    const landedOnDefault = window.location.hash.replace(/^#\/?/, "") === "";
+    if (!dismissed && landedOnDefault) {
+      setCurrentPage("guida");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [showModal, setShowModal] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [annoSelezionato, setAnnoSelezionato] = useState<number>(
@@ -655,6 +669,10 @@ function ForfettarioAppInner() {
             {currentPage === "scadenze" && <Scadenze />}
 
             {currentPage === "simulatore" && <Simulatore />}
+
+            {currentPage === "guida" && (
+              <Guida onDismiss={() => setCurrentPage("dashboard")} />
+            )}
 
             {currentPage === "impostazioni" && (
               <Impostazioni

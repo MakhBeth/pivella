@@ -8,6 +8,7 @@ export const VALID_ROUTES = [
   "scadenze",
   "simulatore",
   "impostazioni",
+  "guida",
 ] as const;
 
 export type Route = (typeof VALID_ROUTES)[number];

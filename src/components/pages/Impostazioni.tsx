@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Upload, Database, Plus, X, Edit, Trash2, Users, Palette, Building, FolderSync, RefreshCw, FolderOpen, AlertCircle, UserCircle, Coins, ChevronUp, ChevronDown } from 'lucide-react';
+import { Download, Upload, Database, Plus, X, Edit, Trash2, Users, Palette, Building, FolderSync, RefreshCw, FolderOpen, AlertCircle, UserCircle, Coins, ChevronUp, ChevronDown, BookOpen } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import type { Cliente, EmittenteConfig, User, ValutaConfig } from '../../types';
 import { calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva } from '../../lib/utils/forfettario';
@@ -137,6 +137,16 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
       <div className="page-header">
         <h1 className="page-title">Impostazioni</h1>
         <p className="page-subtitle">Configura P.IVA e backup</p>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title"><BookOpen size={16} aria-hidden="true" style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle' }} />Guida di Pivella</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: 12 }}>
+          Come funziona Pivella, pagina per pagina, e perché esiste.
+        </p>
+        <button className="btn btn-ghost" onClick={() => { window.location.hash = '#/guida'; }}>
+          <BookOpen size={18} aria-hidden="true" /> Apri la guida
+        </button>
       </div>
 
       <div className="card">
