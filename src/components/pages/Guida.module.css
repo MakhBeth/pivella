@@ -1,6 +1,9 @@
 .hero {
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--accent-primary) 18%, var(--bg-card)),
@@ -20,16 +23,20 @@
   pointer-events: none;
 }
 
+/* Same treatment as the sidebar wordmark (.logo in theme.css) */
 .heroTitle {
+  font-family: 'Space Mono', monospace;
   font-size: 2.2rem;
   font-weight: 700;
-  margin-bottom: 8px;
+  letter-spacing: -1px;
   line-height: 1.15;
 }
 
 .heroTitle em {
+  font-weight: 400;
   font-style: italic;
   color: var(--accent-primary);
+  opacity: 0.85;
 }
 
 .heroText {
@@ -38,18 +45,10 @@
   line-height: 1.6;
 }
 
-.skipBtn {
+.heroAction {
   position: relative;
   z-index: 1;
-  flex-shrink: 0;
-}
-
-.heroTop {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  flex-wrap: wrap;
+  align-self: flex-end;
 }
 
 .sectionLabel {
@@ -103,11 +102,48 @@
   border: 1px solid color-mix(in srgb, var(--chip-color) 30%, transparent);
 }
 
-.storyCard {
-  border-left: 3px solid var(--chip-color);
+.chatCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.storyCard p {
+.question {
+  align-self: flex-end;
+  background: var(--accent-primary);
+  color: white;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 16px 16px 4px 16px;
+  max-width: 85%;
+}
+
+.answer {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent);
+}
+
+.answerBubble {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px 16px 16px 16px;
+  padding: 14px 18px;
   color: var(--text-secondary);
   line-height: 1.7;
   max-width: 75ch;
@@ -134,5 +170,24 @@
 
   .heroTitle {
     font-size: 1.7rem;
+  }
+}
+
+/* Staggered entrance, sequenced via --reveal-i set inline */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    animation: guida-rise 0.45s ease both;
+    animation-delay: calc(var(--reveal-i, 0) * 70ms);
+  }
+
+  @keyframes guida-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
 }

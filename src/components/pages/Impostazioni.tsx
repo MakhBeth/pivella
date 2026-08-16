@@ -141,12 +141,14 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
 
       <div className="card">
         <h2 className="card-title"><BookOpen size={16} aria-hidden="true" style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle' }} />Guida di Pivella</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: 12 }}>
-          Come funziona Pivella, pagina per pagina, e perché esiste.
-        </p>
-        <button className="btn btn-ghost" onClick={() => { window.location.hash = '#/guida'; }}>
-          <BookOpen size={18} aria-hidden="true" /> Apri la guida
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', flex: '1 1 260px' }}>
+            Come funziona Pivella, pagina per pagina, e perché esiste.
+          </p>
+          <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => { window.location.hash = '#/guida'; }}>
+            <BookOpen size={18} aria-hidden="true" /> Apri la guida
+          </button>
+        </div>
       </div>
 
       <div className="card">
