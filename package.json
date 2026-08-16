@@ -12,6 +12,8 @@
     "test": "tsx --test"
   },
   "dependencies": {
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/space-mono": "^5.3.0",
     "@hugeicons/core-free-icons": "^4.2.3",
     "@hugeicons/react": "^1.1.9",
     "@react-pdf/renderer": "^4.3.2",

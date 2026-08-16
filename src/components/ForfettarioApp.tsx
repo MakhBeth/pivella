@@ -26,6 +26,12 @@ import {
 import type { Cliente, Fattura, ImportSummary, WorkLog } from "../types";
 import { MISC_CLIENT_ID } from "../types";
 import { useRoute, type Route } from "../hooks/useRoute";
+import "@fontsource/dm-sans/400.css";
+import "@fontsource/dm-sans/500.css";
+import "@fontsource/dm-sans/600.css";
+import "@fontsource/dm-sans/700.css";
+import "@fontsource/space-mono/400.css";
+import "@fontsource/space-mono/700.css";
 import "../styles/theme.css";
 
 // Lazy load pages
