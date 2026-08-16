@@ -11,14 +11,17 @@ interface FattureProps {
 
 export function FatturePage({ setShowModal, setEditingFattura }: FattureProps) {
   const { clienti, fatture, removeFattura } = useApp();
-  const [filtroAnnoFatture, setFiltroAnnoFatture] = useState<string>('tutte');
+  const [filtroAnnoFatture, setFiltroAnnoFatture] = useState<string>(String(new Date().getFullYear()));
   const [ordinamentoFatture, setOrdinamentoFatture] = useState<{ campo: string; direzione: string }>({ campo: 'dataIncasso', direzione: 'desc' });
 
-  // Anni disponibili nelle fatture
-  const anniDisponibili = [...new Set(fatture.map(f => {
-    const dataRiferimento = f.dataIncasso || f.data;
-    return new Date(dataRiferimento).getFullYear();
-  }))].sort((a, b) => b - a);
+  // Anni disponibili nelle fatture (sempre incluso l'anno corrente, default del filtro)
+  const anniDisponibili = [...new Set([
+    new Date().getFullYear(),
+    ...fatture.map(f => {
+      const dataRiferimento = f.dataIncasso || f.data;
+      return new Date(dataRiferimento).getFullYear();
+    })
+  ])].sort((a, b) => b - a);
 
   // Filtro fatture per anno
   const fattureFiltrate = filtroAnnoFatture === 'tutte'
