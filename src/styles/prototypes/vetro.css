@@ -30,6 +30,7 @@ html[data-design="vetro"][data-theme="dark"] {
   --border-strong: rgba(45, 212, 191, 0.4);
   --vetro-glow: rgba(45, 212, 191, 0.18);
   --vetro-lime: #99f6e4;
+  --on-accent: #032722;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.55);
@@ -58,6 +59,7 @@ html[data-design="vetro"][data-theme="light"] {
   --border-strong: rgba(13, 148, 136, 0.4);
   --vetro-glow: rgba(13, 148, 136, 0.12);
   --vetro-lime: #5eead4;
+  --on-accent: #032722;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 4px 14px rgba(15, 23, 42, 0.1);
   --shadow-lg: 0 10px 30px rgba(15, 23, 42, 0.14);

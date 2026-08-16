@@ -120,7 +120,7 @@
 .question {
   align-self: flex-end;
   background: var(--accent-primary);
-  color: white;
+  color: var(--on-accent, white);
   font-weight: 600;
   padding: 10px 18px;
   border-radius: 16px 16px 4px 16px;
