@@ -12,11 +12,9 @@ import { DB_NAME, DB_VERSION, STORES } from '../constants/fiscali';
 
 const HASH_PREFIX = '#pivella-migration=';
 
-// Set to 'https://pivella.it' once the domain is live: every visit to a legacy
-// origin will then export its data and hop to the canonical origin via the
-// migration fragment. MUST stay null until the domain actually resolves,
-// otherwise users get redirected to a dead site.
-const CANONICAL_ORIGIN: string | null = null;
+// Every visit to a legacy origin exports its data and hops to the canonical
+// origin via the migration fragment. Set to null to disable the handoff.
+const CANONICAL_ORIGIN: string | null = 'https://pivella.it';
 const LEGACY_ORIGINS = [
   'https://pivella.netlify.app',
   'https://forfettino.netlify.app',
