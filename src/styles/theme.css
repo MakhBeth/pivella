@@ -103,6 +103,7 @@ body {
 /* "Pivella" wordmark: P, iv and a stay bold, "ell" is lighter to highlight P.IVA */
 .logo .logo-light {
   font-weight: 400;
+  font-style: italic;
   opacity: 0.75;
 }
 
