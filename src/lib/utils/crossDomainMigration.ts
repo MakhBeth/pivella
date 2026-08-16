@@ -68,31 +68,62 @@ function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-async function importStores(db: IDBDatabase, stores: Record<string, any[]>): Promise<void> {
-  // If this origin has no real data yet, do a clean copy; otherwise merge by id
-  // so an already-used Pivella install is never wiped.
-  const userDataStores = ['clienti', 'fatture', 'workLogs', 'scadenze'];
-  let pristine = true;
-  for (const store of userDataStores) {
+// "Pristine" = no user data and no saved settings on this origin. `users` is
+// deliberately excluded: the app auto-creates a default user on first boot, so
+// a lone auto-created user must not block the clean-copy path (clearing it is
+// exactly what avoids a duplicate default user after migration).
+async function isPristine(db: IDBDatabase): Promise<boolean> {
+  const guardedStores = ['clienti', 'fatture', 'workLogs', 'scadenze', 'config'];
+  for (const store of guardedStores) {
     const count = await requestToPromise(db.transaction(store).objectStore(store).count());
-    if (count > 0) {
-      pristine = false;
-      break;
-    }
+    if (count > 0) return false;
   }
+  return true;
+}
 
-  for (const store of STORES) {
-    const items = stores[store];
-    if (!items) continue;
-    const tx = db.transaction(store, 'readwrite');
-    const objectStore = tx.objectStore(store);
-    if (pristine) {
-      await requestToPromise(objectStore.clear());
-    }
+// The payload is attacker-craftable: reject anything that is not a plain
+// record-per-store export before touching the database.
+function isValidPayload(payload: MigrationPayload): boolean {
+  if (payload?.v !== 1 || typeof payload.stores !== 'object' || payload.stores === null) {
+    return false;
+  }
+  for (const [store, items] of Object.entries(payload.stores)) {
+    if (!(STORES as readonly string[]).includes(store)) return false;
+    if (!Array.isArray(items)) return false;
     for (const item of items) {
-      await requestToPromise(objectStore.put(item));
+      if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
+      const id = (item as Record<string, unknown>).id;
+      if (typeof id !== 'string' && typeof id !== 'number') return false;
     }
   }
+  return true;
+}
+
+function importStores(
+  db: IDBDatabase,
+  stores: Record<string, any[]>,
+  pristine: boolean
+): Promise<void> {
+  // Clean copy on a pristine origin; merge by id otherwise, so an
+  // already-used install is never wiped. A single transaction spanning all
+  // stores keeps the import atomic: on any failure nothing is committed.
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([...STORES], 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Import transaction aborted'));
+    for (const store of STORES) {
+      const items = stores[store];
+      if (!items) continue;
+      const objectStore = tx.objectStore(store);
+      if (pristine) {
+        objectStore.clear();
+      }
+      for (const item of items) {
+        objectStore.put(item);
+      }
+    }
+  });
 }
 
 async function gzipToBase64Url(text: string): Promise<string> {
@@ -132,23 +163,21 @@ export async function runLegacyOriginHandoff(): Promise<boolean> {
       db.close();
     }
 
+    const ls = {
+      theme:
+        localStorage.getItem('pivella-theme') ?? localStorage.getItem('forfettino-theme'),
+      currentUserId:
+        localStorage.getItem('pivella_current_user_id') ??
+        localStorage.getItem('forfettino_current_user_id'),
+    };
+
     const hasData = Object.values(stores).some((items) => items.length > 0);
-    if (!hasData) {
+    if (!hasData && !ls.theme && !ls.currentUserId) {
       window.location.replace(CANONICAL_ORIGIN + '/');
       return true;
     }
 
-    const payload: MigrationPayload = {
-      v: 1,
-      stores,
-      ls: {
-        theme:
-          localStorage.getItem('pivella-theme') ?? localStorage.getItem('forfettino-theme'),
-        currentUserId:
-          localStorage.getItem('pivella_current_user_id') ??
-          localStorage.getItem('forfettino_current_user_id'),
-      },
-    };
+    const payload: MigrationPayload = { v: 1, stores, ls };
     const encoded = await gzipToBase64Url(JSON.stringify(payload));
     // Stay well below browser URL limits; huge datasets keep using the old
     // origin, where Export/Import remains available as the manual path.
@@ -162,33 +191,69 @@ export async function runLegacyOriginHandoff(): Promise<boolean> {
   }
 }
 
+function stripMigrationHash(): void {
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
 export async function runCrossDomainMigration(): Promise<void> {
   if (!window.location.hash.startsWith(HASH_PREFIX)) return;
 
   const encoded = window.location.hash.slice(HASH_PREFIX.length);
-  history.replaceState(null, '', window.location.pathname + window.location.search);
+
+  let payload: MigrationPayload;
+  try {
+    payload = JSON.parse(await gunzipToText(base64UrlToBytes(encoded)));
+  } catch {
+    stripMigrationHash();
+    return;
+  }
+  if (!isValidPayload(payload)) {
+    console.warn('[migration] Payload di migrazione non valido, scartato.');
+    stripMigrationHash();
+    return;
+  }
 
   try {
-    const json = await gunzipToText(base64UrlToBytes(encoded));
-    const payload: MigrationPayload = JSON.parse(json);
-    if (payload?.v !== 1 || !payload.stores) return;
-
     const db = await openDB();
+    let imported = false;
     try {
-      await importStores(db, payload.stores);
+      const pristine = await isPristine(db);
+      // The fragment is attacker-craftable (anyone can link to
+      // #pivella-migration=...), so never import without explicit consent.
+      const ok = window.confirm(
+        pristine
+          ? 'Importare in questa installazione di Pivella i dati ricevuti dal vecchio dominio?'
+          : 'Sono stati ricevuti dati da migrare dal vecchio dominio, ma questa installazione di Pivella contiene già dei dati.\n\n' +
+              'Vuoi unire i dati ricevuti a quelli esistenti? (Le voci con lo stesso id verranno sovrascritte.)'
+      );
+      if (!ok) {
+        console.warn('[migration] Import rifiutato dall’utente, payload scartato.');
+        stripMigrationHash();
+        return;
+      }
+      await importStores(db, payload.stores, pristine);
+      imported = true;
     } finally {
       db.close();
     }
 
-    const { theme, currentUserId } = payload.ls ?? {};
-    if (theme && !localStorage.getItem('pivella-theme')) {
-      localStorage.setItem('pivella-theme', theme);
+    if (imported) {
+      const { theme, currentUserId } = payload.ls ?? {};
+      if (theme && !localStorage.getItem('pivella-theme')) {
+        localStorage.setItem('pivella-theme', theme);
+      }
+      if (currentUserId && !localStorage.getItem('pivella_current_user_id')) {
+        localStorage.setItem('pivella_current_user_id', currentUserId);
+      }
+      // Only a successful import consumes the fragment: on failure it stays
+      // in the URL so a reload retries the migration.
+      stripMigrationHash();
+      console.log('[migration] Dati importati dal vecchio dominio');
     }
-    if (currentUserId && !localStorage.getItem('pivella_current_user_id')) {
-      localStorage.setItem('pivella_current_user_id', currentUserId);
-    }
-    console.log('[migration] Dati importati da forfettino.netlify.app');
   } catch (err) {
     console.error('[migration] Importazione dati dal vecchio dominio fallita:', err);
+    window.alert(
+      'La migrazione dei dati dal vecchio dominio non è riuscita. Ricarica la pagina per riprovare.'
+    );
   }
 }
