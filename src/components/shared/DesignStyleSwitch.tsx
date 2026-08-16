@@ -4,12 +4,12 @@ import { Sparkles, Layers, Clock, Monitor, Gem } from 'lucide-react';
 import '../../styles/prototypes/refined.css';
 import '../../styles/prototypes/neomorphism.css';
 import '../../styles/prototypes/windows95.css';
-import '../../styles/prototypes/hynex.css';
+import '../../styles/prototypes/vetro.css';
 
-export type DesignStyle = 'default' | 'hynex' | 'newage' | 'legacy' | 'windows95';
+export type DesignStyle = 'default' | 'vetro' | 'newage' | 'legacy' | 'windows95';
 
 const DESIGN_STYLES: { value: DesignStyle; label: string; description: string; icon: typeof Sparkles }[] = [
-  { value: 'hynex', label: 'Hynex', description: 'Dark glass, accenti teal', icon: Gem },
+  { value: 'vetro', label: 'Vetro', description: 'Effetto vetro, accenti teal', icon: Gem },
   { value: 'default', label: 'Default', description: 'Design raffinato', icon: Sparkles },
   { value: 'newage', label: 'New Age', description: 'Ombre morbide, effetto 3D', icon: Layers },
   { value: 'windows95', label: 'Windows 95', description: 'Retro, effetto 3D pixelato', icon: Monitor },
@@ -27,7 +27,7 @@ function applyDesignStyle(styleId: DesignStyle) {
 }
 
 export function useDesignStyle() {
-  const [designStyle, setDesignStyleState] = useState<DesignStyle>('hynex');
+  const [designStyle, setDesignStyleState] = useState<DesignStyle>('vetro');
 
   useEffect(() => {
     // Migrate from old prototype switcher if present
@@ -41,9 +41,9 @@ export function useDesignStyle() {
       setDesignStyleState(saved);
       applyDesignStyle(saved);
     } else {
-      // Default to 'hynex' on first load
-      localStorage.setItem('design-style', 'hynex');
-      applyDesignStyle('hynex');
+      // Default to 'vetro' on first load
+      localStorage.setItem('design-style', 'vetro');
+      applyDesignStyle('vetro');
     }
   }, []);
 
