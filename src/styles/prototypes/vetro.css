@@ -117,6 +117,26 @@ html[data-design="vetro"][data-theme="light"] .nav-item.active {
   color: var(--accent-primary);
 }
 
+/* Mobile: the sidebar's backdrop-filter would turn the fixed bottom
+   nav into a sidebar-relative box, so move the glass onto the bar */
+@media (max-width: 768px) {
+  html[data-design="vetro"] .sidebar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  html[data-design="vetro"] .nav-items {
+    background: rgba(10, 14, 21, 0.92);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-top: 1px solid var(--border);
+  }
+
+  html[data-design="vetro"][data-theme="light"] .nav-items {
+    background: rgba(255, 255, 255, 0.85);
+  }
+}
+
 /* Squircle corners where supported (Chromium 139+); falls back to round */
 html[data-design="vetro"] .card,
 html[data-design="vetro"] .btn,
