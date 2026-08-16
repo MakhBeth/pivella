@@ -35,6 +35,8 @@
   font-weight: 400;
   font-style: italic;
   opacity: 0.75;
+  /* the italic slant crowds the following "a": nudge it back apart */
+  margin-right: 0.1ch;
 }
 
 .logoSubtext {
