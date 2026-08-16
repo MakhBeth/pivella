@@ -397,9 +397,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const darkerColor = adjustColorBrightness(currentUser.color, -20);
       document.documentElement.style.setProperty('--accent-secondary', darkerColor);
     } else {
-      // Reset to default green
-      document.documentElement.style.setProperty('--accent-primary', '#047857');
-      document.documentElement.style.setProperty('--accent-secondary', '#059669');
+      // No user color: let the active design style's tokens apply
+      document.documentElement.style.removeProperty('--accent-primary');
+      document.documentElement.style.removeProperty('--accent-secondary');
     }
   }, [currentUser?.color]);
 
