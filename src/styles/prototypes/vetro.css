@@ -1,0 +1,366 @@
+/**
+ * VETRO Theme
+ * Dark "glass" dashboard: near-black blue background, frosted cards,
+ * teal/mint accents with lime highlights and soft glows.
+ * Dark-first: the look is intrinsically dark, the light theme is a
+ * softened variant that keeps the same accent language.
+ */
+
+html[data-design="vetro"],
+html[data-design="vetro"][data-theme="dark"] {
+  --bg-primary: #06080d;
+  --bg-secondary: #0b0f17;
+  --bg-card: #0e1420;
+  --bg-card-elevated: #16202f;
+  --bg-hover: #1a2434;
+  --accent-primary: #14b8a6;
+  --accent-secondary: #2dd4bf;
+  --accent-green: #4ade80;
+  --accent-orange: #eab308;
+  --accent-red: #f87171;
+  --text-primary: #eef4f6;
+  --text-secondary: #b6c2cc;
+  --text-muted: #6d7a89;
+  --border: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(45, 212, 191, 0.4);
+  --vetro-glow: rgba(45, 212, 191, 0.18);
+  --vetro-lime: #d9f99d;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.55);
+}
+
+html[data-design="vetro"][data-theme="light"] {
+  --bg-primary: #eef1f5;
+  --bg-secondary: #e4e9ef;
+  --bg-card: #ffffff;
+  --bg-card-elevated: #ffffff;
+  --bg-hover: #dde4ec;
+  --accent-primary: #0d9488;
+  --accent-secondary: #14b8a6;
+  --accent-green: #16a34a;
+  --accent-orange: #ca8a04;
+  --accent-red: #dc2626;
+  --text-primary: #0b1220;
+  --text-secondary: #3f4b5c;
+  --text-muted: #64748b;
+  --border: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(13, 148, 136, 0.4);
+  --vetro-glow: rgba(13, 148, 136, 0.12);
+  --vetro-lime: #a3e635;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 14px rgba(15, 23, 42, 0.1);
+  --shadow-lg: 0 10px 30px rgba(15, 23, 42, 0.14);
+}
+
+/* Ambient background glow */
+html[data-design="vetro"] body {
+  background:
+    radial-gradient(1200px 600px at 85% -10%, var(--vetro-glow), transparent 60%),
+    radial-gradient(900px 500px at -10% 100%, rgba(45, 212, 191, 0.07), transparent 55%),
+    var(--bg-primary);
+  background-attachment: fixed;
+}
+
+/* Sidebar: detached glass panel with tree-style nav */
+html[data-design="vetro"] .sidebar {
+  background: linear-gradient(180deg, rgba(18, 24, 38, 0.85), rgba(10, 14, 21, 0.92));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-right: 1px solid var(--border);
+}
+
+html[data-design="vetro"][data-theme="light"] .sidebar {
+  background: rgba(255, 255, 255, 0.75);
+}
+
+html[data-design="vetro"] .logo {
+  color: var(--accent-secondary);
+  text-shadow: 0 0 24px var(--vetro-glow);
+}
+
+html[data-design="vetro"] .nav-item {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+html[data-design="vetro"] .nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+html[data-design="vetro"] .nav-item.active {
+  background: linear-gradient(90deg, rgba(45, 212, 191, 0.18), rgba(45, 212, 191, 0.04));
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  box-shadow: 0 0 18px var(--vetro-glow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+html[data-design="vetro"][data-theme="light"] .nav-item.active {
+  color: var(--accent-primary);
+}
+
+/* Squircle corners where supported (Chromium 139+); falls back to round */
+html[data-design="vetro"] .card,
+html[data-design="vetro"] .btn,
+html[data-design="vetro"] .input-field,
+html[data-design="vetro"] .nav-item,
+html[data-design="vetro"] .calendar-day,
+html[data-design="vetro"] .upload-zone,
+html[data-design="vetro"] dialog.modal {
+  corner-shape: squircle;
+}
+
+/* Glass cards: diagonal sheen + teal reflection at the top edge */
+html[data-design="vetro"] .card {
+  background:
+    radial-gradient(420px 220px at 88% -8%, rgba(45, 212, 191, 0.12), transparent 60%),
+    radial-gradient(300px 180px at 0% 0%, rgba(255, 255, 255, 0.04), transparent 55%),
+    linear-gradient(150deg, var(--bg-card-elevated) 0%, var(--bg-card) 55%, #0a0f19 100%);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 24px;
+  margin-bottom: 16px;
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+html[data-design="vetro"][data-theme="light"] .card {
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+}
+
+html[data-design="vetro"] .card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md), 0 0 24px var(--vetro-glow);
+}
+
+html[data-design="vetro"] .card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0;
+  text-transform: none;
+  margin-bottom: 16px;
+}
+
+/* Big monospace stats with gradient sheen */
+html[data-design="vetro"] .stat-value {
+  font-family: 'Space Mono', monospace;
+  font-size: 2.1rem;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1.2;
+  background: linear-gradient(120deg, var(--text-primary) 40%, var(--accent-secondary));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
+}
+
+html[data-design="vetro"] .stat-label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* Pill buttons */
+html[data-design="vetro"] .btn {
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+}
+
+html[data-design="vetro"] .btn:active {
+  transform: scale(0.97);
+}
+
+html[data-design="vetro"] .btn-primary,
+html[data-design="vetro"] .btn-success {
+  background: linear-gradient(135deg, #2dd4bf, #5eead4);
+  color: #032722;
+  box-shadow: 0 0 20px var(--vetro-glow);
+}
+
+html[data-design="vetro"] .btn-primary:hover,
+html[data-design="vetro"] .btn-success:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 28px var(--vetro-glow);
+}
+
+html[data-design="vetro"] .btn:focus-visible {
+  outline: 2px solid var(--accent-secondary);
+  outline-offset: 2px;
+}
+
+html[data-design="vetro"] .btn-secondary {
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text-primary);
+  border-color: var(--border);
+  backdrop-filter: blur(8px);
+}
+
+html[data-design="vetro"] .btn-secondary:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+/* Inputs: dark wells with teal focus ring */
+html[data-design="vetro"] .input-field {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  transition: all 0.15s ease;
+}
+
+html[data-design="vetro"] .input-field:hover {
+  border-color: var(--border-strong);
+}
+
+html[data-design="vetro"] .input-field:focus {
+  outline: none;
+  border-color: var(--accent-secondary);
+  box-shadow: 0 0 0 3px var(--vetro-glow);
+}
+
+/* Progress: teal → lime gradient like the spending limits bars */
+html[data-design="vetro"] .progress-bar {
+  height: 8px;
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+html[data-design="vetro"] .progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-green), var(--vetro-lime)) !important;
+  box-shadow: 0 0 12px var(--vetro-glow);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Outlined status pills */
+html[data-design="vetro"] .badge,
+html[data-design="vetro"] .tag {
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border: 1px solid var(--border-strong);
+  background: rgba(45, 212, 191, 0.08);
+}
+
+html[data-design="vetro"] .badge-green {
+  border-color: rgba(74, 222, 128, 0.45);
+  background: rgba(74, 222, 128, 0.08);
+  color: var(--accent-green);
+}
+
+html[data-design="vetro"] .badge-yellow {
+  border-color: rgba(234, 179, 8, 0.45);
+  background: rgba(234, 179, 8, 0.08);
+  color: var(--accent-orange);
+}
+
+/* Tables: airy rows, no heavy chrome */
+html[data-design="vetro"] .table th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-bottom: 1px solid var(--border);
+}
+
+html[data-design="vetro"] .table td {
+  padding: 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+html[data-design="vetro"] .table tr:hover td {
+  background: var(--bg-hover);
+}
+
+html[data-design="vetro"] .table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Modals: frosted glass */
+html[data-design="vetro"] dialog.modal {
+  background: linear-gradient(160deg, var(--bg-card-elevated), var(--bg-card));
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: var(--shadow-lg), 0 0 40px var(--vetro-glow);
+}
+
+html[data-design="vetro"] dialog.modal::backdrop {
+  background: rgba(3, 6, 10, 0.7);
+  backdrop-filter: blur(6px);
+}
+
+/* Calendar */
+html[data-design="vetro"] .calendar-day {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: all 0.15s ease;
+}
+
+html[data-design="vetro"] .calendar-day:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+html[data-design="vetro"] .calendar-day.today {
+  border: 1px solid var(--border-strong);
+  background: rgba(45, 212, 191, 0.08);
+  box-shadow: 0 0 14px var(--vetro-glow);
+}
+
+/* Page header */
+html[data-design="vetro"] .page-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+
+html[data-design="vetro"] .page-subtitle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+html[data-design="vetro"] .grid-2,
+html[data-design="vetro"] .grid-3,
+html[data-design="vetro"] .grid-4 {
+  gap: 16px;
+}
+
+/* Upload zone as glowing drop target */
+html[data-design="vetro"] .upload-zone {
+  border-radius: 20px;
+  border: 1px dashed var(--border-strong);
+  background: rgba(45, 212, 191, 0.04);
+}
