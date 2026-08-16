@@ -103,6 +103,17 @@ html[data-design="hynex"][data-theme="light"] .nav-item.active {
   color: var(--accent-primary);
 }
 
+/* Squircle corners where supported (Chromium 139+); falls back to round */
+html[data-design="hynex"] .card,
+html[data-design="hynex"] .btn,
+html[data-design="hynex"] .input-field,
+html[data-design="hynex"] .nav-item,
+html[data-design="hynex"] .calendar-day,
+html[data-design="hynex"] .upload-zone,
+html[data-design="hynex"] dialog.modal {
+  corner-shape: squircle;
+}
+
 /* Glass cards: diagonal sheen + teal reflection at the top edge */
 html[data-design="hynex"] .card {
   background:
