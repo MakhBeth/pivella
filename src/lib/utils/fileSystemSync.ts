@@ -19,7 +19,9 @@ declare global {
   }
 }
 
-const SYNC_FILENAME = 'forfettino-sync.json';
+const SYNC_FILENAME = 'pivella-sync.json';
+// Pre-rename filename, read as fallback so existing sync folders keep working
+const LEGACY_SYNC_FILENAME = 'forfettino-sync.json';
 const HANDLE_STORE_KEY = 'syncDirectoryHandle';
 
 /**
@@ -60,9 +62,9 @@ function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
 /**
  * Open the sync IndexedDB database
  */
-function openSyncDB(): Promise<IDBDatabase> {
+function openSyncDB(name = 'PivellaSync'): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('ForfettinoSync', 1);
+    const request = indexedDB.open(name, 1);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = (event: any) => {
@@ -93,7 +95,19 @@ export async function getStoredDirectoryHandle(): Promise<FileSystemDirectoryHan
     const tx = db.transaction('handles', 'readonly');
     const store = tx.objectStore('handles');
     const handle = await promisifyRequest(store.get(HANDLE_STORE_KEY));
-    return handle || null;
+    if (handle) return handle;
+
+    // Migrate the handle stored under the pre-rename database name
+    const legacyDb = await openSyncDB('ForfettinoSync');
+    const legacyTx = legacyDb.transaction('handles', 'readonly');
+    const legacyHandle = await promisifyRequest(
+      legacyTx.objectStore('handles').get(HANDLE_STORE_KEY)
+    );
+    if (legacyHandle) {
+      await storeDirectoryHandle(legacyHandle);
+      return legacyHandle;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -142,7 +156,7 @@ export async function selectSyncFolder(): Promise<FileSystemDirectoryHandle | nu
 
   try {
     const handle = await (window as any).showDirectoryPicker({
-      id: 'forfettino-sync',
+      id: 'pivella-sync',
       mode: 'readwrite',
       startIn: 'documents'
     });
@@ -183,9 +197,18 @@ export async function readSyncFile(
     const text = await file.text();
     return JSON.parse(text);
   } catch (err: any) {
-    // File doesn't exist yet
+    // File doesn't exist yet: fall back to the legacy filename
     if (err.name === 'NotFoundError') {
-      return null;
+      try {
+        const legacyHandle = await handle.getFileHandle(LEGACY_SYNC_FILENAME);
+        const legacyFile = await legacyHandle.getFile();
+        return JSON.parse(await legacyFile.text());
+      } catch (legacyErr: any) {
+        if (legacyErr.name === 'NotFoundError') {
+          return null;
+        }
+        throw legacyErr;
+      }
     }
     throw err;
   }

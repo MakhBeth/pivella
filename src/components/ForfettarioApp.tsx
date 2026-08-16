@@ -449,7 +449,7 @@ function ForfettarioAppInner() {
         <nav className="sidebar">
           <div className="sidebar-header">
             <div>
-              <div className="logo">Forfettino</div>
+              <div className="logo">Piv<span className="logo-light">ell</span>a</div>
               <div className="logo-sub">Gestione P.IVA Semplificata</div>
             </div>
             <div className="mobile-header-user">
@@ -613,7 +613,7 @@ function ForfettarioAppInner() {
             <div className="footer-disclaimer">💵 I conti sono solo stime</div>
             <div className="footer-link">
               <a
-                href="https://github.com/MakhBeth/forfettino"
+                href="https://github.com/MakhBeth/pivella"
                 target="_blank"
                 rel="noopener noreferrer"
                 lang="en"

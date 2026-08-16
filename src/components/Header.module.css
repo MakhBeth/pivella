@@ -31,6 +31,11 @@
   letter-spacing: -1px;
 }
 
+.logoLight {
+  font-weight: 400;
+  opacity: 0.75;
+}
+
 .logoSubtext {
   font-size: 0.75rem;
   color: var(--text-muted);

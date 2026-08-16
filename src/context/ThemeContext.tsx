@@ -10,7 +10,9 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'forfettino-theme';
+const STORAGE_KEY = 'pivella-theme';
+// Pre-rename key, read as fallback so existing users keep their preference
+const LEGACY_STORAGE_KEY = 'forfettino-theme';
 
 function getSystemTheme(): 'light' | 'dark' {
   if (typeof window !== 'undefined' && window.matchMedia) {
@@ -21,7 +23,7 @@ function getSystemTheme(): 'light' | 'dark' {
 
 function getStoredTheme(): Theme {
   if (typeof window === 'undefined') return 'system';
-  const stored = localStorage.getItem(STORAGE_KEY);
+  const stored = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
   if (stored === 'light' || stored === 'dark' || stored === 'system') {
     return stored;
   }

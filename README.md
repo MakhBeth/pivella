@@ -1,10 +1,10 @@
-# Forfettino
+# **Piv**ell**a**
 
-**Forfettino** - Gestione P.IVA Semplificata
+**Pivella** - Gestione P.IVA Semplificata
 
 App per gestire il regime forfettario - P.IVA italiana
 
-**Live version:** https://forfettino.netlify.app/
+**Live version:** https://pivella.netlify.app/
 
 ## 🚀 Quick Start
 
@@ -17,8 +17,8 @@ App per gestire il regime forfettario - P.IVA italiana
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/MakhBeth/forfettino.git
-cd forfettino
+git clone https://github.com/MakhBeth/pivella.git
+cd pivella
 ```
 
 2. Install dependencies:
@@ -63,7 +63,7 @@ npm run lint
 ## 🏗️ Project Structure
 
 ```
-forfettino/
+pivella/
 ├── src/
 │   ├── components/          # React components
 │   │   ├── Header.tsx       # Header component with navigation
@@ -124,7 +124,7 @@ TypeScript compiler options are in `tsconfig.json` and `tsconfig.node.json`.
 
 ## 📄 License
 
-This project is part of the Forfettino suite for managing Italian VAT regime (regime forfettario).
+This project is part of the Pivella suite for managing Italian VAT regime (regime forfettario).
 
 ## 🤝 Contributing
 

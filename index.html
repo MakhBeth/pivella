@@ -7,11 +7,11 @@
     <meta name="theme-color" content="#047857" />
     <meta name="description" content="App per gestire il regime forfettario - P.IVA italiana" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <title>Forfettino - Gestione P.IVA Semplificata</title>
+    <title>Pivella - Gestione P.IVA Semplificata</title>
     <script>
       // Anti-flash: apply theme before render
       (function() {
-        const stored = localStorage.getItem('forfettino-theme');
+        const stored = localStorage.getItem('pivella-theme') || localStorage.getItem('forfettino-theme');
         let theme = 'dark';
         if (stored === 'light') {
           theme = 'light';

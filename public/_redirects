@@ -1,3 +1,4 @@
 # Netlify redirects
-# Old domain redirect (if you set up forfettairo as a domain alias)
-# https://forfettairo.netlify.app/* https://forfettino.netlify.app/:splat 301!
+# Old domain redirect (if you set up forfettino/forfettairo as domain aliases)
+# https://forfettino.netlify.app/* https://pivella.netlify.app/:splat 301!
+# https://forfettairo.netlify.app/* https://pivella.netlify.app/:splat 301!

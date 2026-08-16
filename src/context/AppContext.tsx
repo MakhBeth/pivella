@@ -208,13 +208,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       // Store the user id
-      localStorage.setItem('forfettino_current_user_id', defaultUserId!);
+      localStorage.setItem('pivella_current_user_id', defaultUserId!);
       console.log('[AppContext] Migration complete, userId:', defaultUserId);
     } else {
       // Use the first user if currentUserId is not set
       if (!targetUserId) {
         targetUserId = data.users[0].id;
-        localStorage.setItem('forfettino_current_user_id', targetUserId!);
+        localStorage.setItem('pivella_current_user_id', targetUserId!);
       }
     }
 

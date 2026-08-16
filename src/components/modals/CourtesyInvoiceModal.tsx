@@ -793,7 +793,7 @@ function OptionsEditor({
               style={{ width: 20, height: 20 }}
             />
             <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-              "Generato con Forfettino"
+              "Generato con Pivella"
             </span>
           </div>
         </div>

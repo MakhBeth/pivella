@@ -1,4 +1,4 @@
-// Type definitions for Forfettino
+// Type definitions for Pivella
 
 // Special client IDs for non-billable entries (not shown in client management)
 export const VACATION_CLIENT_ID = '__vacation__';

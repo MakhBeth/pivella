@@ -3,10 +3,17 @@ import { Github } from 'lucide-react';
 import styles from './Header.module.css';
 
 interface HeaderProps {
-  title?: string;
+  title?: React.ReactNode;
 }
 
-const Header: React.FC<HeaderProps> = ({ title = 'Forfettino' }) => {
+// "Pivella" wordmark: P, iv and a stay bold, "ell" is lighter to highlight P.IVA
+const defaultTitle = (
+  <>
+    Piv<span className={styles.logoLight}>ell</span>a
+  </>
+);
+
+const Header: React.FC<HeaderProps> = ({ title = defaultTitle }) => {
   return (
     <header className={styles.header}>
       <div className={styles.container}>
@@ -16,7 +23,7 @@ const Header: React.FC<HeaderProps> = ({ title = 'Forfettino' }) => {
         </div>
         <nav className={styles.nav}>
           <a 
-            href="https://github.com/MakhBeth/forfettino" 
+            href="https://github.com/MakhBeth/pivella"
             target="_blank" 
             rel="noopener noreferrer"
             className={styles.githubLink}

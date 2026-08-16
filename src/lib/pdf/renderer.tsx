@@ -500,9 +500,9 @@ const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
                   {t.generatedBy}{' '}
                   <Link
                     style={{ color: colors.primary }}
-                    src={options.footerLink || 'https://github.com/MakhBeth/forfettino'}
+                    src={options.footerLink || 'https://github.com/MakhBeth/pivella'}
                   >
-                    {options.footerText || 'Forfettino'}
+                    {options.footerText || 'Pivella'}
                   </Link>
                 </Text>
               </View>

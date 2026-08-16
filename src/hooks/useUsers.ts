@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import type { User } from '../types';
 import type { IndexedDBManager } from '../lib/db/IndexedDBManager';
 
-const CURRENT_USER_KEY = 'forfettino_current_user_id';
+const CURRENT_USER_KEY = 'pivella_current_user_id';
+// Pre-rename key, read as fallback so existing users keep their session
+const LEGACY_CURRENT_USER_KEY = 'forfettino_current_user_id';
 
 export function useUsers(dbManager: IndexedDBManager, dbReady: boolean) {
   const [users, setUsers] = useState<User[]>([]);
@@ -26,7 +28,8 @@ export function useUsers(dbManager: IndexedDBManager, dbReady: boolean) {
         setUsers(savedUsers || []);
 
         // Get stored current user id from localStorage
-        const storedUserId = localStorage.getItem(CURRENT_USER_KEY);
+        const storedUserId =
+          localStorage.getItem(CURRENT_USER_KEY) ?? localStorage.getItem(LEGACY_CURRENT_USER_KEY);
         console.log('[useUsers] Stored userId:', storedUserId);
 
         // Validate stored user exists
