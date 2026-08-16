@@ -178,15 +178,22 @@ html[data-design="hynex"] .btn:active {
   transform: scale(0.97);
 }
 
-html[data-design="hynex"] .btn-primary {
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-  color: #04211d;
+html[data-design="hynex"] .btn-primary,
+html[data-design="hynex"] .btn-success {
+  background: linear-gradient(135deg, #2dd4bf, #5eead4);
+  color: #032722;
   box-shadow: 0 0 20px var(--hynex-glow);
 }
 
-html[data-design="hynex"] .btn-primary:hover {
-  filter: brightness(1.1);
+html[data-design="hynex"] .btn-primary:hover,
+html[data-design="hynex"] .btn-success:hover {
+  filter: brightness(1.08);
   box-shadow: 0 0 28px var(--hynex-glow);
+}
+
+html[data-design="hynex"] .btn:focus-visible {
+  outline: 2px solid var(--accent-secondary);
+  outline-offset: 2px;
 }
 
 html[data-design="hynex"] .btn-secondary {
