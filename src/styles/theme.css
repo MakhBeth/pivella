@@ -280,7 +280,7 @@ select.input-field option {
 .badge-green { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
 .badge-yellow { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
 
-.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; max-height: 90dvh; aspect-ratio: 1; margin: 0 auto; }
 .calendar-header { padding: 12px; text-align: center; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; }
 
 .calendar-day {
