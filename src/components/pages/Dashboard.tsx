@@ -296,7 +296,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
 
   // Grafici
   const pieData = fatturatoPerCliente.slice(0, 5).map((c, i) => ({
-    name: c.nome, value: c.totale, color: ['#047857', '#059669', '#10b981', '#34d399', '#6ee7b7'][i]
+    name: c.nome, value: c.totale, color: ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'][i]
   }));
 
   const mesiData = Array.from({ length: 12 }, (_, i) => ({

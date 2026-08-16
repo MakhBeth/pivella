@@ -15,16 +15,21 @@ html[data-design="vetro"][data-theme="dark"] {
   --bg-hover: #1a2434;
   --accent-primary: #14b8a6;
   --accent-secondary: #2dd4bf;
-  --accent-green: #4ade80;
+  --accent-green: #2dd4bf;
   --accent-orange: #eab308;
   --accent-red: #f87171;
+  --chart-1: #0f766e;
+  --chart-2: #0d9488;
+  --chart-3: #14b8a6;
+  --chart-4: #2dd4bf;
+  --chart-5: #5eead4;
   --text-primary: #eef4f6;
   --text-secondary: #b6c2cc;
   --text-muted: #6d7a89;
   --border: rgba(148, 163, 184, 0.16);
   --border-strong: rgba(45, 212, 191, 0.4);
   --vetro-glow: rgba(45, 212, 191, 0.18);
-  --vetro-lime: #d9f99d;
+  --vetro-lime: #99f6e4;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.55);
@@ -38,7 +43,12 @@ html[data-design="vetro"][data-theme="light"] {
   --bg-hover: #dde4ec;
   --accent-primary: #0d9488;
   --accent-secondary: #14b8a6;
-  --accent-green: #16a34a;
+  --accent-green: #0d9488;
+  --chart-1: #0f766e;
+  --chart-2: #0d9488;
+  --chart-3: #14b8a6;
+  --chart-4: #2dd4bf;
+  --chart-5: #5eead4;
   --accent-orange: #ca8a04;
   --accent-red: #dc2626;
   --text-primary: #0b1220;
@@ -47,7 +57,7 @@ html[data-design="vetro"][data-theme="light"] {
   --border: rgba(15, 23, 42, 0.08);
   --border-strong: rgba(13, 148, 136, 0.4);
   --vetro-glow: rgba(13, 148, 136, 0.12);
-  --vetro-lime: #a3e635;
+  --vetro-lime: #5eead4;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 4px 14px rgba(15, 23, 42, 0.1);
   --shadow-lg: 0 10px 30px rgba(15, 23, 42, 0.14);
@@ -77,6 +87,10 @@ html[data-design="vetro"][data-theme="light"] .sidebar {
 html[data-design="vetro"] .logo {
   color: var(--accent-secondary);
   text-shadow: 0 0 24px var(--vetro-glow);
+}
+
+html[data-design="vetro"][data-theme="light"] .logo {
+  color: var(--accent-primary);
 }
 
 html[data-design="vetro"] .nav-item {
@@ -273,8 +287,8 @@ html[data-design="vetro"] .tag {
 }
 
 html[data-design="vetro"] .badge-green {
-  border-color: rgba(74, 222, 128, 0.45);
-  background: rgba(74, 222, 128, 0.08);
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(45, 212, 191, 0.08);
   color: var(--accent-green);
 }
 

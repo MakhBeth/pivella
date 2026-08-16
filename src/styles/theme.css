@@ -42,6 +42,11 @@ html[data-theme="dark"] {
   --text-secondary: #d1d5db;
   --text-muted: #9ca3af;
   --border: rgba(52, 211, 153, 0.15);
+  --chart-1: #047857;
+  --chart-2: #059669;
+  --chart-3: #10b981;
+  --chart-4: #34d399;
+  --chart-5: #6ee7b7;
 }
 
 /* Light Theme */
