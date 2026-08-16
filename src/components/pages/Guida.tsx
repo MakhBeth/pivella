@@ -103,7 +103,7 @@ export function Guida({ onDismiss }: GuidaProps) {
       <div className={`card ${styles.hero} ${styles.reveal}`} style={reveal()}>
         <div className={styles.heroDecor} aria-hidden="true" />
         <h1 className={styles.heroTitle}>
-          Benvenuto/a in Piv<em>ell</em>a
+          Ciao da Piv<em>ell</em>a
         </h1>
         <p className={styles.heroText}>
           Pivella è un'app per gestire la tua partita IVA in regime
@@ -157,18 +157,20 @@ export function Guida({ onDismiss }: GuidaProps) {
         Due parole con chi l'ha fatta
       </h2>
 
-      <div className={`card ${styles.chatCard} ${styles.reveal}`} style={reveal()}>
-        {INTERVIEW.map(({ question, answer }) => (
-          <div key={question} className={styles.chatCard}>
-            <div className={styles.question}>{question}</div>
-            <div className={styles.answer}>
-              <span className={styles.avatar} aria-hidden="true">
-                D
-              </span>
-              <p className={styles.answerBubble}>{answer}</p>
+      <div className={`card ${styles.reveal}`} style={reveal()}>
+        <div className={styles.chatThread}>
+          {INTERVIEW.map(({ question, answer }) => (
+            <div key={question} className={styles.chatCard}>
+              <div className={styles.question}>{question}</div>
+              <div className={styles.answer}>
+                <span className={styles.avatar} aria-hidden="true">
+                  D
+                </span>
+                <p className={styles.answerBubble}>{answer}</p>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       {!alreadyDismissed && (
