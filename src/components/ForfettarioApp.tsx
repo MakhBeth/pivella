@@ -470,7 +470,7 @@ function ForfettarioAppInner() {
           <div className="sidebar-header">
             <div>
               <div className="logo">Piv<span className="logo-light">ell</span>a</div>
-              <div className="logo-sub">Gestione P.IVA Semplificata</div>
+              <div className="logo-sub">Gestione P.IVA in forfettario</div>
             </div>
             <div className="mobile-header-user">
               <UserSelector compact />

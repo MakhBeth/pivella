@@ -1,6 +1,6 @@
 # **Piv**ell**a**
 
-**Pivella** - Gestione P.IVA Semplificata
+**Pivella** - Gestione P.IVA in forfettario
 
 App per gestire il regime forfettario - P.IVA italiana
 

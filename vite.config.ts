@@ -9,7 +9,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
-        name: 'Pivella - Gestione P.IVA Semplificata',
+        name: 'Pivella - Gestione P.IVA in forfettario',
         short_name: 'Pivella',
         description: 'App per gestire il regime forfettario italiano',
         theme_color: '#6366f1',
