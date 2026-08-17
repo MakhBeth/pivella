@@ -406,11 +406,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
           `oklch(from ${currentUser.color} clamp(0, (0.66 - l) * infinity, 1) 0 h)`
         );
       }
+      // Chart scale: five steps of the user color, dark and saturated to
+      // light and pastel, so adjacent slices differ in both axes
+      if (CSS.supports('color', 'oklch(from red l c h)')) {
+        const steps: Array<[number, number]> = [
+          [-0.16, 1.15],
+          [-0.08, 1.05],
+          [0, 1],
+          [0.09, 0.8],
+          [0.18, 0.6],
+        ];
+        steps.forEach(([offset, chromaMul], i) => {
+          document.documentElement.style.setProperty(
+            `--chart-${i + 1}`,
+            `oklch(from ${currentUser.color} clamp(0.25, calc(l + ${offset}), 0.93) calc(c * ${chromaMul}) h)`
+          );
+        });
+      }
     } else {
       // No user color: let the active design style's tokens apply
       document.documentElement.style.removeProperty('--accent-primary');
       document.documentElement.style.removeProperty('--accent-secondary');
       document.documentElement.style.removeProperty('--on-accent');
+      for (let i = 1; i <= 5; i++) {
+        document.documentElement.style.removeProperty(`--chart-${i}`);
+      }
     }
   }, [currentUser?.color]);
 
