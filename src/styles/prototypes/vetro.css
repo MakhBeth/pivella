@@ -54,7 +54,7 @@ html[data-design="vetro"][data-theme="light"] {
   --accent-red: #dc2626;
   --text-primary: #0b1220;
   --text-secondary: #3f4b5c;
-  --text-muted: #64748b;
+  --text-muted: #5a6678;
   --border: rgba(15, 23, 42, 0.08);
   --border-strong: rgb(from var(--accent-primary) r g b / 0.4);
   --vetro-glow: rgb(from var(--accent-primary) r g b / 0.12);

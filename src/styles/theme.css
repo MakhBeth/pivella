@@ -67,7 +67,7 @@ html[data-theme="light"] {
   --accent-blue: #2563eb;
   --text-primary: #052e16;
   --text-secondary: #374151;
-  --text-muted: #6b7280;
+  --text-muted: #5d646e;
   --border: rgba(4, 120, 87, 0.15);
   /* On light bg: keep the user color if dark enough, otherwise darken it */
   --accent-readable: oklch(from var(--accent-primary) min(l, 0.6) c h);
