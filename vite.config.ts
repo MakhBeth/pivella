@@ -12,6 +12,7 @@ export default defineConfig({
         name: 'Pivella - Gestione P.IVA in forfettario',
         short_name: 'Pivella',
         description: 'App per gestire il regime forfettario italiano',
+        lang: 'it',
         theme_color: '#6366f1',
         background_color: '#0a0a0f',
         display: 'standalone',
