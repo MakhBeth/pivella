@@ -27,9 +27,9 @@ html[data-design="vetro"][data-theme="dark"] {
   --text-secondary: #b6c2cc;
   --text-muted: #6d7a89;
   --border: rgba(148, 163, 184, 0.16);
-  --border-strong: rgba(45, 212, 191, 0.4);
-  --vetro-glow: rgba(45, 212, 191, 0.18);
-  --vetro-lime: #99f6e4;
+  --border-strong: rgb(from var(--accent-secondary) r g b / 0.4);
+  --vetro-glow: rgb(from var(--accent-secondary) r g b / 0.18);
+  --vetro-lime: oklch(from var(--accent-secondary) calc(l + 0.11) calc(c * 0.6) h);
   --on-accent: #032722;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
@@ -56,9 +56,9 @@ html[data-design="vetro"][data-theme="light"] {
   --text-secondary: #3f4b5c;
   --text-muted: #64748b;
   --border: rgba(15, 23, 42, 0.08);
-  --border-strong: rgba(13, 148, 136, 0.4);
-  --vetro-glow: rgba(13, 148, 136, 0.12);
-  --vetro-lime: #5eead4;
+  --border-strong: rgb(from var(--accent-primary) r g b / 0.4);
+  --vetro-glow: rgb(from var(--accent-primary) r g b / 0.12);
+  --vetro-lime: oklch(from var(--accent-secondary) calc(l + 0.14) calc(c * 0.75) h);
   --on-accent: #032722;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 4px 14px rgba(15, 23, 42, 0.1);
@@ -69,7 +69,7 @@ html[data-design="vetro"][data-theme="light"] {
 html[data-design="vetro"] body {
   background:
     radial-gradient(1200px 600px at 85% -10%, var(--vetro-glow), transparent 60%),
-    radial-gradient(900px 500px at -10% 100%, rgba(45, 212, 191, 0.07), transparent 55%),
+    radial-gradient(900px 500px at -10% 100%, rgb(from var(--accent-secondary) r g b / 0.07), transparent 55%),
     var(--bg-primary);
   background-attachment: fixed;
 }
@@ -109,7 +109,7 @@ html[data-design="vetro"] .nav-item:hover {
 }
 
 html[data-design="vetro"] .nav-item.active {
-  background: linear-gradient(90deg, rgba(45, 212, 191, 0.18), rgba(45, 212, 191, 0.04));
+  background: linear-gradient(90deg, rgb(from var(--accent-secondary) r g b / 0.18), rgb(from var(--accent-secondary) r g b / 0.04));
   border-color: var(--border-strong);
   color: var(--text-primary);
   box-shadow: 0 0 18px var(--vetro-glow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -153,7 +153,7 @@ html[data-design="vetro"] dialog.modal {
 /* Glass cards: diagonal sheen + teal reflection at the top edge */
 html[data-design="vetro"] .card {
   background:
-    radial-gradient(420px 220px at 88% -8%, rgba(45, 212, 191, 0.12), transparent 60%),
+    radial-gradient(420px 220px at 88% -8%, rgb(from var(--accent-secondary) r g b / 0.12), transparent 60%),
     radial-gradient(300px 180px at 0% 0%, rgba(255, 255, 255, 0.04), transparent 55%),
     linear-gradient(150deg, var(--bg-card-elevated) 0%, var(--bg-card) 55%, #0a0f19 100%);
   border: 1px solid var(--border);
@@ -169,7 +169,7 @@ html[data-design="vetro"] .card {
 
 html[data-design="vetro"][data-theme="light"] .card {
   background:
-    radial-gradient(420px 220px at 88% -8%, rgba(20, 184, 166, 0.04), transparent 60%),
+    radial-gradient(420px 220px at 88% -8%, rgb(from var(--accent-secondary) r g b / 0.04), transparent 60%),
     linear-gradient(150deg, #ffffff 0%, #fdfefe 60%, #f8fbfa 100%);
   box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
@@ -229,8 +229,8 @@ html[data-design="vetro"] .btn:active {
 
 html[data-design="vetro"] .btn-primary,
 html[data-design="vetro"] .btn-success {
-  background: linear-gradient(135deg, #2dd4bf, #5eead4);
-  color: #032722;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  color: var(--on-accent, #032722);
   box-shadow: 0 0 20px var(--vetro-glow);
 }
 
@@ -291,7 +291,7 @@ html[data-design="vetro"] .progress-bar {
 html[data-design="vetro"] .progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent-primary), var(--accent-green), var(--vetro-lime)) !important;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary), var(--vetro-lime)) !important;
   box-shadow: 0 0 12px var(--vetro-glow);
   transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -305,12 +305,12 @@ html[data-design="vetro"] .tag {
   font-weight: 600;
   letter-spacing: 0.3px;
   border: 1px solid var(--border-strong);
-  background: rgba(45, 212, 191, 0.08);
+  background: rgb(from var(--accent-secondary) r g b / 0.08);
 }
 
 html[data-design="vetro"] .badge-green {
-  border-color: rgba(45, 212, 191, 0.45);
-  background: rgba(45, 212, 191, 0.08);
+  border-color: rgb(from var(--accent-green) r g b / 0.45);
+  background: rgb(from var(--accent-green) r g b / 0.08);
   color: var(--accent-green);
 }
 
@@ -373,7 +373,7 @@ html[data-design="vetro"] .calendar-day:hover {
 
 html[data-design="vetro"] .calendar-day.today {
   border: 1px solid var(--border-strong);
-  background: rgba(45, 212, 191, 0.08);
+  background: rgb(from var(--accent-secondary) r g b / 0.08);
   box-shadow: 0 0 14px var(--vetro-glow);
 }
 
@@ -400,5 +400,5 @@ html[data-design="vetro"] .grid-4 {
 html[data-design="vetro"] .upload-zone {
   border-radius: 20px;
   border: 1px dashed var(--border-strong);
-  background: rgba(45, 212, 191, 0.04);
+  background: rgb(from var(--accent-secondary) r g b / 0.04);
 }

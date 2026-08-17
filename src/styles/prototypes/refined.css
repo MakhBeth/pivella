@@ -124,7 +124,7 @@ html[data-design="default"] .btn:active {
 
 html[data-design="default"] .btn-primary {
   background: var(--accent-primary);
-  color: white;
+  color: var(--on-accent, white);
   border-color: var(--accent-primary);
 }
 
@@ -203,7 +203,7 @@ html[data-design="default"] .nav-item:hover {
 
 html[data-design="default"] .nav-item.active {
   background: var(--accent-primary);
-  color: white;
+  color: var(--on-accent, white);
   box-shadow: var(--shadow-sm);
 }
 

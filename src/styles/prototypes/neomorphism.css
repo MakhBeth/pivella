@@ -91,7 +91,7 @@ html[data-design="newage"] .btn-secondary {
 
 html[data-design="newage"] .btn-primary {
   background: var(--accent-primary);
-  color: white;
+  color: var(--on-accent, white);
   box-shadow:
     4px 4px 8px var(--neo-shadow-dark),
     -4px -4px 8px var(--neo-shadow-light),

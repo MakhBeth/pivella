@@ -396,10 +396,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Generate a slightly darker shade for secondary
       const darkerColor = adjustColorBrightness(currentUser.color, -20);
       document.documentElement.style.setProperty('--accent-secondary', darkerColor);
+      // Themes hardcode --on-accent for their own accent; recompute it for the
+      // user color: white on dark accents, black on light ones (lightness flip)
+      if (CSS.supports('color', 'contrast-color(red)')) {
+        document.documentElement.style.setProperty('--on-accent', `contrast-color(${currentUser.color})`);
+      } else if (CSS.supports('color', 'oklch(from red l c h)')) {
+        document.documentElement.style.setProperty(
+          '--on-accent',
+          `oklch(from ${currentUser.color} clamp(0, (0.66 - l) * infinity, 1) 0 h)`
+        );
+      }
     } else {
       // No user color: let the active design style's tokens apply
       document.documentElement.style.removeProperty('--accent-primary');
       document.documentElement.style.removeProperty('--accent-secondary');
+      document.documentElement.style.removeProperty('--on-accent');
     }
   }, [currentUser?.color]);
 
