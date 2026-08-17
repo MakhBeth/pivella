@@ -69,7 +69,7 @@ html[data-design="newage"] .btn {
   box-shadow:
     3px 3px 6px var(--neo-shadow-dark),
     -3px -3px 6px var(--neo-shadow-light);
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 html[data-design="newage"] .btn:hover {
@@ -138,7 +138,7 @@ html[data-design="newage"] .progress-fill {
 /* Neomorphic Nav Items */
 html[data-design="newage"] .nav-item {
   border-radius: 12px;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 html[data-design="newage"] .nav-item:hover {

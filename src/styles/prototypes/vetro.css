@@ -214,7 +214,7 @@ html[data-design="vetro"] .btn {
   font-weight: 600;
   font-size: 0.875rem;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -369,7 +369,7 @@ html[data-design="vetro"] .calendar-day {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 14px;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 html[data-design="vetro"] .calendar-day:hover {

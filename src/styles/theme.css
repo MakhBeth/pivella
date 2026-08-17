@@ -153,7 +153,7 @@ body {
   padding: 12px 16px;
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   color: var(--text-secondary);
   margin-bottom: 4px;
   background: transparent;
@@ -265,7 +265,7 @@ select.input-field option {
   border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -313,7 +313,7 @@ select.input-field option {
   padding: 8px 4px;
   border-radius: 10px;
   cursor: cell;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
   font-size: 0.9rem;
   position: relative;
   min-width: 0;
@@ -396,7 +396,7 @@ dialog.modal:focus {
   padding: 48px;
   text-align: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, border-color 0.2s;
 }
 
 .upload-zone:hover { border-color: var(--accent-readable); background: rgb(from var(--accent-readable) r g b / 0.05); }
@@ -652,7 +652,7 @@ dialog.modal:focus {
     font-weight: 500;
     border-radius: 8px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
     text-align: left;
   }
 
@@ -724,7 +724,7 @@ dialog.modal:focus {
   font-weight: 500;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .theme-switch-btn:hover {
@@ -832,7 +832,7 @@ dialog.modal:focus {
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 .user-selector-trigger:hover {
@@ -891,7 +891,7 @@ dialog.modal:focus {
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   text-align: left;
 }
 
