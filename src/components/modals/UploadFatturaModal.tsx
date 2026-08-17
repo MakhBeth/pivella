@@ -34,7 +34,7 @@ export function UploadFatturaModal({ isOpen, onClose, onUpload }: UploadFatturaM
         </div>
         <label className={`upload-zone ${isDragging ? 'dragging' : ''}`} tabIndex={0} {...dragProps}>
           <input type="file" accept=".xml" onChange={handleChange} style={{ display: 'none' }} />
-          <Upload size={40} style={{ marginBottom: 16, color: 'var(--accent-primary)' }} />
+          <Upload size={40} style={{ marginBottom: 16, color: 'var(--accent-readable)' }} />
           <p style={{ fontWeight: 500 }}>{isDragging ? 'Rilascia qui' : 'Clicca o trascina XML'}</p>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 8 }}>Formato: FatturaPA XML</p>
         </label>

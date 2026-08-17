@@ -142,7 +142,7 @@ html[data-design="default"] .btn-secondary {
 
 html[data-design="default"] .btn-secondary:hover {
   background: var(--bg-hover);
-  border-color: var(--accent-primary);
+  border-color: var(--accent-readable);
 }
 
 /* Refined Input Fields */
@@ -163,7 +163,7 @@ html[data-design="default"] .input-field:hover {
 
 html[data-design="default"] .input-field:focus {
   outline: none;
-  border-color: var(--accent-primary);
+  border-color: var(--accent-readable);
   box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
 }
 

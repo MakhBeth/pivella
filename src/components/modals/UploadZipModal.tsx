@@ -45,13 +45,13 @@ export function UploadZipModal({ isOpen, onClose, onUpload }: UploadZipModalProp
         </div>
         {isUploading ? (
           <div style={{ padding: 40, textAlign: 'center' }}>
-            <Loader size={40} style={{ marginBottom: 16, color: 'var(--accent-primary)', animation: 'spin 1s linear infinite' }} />
+            <Loader size={40} style={{ marginBottom: 16, color: 'var(--accent-readable)', animation: 'spin 1s linear infinite' }} />
             <p style={{ fontWeight: 500 }}>Importazione in corso...</p>
           </div>
         ) : (
           <label className={`upload-zone ${isDragging ? 'dragging' : ''}`} tabIndex={0} {...dragProps}>
             <input type="file" accept=".zip" onChange={handleChange} style={{ display: 'none' }} />
-            <FileArchive size={40} style={{ marginBottom: 16, color: 'var(--accent-primary)' }} />
+            <FileArchive size={40} style={{ marginBottom: 16, color: 'var(--accent-readable)' }} />
             <p style={{ fontWeight: 500 }}>{isDragging ? 'Rilascia qui' : 'Clicca o trascina ZIP'}</p>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 8 }}>
               Il file ZIP verrà estratto e tutti gli XML saranno importati

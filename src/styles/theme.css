@@ -42,6 +42,9 @@ html[data-theme="dark"] {
   --text-secondary: #d1d5db;
   --text-muted: #9ca3af;
   --border: rgba(52, 211, 153, 0.15);
+  /* Accent used as text/border on the page background: keep the user color
+     if it's light enough for a dark bg, otherwise lift its lightness */
+  --accent-readable: oklch(from var(--accent-primary) max(l, 0.7) c h);
   --chart-1: #047857;
   --chart-2: #059669;
   --chart-3: #10b981;
@@ -64,10 +67,20 @@ html[data-theme="light"] {
   --text-secondary: #374151;
   --text-muted: #6b7280;
   --border: rgba(4, 120, 87, 0.15);
+  /* On light bg: keep the user color if dark enough, otherwise darken it */
+  --accent-readable: oklch(from var(--accent-primary) min(l, 0.6) c h);
 }
 
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Oreo focus ring: accent outline separated by a bg-colored ring, so the
+   focus stays legible on filled buttons and colored surfaces */
+:focus-visible {
+  outline: 2px solid var(--accent-secondary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--bg-primary);
+}
 
 body {
   font-family: 'DM Sans', sans-serif;
@@ -152,7 +165,6 @@ body {
 }
 
 .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
-.nav-item:focus-visible { outline: 2px solid var(--accent-secondary); outline-offset: 2px; }
 .nav-item.active { background: var(--accent-primary); color: var(--on-accent, white); }
 
 /* Desktop: hide mobile-only elements */
@@ -232,7 +244,7 @@ body {
   transition: border-color 0.2s;
 }
 
-.input-field:focus { outline: none; border-color: var(--accent-primary); }
+.input-field:focus { outline: none; box-shadow: none; border-color: var(--accent-readable); }
 
 select.input-field {
   appearance: none;
@@ -268,22 +280,20 @@ select.input-field option {
 .btn-secondary:hover { background: var(--bg-card); }
 .btn-success { background: var(--accent-green); color: var(--on-accent, white); }
 .btn-success:hover { background: #0d9668; }
-.btn-ghost { background: transparent; color: var(--accent-primary); border: 1px solid var(--accent-primary); }
-.btn-ghost:hover { background: rgba(4, 120, 87, 0.1); }
+.btn-ghost { background: transparent; color: var(--accent-readable); border: 1px solid var(--accent-readable); }
+.btn-ghost:hover { background: rgb(from var(--accent-readable) r g b / 0.1); }
 .btn-danger { background: transparent; color: var(--accent-red); }
 .btn-danger:hover { background: rgba(239, 68, 68, 0.1); }
 .btn-sm { padding: 8px 16px; font-size: 0.85rem; }
-.btn:focus-visible { outline: 2px solid var(--accent-secondary); outline-offset: 2px; }
 
 .table-wrapper { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; }
 .table th { text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); transition: color 0.2s, background 0.2s; }
-.table th[style*="cursor: pointer"]:hover { color: var(--accent-primary); background: var(--bg-hover); }
+.table th[style*="cursor: pointer"]:hover { color: var(--accent-readable); background: var(--bg-hover); }
 .table th button { background: none; border: none; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; padding: 0; display: flex; align-items: center; gap: 4px; }
-.table th button:focus-visible { outline: 2px solid var(--accent-secondary); outline-offset: 2px; }
 .sortable-header { background: none; border: none; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; padding: 0; display: flex; align-items: center; gap: 6px; transition: color 0.2s; }
-.sortable-header:hover { color: var(--accent-primary); }
-.sortable-header:focus-visible { outline: 2px solid var(--accent-secondary); outline-offset: 2px; border-radius: 4px; }
+.sortable-header:hover { color: var(--accent-readable); }
+.sortable-header:focus-visible { border-radius: 4px; }
 .table td { padding: 16px 12px; border-bottom: 1px solid var(--border); }
 .table tr:hover { background: var(--bg-hover); }
 
@@ -318,7 +328,6 @@ select.input-field option {
 }
 
 .calendar-day:hover { background: var(--bg-hover); }
-.calendar-day:focus-visible { outline: 2px solid var(--accent-secondary); outline-offset: 2px; }
 .calendar-day.today { border: 2px solid var(--accent-primary); }
 .calendar-day.other-month { color: var(--text-muted); opacity: 0.5; }
 .calendar-day.weekend { background: rgba(4, 120, 87, 0.08); }
@@ -372,13 +381,13 @@ dialog.modal::backdrop {
 
 dialog.modal:focus {
   outline: none;
+  box-shadow: none;
 }
 
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .modal-title { font-size: 1.3rem; font-weight: 700; }
 .close-btn { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 8px; border-radius: 8px; }
 .close-btn:hover { background: var(--bg-hover); }
-.close-btn:focus-visible { outline: 2px solid var(--accent-secondary); outline-offset: 2px; }
 
 .upload-zone {
   display: block;
@@ -390,8 +399,8 @@ dialog.modal:focus {
   transition: all 0.2s;
 }
 
-.upload-zone:hover { border-color: var(--accent-primary); background: rgba(4, 120, 87, 0.05); }
-.upload-zone:focus-within { border-color: var(--accent-primary); outline: 2px solid var(--accent-secondary); outline-offset: 2px; }
+.upload-zone:hover { border-color: var(--accent-readable); background: rgb(from var(--accent-readable) r g b / 0.05); }
+.upload-zone:focus-within { border-color: var(--accent-readable); outline: 2px solid var(--accent-secondary); outline-offset: 2px; box-shadow: 0 0 0 2px var(--bg-primary); }
 .upload-zone.dragging { border-color: var(--accent-green); background: rgba(16, 185, 129, 0.1); }
 
 .tag { display: inline-block; padding: 4px 10px; background: var(--bg-hover); border-radius: 6px; font-size: 0.8rem; margin-right: 6px; margin-bottom: 6px; }
@@ -498,7 +507,7 @@ dialog.modal:focus {
 }
 
 .footer-link a:hover {
-  color: var(--accent-primary);
+  color: var(--accent-readable);
 }
 
 @media (max-width: 1024px) {
@@ -665,6 +674,7 @@ dialog.modal:focus {
   .altro-menu-item:focus-visible {
     outline: 2px solid var(--accent-primary);
     outline-offset: -2px;
+    box-shadow: none;
   }
 
   .altro-menu-item.active {
@@ -725,11 +735,6 @@ dialog.modal:focus {
 .theme-switch-btn.active {
   background: var(--accent-primary);
   color: var(--on-accent, white);
-}
-
-.theme-switch-btn:focus-visible {
-  outline: 2px solid var(--accent-secondary);
-  outline-offset: 2px;
 }
 
 @media (max-width: 768px) {
@@ -832,12 +837,7 @@ dialog.modal:focus {
 
 .user-selector-trigger:hover {
   background: var(--bg-card);
-  border-color: var(--accent-primary);
-}
-
-.user-selector-trigger:focus-visible {
-  outline: 2px solid var(--accent-secondary);
-  outline-offset: 2px;
+  border-color: var(--accent-readable);
 }
 
 .user-selector-name {
@@ -903,6 +903,7 @@ dialog.modal:focus {
 .user-option:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: -2px;
+  box-shadow: none;
 }
 
 .user-option.active {
@@ -921,12 +922,12 @@ dialog.modal:focus {
 }
 
 .user-add-btn {
-  color: var(--accent-primary);
+  color: var(--accent-readable);
 }
 
 .user-add-btn:hover {
-  background: rgba(4, 120, 87, 0.1);
-  color: var(--accent-primary);
+  background: rgb(from var(--accent-readable) r g b / 0.1);
+  color: var(--accent-readable);
 }
 
 .user-add-form {
@@ -948,7 +949,8 @@ dialog.modal:focus {
 
 .user-add-input:focus {
   outline: none;
-  border-color: var(--accent-primary);
+  box-shadow: none;
+  border-color: var(--accent-readable);
 }
 
 /* Compact version for mobile header */

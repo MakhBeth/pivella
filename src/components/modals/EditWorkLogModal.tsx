@@ -27,7 +27,7 @@ export function EditWorkLogModal({ isOpen, onClose, workLog, setWorkLog, clienti
           <button className="close-btn" onClick={onClose} aria-label="Chiudi"><X size={20} aria-hidden="true" /></button>
         </div>
         <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 20, textAlign: 'center' }}>
-          <Clock size={20} style={{ marginBottom: 4, color: 'var(--accent-primary)' }} />
+          <Clock size={20} style={{ marginBottom: 4, color: 'var(--accent-readable)' }} />
           <div style={{ fontWeight: 500 }}>
             {new Date(workLog.data + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
           </div>

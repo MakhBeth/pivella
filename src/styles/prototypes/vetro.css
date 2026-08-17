@@ -233,6 +233,13 @@ html[data-design="vetro"] .btn-success {
   box-shadow: 0 0 20px var(--vetro-glow);
 }
 
+/* Light: the accents are darker, so lift the gradient to keep contrast
+   with the dark on-accent text */
+html[data-design="vetro"][data-theme="light"] .btn-primary,
+html[data-design="vetro"][data-theme="light"] .btn-success {
+  background: linear-gradient(135deg, var(--accent-secondary), var(--vetro-lime));
+}
+
 html[data-design="vetro"] .btn-primary:hover,
 html[data-design="vetro"] .btn-success:hover {
   filter: brightness(1.08);

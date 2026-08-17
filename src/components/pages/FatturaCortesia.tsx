@@ -432,7 +432,7 @@ export function FatturaCortesia() {
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <Upload size={40} style={{ marginBottom: 16, color: 'var(--accent-primary)' }} />
+            <Upload size={40} style={{ marginBottom: 16, color: 'var(--accent-readable)' }} />
             {selectedFile ? (
               <p style={{ fontWeight: 500, fontFamily: 'Space Mono' }}>
                 {selectedFile.name}

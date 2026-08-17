@@ -150,7 +150,7 @@ html[data-design="newage"] .nav-item:hover {
 
 html[data-design="newage"] .nav-item.active {
   background: var(--bg-card);
-  color: var(--accent-primary);
+  color: var(--accent-readable);
   box-shadow:
     inset 4px 4px 8px var(--neo-shadow-dark),
     inset -4px -4px 8px var(--neo-shadow-light);
@@ -284,7 +284,7 @@ html[data-design="newage"] .theme-switch-btn {
 
 html[data-design="newage"] .theme-switch-btn.active {
   background: var(--bg-card);
-  color: var(--accent-primary);
+  color: var(--accent-readable);
   box-shadow:
     4px 4px 8px var(--neo-shadow-dark),
     -4px -4px 8px var(--neo-shadow-light);

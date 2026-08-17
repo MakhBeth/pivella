@@ -40,7 +40,7 @@ export function ImportBackupModal({ isOpen, onClose, onImport }: ImportBackupMod
         </div>
         <label className={`upload-zone ${isDragging ? 'dragging' : ''}`} tabIndex={0} {...dragProps}>
           <input type="file" accept=".json" onChange={handleChange} style={{ display: 'none' }} />
-          <Upload size={40} style={{ marginBottom: 16, color: 'var(--accent-primary)' }} />
+          <Upload size={40} style={{ marginBottom: 16, color: 'var(--accent-readable)' }} />
           <p style={{ fontWeight: 500 }}>{isDragging ? 'Rilascia qui' : 'Seleziona o trascina JSON'}</p>
         </label>
     </dialog>

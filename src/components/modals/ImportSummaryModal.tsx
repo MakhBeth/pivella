@@ -23,7 +23,7 @@ export function ImportSummaryModal({ isOpen, onClose, summary }: ImportSummaryMo
         <div className="grid-2" style={{ marginBottom: 20 }}>
           <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 12, textAlign: 'center' }}>
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 4 }}>File Processati</div>
-            <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--accent-primary)' }}>{summary.total}</div>
+            <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--accent-readable)' }}>{summary.total}</div>
           </div>
 
           <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 12, textAlign: 'center' }}>
