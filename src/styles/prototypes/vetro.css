@@ -116,7 +116,7 @@ html[data-design="vetro"] .nav-item.active {
 }
 
 html[data-design="vetro"][data-theme="light"] .nav-item.active {
-  color: var(--accent-primary);
+  color: color-mix(in hsl, var(--accent-primary), var(--text-primary));
 }
 
 /* Mobile: the sidebar's backdrop-filter would turn the fixed bottom
