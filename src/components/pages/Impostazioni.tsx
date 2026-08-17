@@ -214,7 +214,7 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
                     {editingUser?.id === user.id ? (
                       <input
                         type="color"
-                        value={editingUser.color || '#0d9488'}
+                        value={editingUser.color || '#19c2b4'}
                         onChange={(e) => setEditingUser({ ...editingUser, color: e.target.value })}
                         style={{ width: 40, height: 32, padding: 0, border: 'none', borderRadius: 6, cursor: 'pointer' }}
                       />
@@ -225,10 +225,10 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
                           width: 24,
                           height: 24,
                           borderRadius: 6,
-                          backgroundColor: user.color || '#0d9488',
+                          backgroundColor: user.color || '#19c2b4',
                           border: '2px solid var(--border)'
                         }}
-                        title={user.color || '#0d9488'}
+                        title={user.color || '#19c2b4'}
                       />
                     )}
                   </td>
