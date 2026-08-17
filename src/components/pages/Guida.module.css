@@ -61,6 +61,8 @@
 }
 
 .pageCard {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -89,17 +91,30 @@
   font-weight: 600;
 }
 
+/* Oversized badge peeking from the card's top-right corner, clipped by the card */
 .chip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  translate: 30% -40%;
+  rotate: 12deg;
+  width: 18%;
+  aspect-ratio: 1 / 1;
+  opacity: 0.35;
+  pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  flex-shrink: 0;
+  border-radius: 22%;
   color: var(--chip-color);
   background: color-mix(in srgb, var(--chip-color) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--chip-color) 30%, transparent);
+}
+
+.chip svg {
+  width: 45%;
+  height: 45%;
+  opacity: 0.5;
 }
 
 .chatThread {

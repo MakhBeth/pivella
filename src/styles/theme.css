@@ -38,6 +38,7 @@ html[data-theme="dark"] {
   --accent-green: #16a34a;
   --accent-orange: #f59e0b;
   --accent-red: #ef4444;
+  --accent-blue: #3b82f6;
   --text-primary: #f0fdf4;
   --text-secondary: #d1d5db;
   --text-muted: #9ca3af;
@@ -63,6 +64,7 @@ html[data-theme="light"] {
   --accent-green: #15803d;
   --accent-orange: #c2410c;
   --accent-red: #b91c1c;
+  --accent-blue: #2563eb;
   --text-primary: #052e16;
   --text-secondary: #374151;
   --text-muted: #6b7280;

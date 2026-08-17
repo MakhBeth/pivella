@@ -47,7 +47,7 @@ const PAGE_SECTIONS: PageSection[] = [
   },
   {
     icon: FilePlus,
-    color: "var(--accent-secondary)",
+    color: "var(--accent-blue)",
     title: "Fattura di Cortesia",
     text: "Genera un PDF \"di cortesia\" da mandare al cliente: la fattura elettronica vera passa dallo SDI, ma un PDF leggibile da allegare alla mail fa sempre comodo. Scegli fattura e lingua, e il PDF è pronto.",
   },
@@ -59,7 +59,7 @@ const PAGE_SECTIONS: PageSection[] = [
   },
   {
     icon: Calculator,
-    color: "var(--accent-primary)",
+    color: "var(--text-primary)",
     title: "Simulatore",
     text: "Vuoi sapere cosa succede se quest'anno fatturi di più (o di meno)? Il simulatore ti fa giocare con i numeri: inserisci un fatturato ipotetico e vedi subito tasse, contributi e netto stimato.",
   },
