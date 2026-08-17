@@ -26,9 +26,25 @@
   font-family: 'Space Mono', monospace;
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--accent-primary);
+  color: var(--on-accent, white);
   margin: 0;
   letter-spacing: -1px;
+  display: inline-block;
+  position: relative;
+  isolation: isolate;
+  padding: 2px 14px;
+  align-self: flex-start;
+}
+
+/* Label effect: accent background skewed like an italic slant */
+.logoText::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--accent-primary);
+  transform: skewX(-25deg);
+  border-radius: 6px;
 }
 
 .logoLight {

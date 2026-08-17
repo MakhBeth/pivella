@@ -100,9 +100,24 @@ body {
   font-family: 'Space Mono', monospace;
   font-size: 1.4rem;
   font-weight: 700;
-  color: #34d399;
+  color: var(--on-accent, white);
   margin-bottom: 8px;
   letter-spacing: -1px;
+  display: inline-block;
+  position: relative;
+  isolation: isolate;
+  padding: 2px 14px;
+}
+
+/* Label effect: accent background skewed like an italic slant */
+.logo::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--accent-primary);
+  transform: skewX(-25deg);
+  border-radius: 6px;
 }
 
 /* "Pivella" wordmark: P, iv and a stay bold, "ell" is lighter to highlight P.IVA */
@@ -116,10 +131,6 @@ body {
   font-size: 0.75rem;
   color: var(--text-muted);
   margin-bottom: 32px;
-}
-
-html[data-theme="light"] .logo {
-  color: #047857;
 }
 
 .nav-item {
@@ -433,12 +444,29 @@ dialog.modal:focus {
 }
 
 .footer-credits a {
-  color: var(--accent-primary);
+  color: var(--on-accent, white);
   text-decoration: none;
   font-weight: 500;
   display: inline-flex;
   align-items: center;
   min-height: 44px;
+  position: relative;
+  isolation: isolate;
+  padding: 0 10px;
+}
+
+/* Same skewed-label effect as the logo, sized to the text line */
+.footer-credits a::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1.6em;
+  z-index: -1;
+  background: var(--accent-primary);
+  transform: translateY(-50%) skewX(-25deg);
+  border-radius: 4px;
 }
 
 .footer-credits a:hover {

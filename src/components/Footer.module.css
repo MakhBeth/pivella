@@ -60,9 +60,26 @@
   }
 
   .credits a {
-    color: var(--accent-primary);
+    color: var(--on-accent, white);
     text-decoration: none;
     font-weight: 500;
+    position: relative;
+    isolation: isolate;
+    padding: 0 8px;
+  }
+
+  /* Same skewed-label effect as the logo */
+  .credits a::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1.5em;
+    z-index: -1;
+    background: var(--accent-primary);
+    transform: translateY(-50%) skewX(-25deg);
+    border-radius: 4px;
   }
 
   .credits a:hover {

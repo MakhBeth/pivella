@@ -87,12 +87,11 @@ html[data-design="vetro"][data-theme="light"] .sidebar {
 }
 
 html[data-design="vetro"] .logo {
-  color: var(--accent-secondary);
-  text-shadow: 0 0 24px var(--vetro-glow);
+  color: var(--on-accent, #032722);
 }
 
-html[data-design="vetro"][data-theme="light"] .logo {
-  color: var(--accent-primary);
+html[data-design="vetro"] .logo::before {
+  box-shadow: 0 0 24px var(--vetro-glow);
 }
 
 html[data-design="vetro"] .nav-item {

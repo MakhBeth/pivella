@@ -80,13 +80,9 @@ html[data-design="windows95"] .sidebar {
 
 html[data-design="windows95"] .logo {
   font-family: "Segoe UI", Tahoma, sans-serif;
-  color: var(--win95-titlebar);
+  color: var(--on-accent, white);
   font-weight: 700;
   letter-spacing: 0;
-}
-
-html[data-design="windows95"][data-theme="light"] .logo {
-  color: var(--win95-titlebar);
 }
 
 /* ── Cards — raised panel effect ───────────────────────────── */
@@ -625,7 +621,7 @@ html[data-design="windows95"] .footer {
 }
 
 html[data-design="windows95"] .footer-credits a {
-  color: var(--win95-titlebar);
+  color: var(--on-accent, white);
 }
 
 /* ── Altro Dropup Menu (mobile) ────────────────────────────── */
