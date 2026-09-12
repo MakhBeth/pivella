@@ -9,7 +9,13 @@ import type { SyncFileSystem } from './fileSystem';
 
 export const SYNC_FILENAME = 'pivella-sync.json';
 export const BACKUP_DIR = 'pivella-backups';
-export const LATEST_HASH_FILE = `${BACKUP_DIR}/latest.sha256`;
+/** Ultimo backup creato: `{ hash, file }`. Serve solo alla dedup e non è mai fidato da solo. */
+export const LATEST_FILE = `${BACKUP_DIR}/latest.json`;
+
+interface LatestBackup {
+  hash: string;
+  file: string;
+}
 
 export const KEEP_MOST_RECENT = 30;
 export const DAILY_RETENTION_DAYS = 90;
@@ -117,18 +123,40 @@ export async function backupBeforeWrite(fs: SyncFileSystem, { kind, now }: Backu
     if (!current) return { status: 'skipped-missing' };
 
     const hash = await sha256Hex(current);
-    const latest = await fs.read(LATEST_HASH_FILE);
-    if (latest && new TextDecoder().decode(latest).trim() === hash) {
+    if (await latestBackupMatches(fs, hash)) {
       return { status: 'skipped-identical', hash };
     }
 
-    const file = `${BACKUP_DIR}/${backupFileName(now, kind)}`;
+    const name = backupFileName(now, kind);
+    const file = `${BACKUP_DIR}/${name}`;
     await atomicWrite(fs, file, current);
-    await fs.write(LATEST_HASH_FILE, new TextEncoder().encode(hash));
+    const latest: LatestBackup = { hash, file: name };
+    await fs.write(LATEST_FILE, new TextEncoder().encode(JSON.stringify(latest)));
     return { status: 'created', file, hash };
   } catch (err) {
     throw new BackupError(messageOf(err));
   }
+}
+
+/**
+ * La dedup vale solo se `latest.json` è leggibile, cita lo stesso hash e il
+ * backup citato esiste davvero con quell'hash. In ogni altro caso si crea un
+ * backup nuovo: un `latest.json` rimasto dopo una cancellazione manuale non
+ * deve mai far saltare il backup.
+ */
+async function latestBackupMatches(fs: SyncFileSystem, hash: string): Promise<boolean> {
+  const raw = await fs.read(LATEST_FILE);
+  if (!raw) return false;
+  let latest: Partial<LatestBackup>;
+  try {
+    latest = JSON.parse(new TextDecoder().decode(raw));
+  } catch {
+    return false;
+  }
+  if (latest.hash !== hash || typeof latest.file !== 'string') return false;
+  const bytes = await fs.read(`${BACKUP_DIR}/${latest.file}`);
+  if (!bytes) return false;
+  return (await sha256Hex(bytes)) === hash;
 }
 
 async function removeStaleParts(fs: SyncFileSystem): Promise<void> {

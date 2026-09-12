@@ -6,7 +6,7 @@ import { atomicWrite, sha256Hex } from './atomicWrite';
 import {
   BACKUP_DIR,
   BackupError,
-  LATEST_HASH_FILE,
+  LATEST_FILE,
   SYNC_FILENAME,
   backupBeforeWrite,
   backupFileName,
@@ -60,7 +60,7 @@ test('backupFileName encodes timestamp and kind in a file-system safe way', () =
 test('parseBackupFileName round-trips and rejects foreign files', () => {
   const parsed = parseBackupFileName('pivella-sync.2026-09-12T14-03-22-114Z.pre-restore.json');
   assert.deepEqual(parsed, { timestamp: NOW, kind: 'pre-restore' });
-  assert.equal(parseBackupFileName('latest.sha256'), null);
+  assert.equal(parseBackupFileName('latest.json'), null);
   assert.equal(parseBackupFileName('pivella-sync.2026-09-12T14-03-22-114Z.app.json.part'), null);
 });
 
@@ -102,7 +102,7 @@ test('planRotation deletes everything older than 90 days except protected kinds'
 });
 
 test('planRotation ignores files that are not backups', () => {
-  assert.deepEqual(planRotation(['latest.sha256', 'note.txt', ...names(35, NOW, 48)], NOW).includes('latest.sha256'), false);
+  assert.deepEqual(planRotation(['latest.json', 'note.txt', ...names(35, NOW, 48)], NOW).includes('latest.json'), false);
 });
 
 // --- backup prima della scrittura ------------------------------------------
@@ -115,7 +115,10 @@ test('backupBeforeWrite copies the current sync file, verifies it and records th
   const expectedName = `${BACKUP_DIR}/${backupFileName(NOW, 'app')}`;
   assert.equal(r.file, expectedName);
   assert.equal(fromBytes(fs.files.get(expectedName) ?? null), '{"v":1}');
-  assert.equal(fromBytes(fs.files.get(LATEST_HASH_FILE) ?? null), await sha256Hex(text('{"v":1}')));
+  assert.deepEqual(JSON.parse(fromBytes(fs.files.get(LATEST_FILE) ?? null)!), {
+    hash: await sha256Hex(text('{"v":1}')),
+    file: backupFileName(NOW, 'app'),
+  });
 });
 
 test('backupBeforeWrite is skipped when the sync file does not exist yet', async () => {
@@ -135,6 +138,26 @@ test('backupBeforeWrite is skipped when the latest backup already has the same h
   assert.equal(fs.files.size, before);
 });
 
+test('backupBeforeWrite creates a new backup when the latest file points to a backup deleted by hand', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  await fs.write(SYNC_FILENAME, text('same'));
+  const first = await backupBeforeWrite(fs, { kind: 'app', now: NOW });
+  assert.equal(first.status, 'created');
+  // L'utente cancella a mano i backup ma lascia latest.json
+  await fs.remove(first.file!);
+  const second = await backupBeforeWrite(fs, { kind: 'app', now: new Date(NOW.getTime() + 1000) });
+  assert.equal(second.status, 'created');
+  assert.equal(fromBytes(fs.files.get(second.file!) ?? null), 'same');
+});
+
+test('backupBeforeWrite creates a new backup when the latest file is unreadable or malformed', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  await fs.write(SYNC_FILENAME, text('same'));
+  await fs.write(LATEST_FILE, text('garbage'));
+  const r = await backupBeforeWrite(fs, { kind: 'app', now: NOW });
+  assert.equal(r.status, 'created');
+});
+
 test('backupBeforeWrite removes stale .part files from a previous failed attempt', async () => {
   const fs = memoryFileSystem({ withMove: true });
   await fs.write(SYNC_FILENAME, text('x'));
@@ -150,7 +173,7 @@ test('backupBeforeWrite throws BackupError with the reason when the copy fails',
     backupBeforeWrite(fs, { kind: 'app', now: NOW }),
     (err: unknown) => err instanceof BackupError && err.code === 'BACKUP_FAILED' && /ENOSPC/.test(err.reason)
   );
-  assert.equal(fs.files.has(LATEST_HASH_FILE), false);
+  assert.equal(fs.files.has(LATEST_FILE), false);
 });
 
 // --- scrittura del file di sync --------------------------------------------

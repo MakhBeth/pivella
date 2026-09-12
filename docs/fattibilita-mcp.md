@@ -911,9 +911,9 @@ Entrambi i writer, ciascuno prima della propria scrittura, con lo stesso algorit
 
 1. Leggi i byte correnti del file di sync e calcolane SHA-256 (`crypto.subtle` nell'app, `crypto` in Node).
 2. Se il file non esiste (prima sincronizzazione), il backup è considerato riuscito senza creare nulla; è l'unico caso.
-3. Se esiste un file `pivella-backups/latest.sha256` e contiene lo stesso hash, il backup più recente è già identico allo stato corrente: il backup è considerato riuscito senza creare un nuovo file. Questo evita duplicati quando l'app riscrive dopo un merge senza cambiamenti, e non viola il principio perché lo stato è già preservato.
+3. Se esiste un file `pivella-backups/latest.json` con `{ "hash", "file" }`, l'hash coincide con quello corrente, **e il backup citato in `file` esiste davvero nella cartella con quello stesso hash**, allora lo stato è già preservato e il backup è considerato riuscito senza creare un nuovo file. Se una sola di queste condizioni manca (file `latest.json` assente o illeggibile, hash diverso, backup cancellato a mano o corrotto) si crea un backup nuovo. `latest.json` è solo un indice per la dedup e non è mai fidato da solo. Questo evita duplicati quando l'app riscrive dopo un merge senza cambiamenti, senza violare il principio.
 4. Altrimenti scrivi i byte in un file temporaneo `pivella-sync.<timestamp>.<kind>.json.part`, chiudi, rileggi il file scritto, confronta lunghezza e SHA-256 con l'originale.
-5. Se coincidono, rinomina il `.part` nel nome definitivo. Nel server: `fs.rename`, atomico sullo stesso file system. Nell'app: `FileSystemHandle.move(nuovoNome)`, disponibile in Chromium anche per i file locali (verificato da Davide sulla documentazione di developer.chrome.com), con feature detection `typeof handle.move === 'function'`. Se manca, fallback esplicito: scrivi una seconda volta i byte direttamente sul nome definitivo, chiudi, rileggi e verifica lunghezza e hash; solo dopo cancella il `.part`. In entrambi i percorsi aggiorna `latest.sha256` solo a verifica completata. Lo stesso schema, `.part` più `move()` più fallback, vale per la scrittura del file di sync stesso al punto 6, così che un crash a metà scrittura non lasci mai un `pivella-sync.json` troncato.
+5. Se coincidono, rinomina il `.part` nel nome definitivo. Nel server: `fs.rename`, atomico sullo stesso file system. Nell'app: `FileSystemHandle.move(nuovoNome)`, disponibile in Chromium anche per i file locali (verificato da Davide sulla documentazione di developer.chrome.com), con feature detection su `FileSystemFileHandle.prototype.move`. Se manca, fallback esplicito: scrivi una seconda volta i byte direttamente sul nome definitivo, chiudi, rileggi e verifica lunghezza e hash; solo dopo cancella il `.part`. In entrambi i percorsi aggiorna `latest.json` solo a verifica completata. Lo stesso schema, `.part` più `move()` più fallback, vale per la scrittura del file di sync stesso al punto 6, così che un crash a metà scrittura non lasci mai un `pivella-sync.json` troncato.
 6. Solo ora la scrittura del file di sync può partire.
 
 ### Se il backup fallisce
@@ -928,7 +928,7 @@ Entrambi i writer, ciascuno prima della propria scrittura, con lo stesso algorit
 Eseguita da chi ha appena scritto con successo, dopo la scrittura, mai prima. Un errore in rotazione non è un errore di scrittura.
 
 - Si conservano sempre gli ultimi 30 backup, di qualunque kind.
-- Oltre i 30, per i file più vecchi di 24 ore si conserva solo l'ultimo di ogni giorno, per 90 giorni.
+- Oltre i 30, per i file più vecchi di 24 ore si conserva solo l'ultimo di ogni giorno, per 90 giorni. I giorni già coperti dai 30 più recenti contano come coperti.
 - I backup con kind `pre-restore` e `v1` non vengono mai rimossi dalla rotazione automatica.
 - Oltre i 90 giorni tutto viene rimosso, tranne i kind protetti.
 

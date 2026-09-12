@@ -51,7 +51,7 @@ test('end to end on disk: first write has no backup, second write backs up the f
     const second = await writeSyncFile(fs, enc(v2), { kind: 'mcp', now: new Date('2026-09-02T00:00:00.000Z') });
     assert.equal(second.backup.status, 'created');
     assert.equal(await readFile(join(dir, SYNC_FILENAME), 'utf8'), v2);
-    const backups = (await readdir(join(dir, BACKUP_DIR))).filter((n) => n.endsWith('.json'));
+    const backups = (await readdir(join(dir, BACKUP_DIR))).filter((n) => n.startsWith('pivella-sync.'));
     assert.deepEqual(backups, ['pivella-sync.2026-09-02T00-00-00-000Z.mcp.json']);
     assert.equal(await readFile(join(dir, BACKUP_DIR, backups[0]), 'utf8'), v1);
     assert.deepEqual((await readdir(dir)).filter((n) => n.endsWith('.part')), []);
