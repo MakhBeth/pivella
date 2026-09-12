@@ -8,6 +8,8 @@ Legenda usata in tutto il documento:
 - **[V]** verificato leggendo il codice del repo (con riferimento al file).
 - **[I]** ipotesi, conoscenza generale di piattaforma o comportamento non verificato in questo repo.
 
+> **Aggiornamento 2026-09-12, settima iterazione.** Cambio di specifica approvato da Davide: **nessun bump di `ForfettarioDB` a versione 4**. Tombstone e meta vivono nel database separato `PivellaSyncMeta`; `onupgradeneeded` di `ForfettarioDB` non si tocca. Motivi e finestra di non atomicità nella **sezione 13.8**.
+>
 > **Aggiornamento 2026-09-12, sesta iterazione, specifica chiusa.** Decisione finale di Davide: nessun legame tra calendario e fatture, mai. Le giornate si leggono per cliente e periodo, gli importi si leggono solo dalle fatture, i due dati non si combinano in un unico numero. Il tool "giornate non fatturate" è eliminato, nessun `fatturaId`, nessun flag. La sezione 13.7 registra la verifica e la decisione. Chiuse anche: numero fattura come oggi, cartelle cloud non supportate, `move()` con feature detection, npm rimandato.
 >
 > **Aggiornamento 2026-09-12, quarta iterazione. Decisione: MCP locale, merge come da sezione 12, backup obbligatorio prima di ogni scrittura sul file.** La **sezione 13** è la specifica congelata: contratto dei tool, formato v2 e merge, politica di backup, interfaccia DataSource. Le sezioni precedenti restano come storia e fonte dei fatti verificati.
@@ -617,7 +619,7 @@ Ogni tool di proposta valida il payload con le stesse regole del modale (cliente
 |---|---|---|---|
 | Modulo condiviso | nuovo `src/lib/sync/schema.ts`, `merge.ts`, `merge.test.ts`, `proposals.ts`, `validate.ts` | formato v2, merge puro, tipi proposta, validazioni estratte dal modale | 3 |
 | Tipi | `src/types/index.ts` | `updatedAt?` su ogni entità, tipi `Tombstone`, `Proposal` | 0,5 |
-| DB | `src/lib/db/IndexedDBManager.ts`, `src/lib/constants/fiscali.ts` | `DB_VERSION` 3→4 con store `tombstones` e `meta`; `mergeAll` accanto a `importAll`; `updatedAt` impostato in `put`, tombstone in `delete` | 1,5 |
+| DB | nuovo `src/lib/db/syncMetaDb.ts`; `src/lib/db/IndexedDBManager.ts` | database separato `PivellaSyncMeta` con store `tombstones` e `meta` (nessun bump di `ForfettarioDB`, 13.8); `mergeIntoDb` accanto a `importAll`; `updatedAt` impostato in `put`, tombstone in `delete` | 1,5 |
 | Sync file | `src/lib/utils/fileSystemSync.ts`, `src/hooks/useFolderSync.ts` | lettura v1/v2, `lastModified`, polling e observer, ciclo leggi-fondi-scrivi, banner permesso | 2 |
 | Stato app | `src/context/AppContext.tsx` | `handleDataLoaded` passa a merge e aggiorna lo stato per differenze; esposizione delle proposte | 1,5 |
 | UI proposte | nuovo `src/components/modals/ProposalsModal.tsx`, ritocchi a `Header.tsx`, `ForfettarioApp.tsx`, `Impostazioni.tsx` | badge, modale, applicazione tramite hook esistenti, XML per fatture | 2,5 |
@@ -819,7 +821,7 @@ Nessun parametro dipende dal trasporto; l'identità del chiamante entra come `Pr
 { "store": "workLogs", "id": "1757012345678", "deletedAt": "2026-09-12T13:50:00.000Z", "deletedBy": "app-8f2c1a" }
 ```
 
-- Ogni `delete` su uno store dell'app produce un tombstone nello store IndexedDB `tombstones` (nuovo, `DB_VERSION` 4, `keyPath` composto `[store, id]`) e quindi nel file.
+- Ogni `delete` su uno store dell'app produce un tombstone nel database IndexedDB separato `PivellaSyncMeta`, store `tombstones` con `keyPath` composto `[store, id]`, e quindi nel file. `ForfettarioDB` resta a versione 3 (13.8).
 - La cancellazione di un utente **[V]** `deleteUser` produce un tombstone per ogni record dell'utente più uno per lo `users`.
 - Potatura: alla scrittura, i tombstone con `deletedAt` più vecchio di 90 giorni vengono rimossi.
 
@@ -1005,6 +1007,7 @@ src/lib/sync/validate.ts      regole di validazione delle proposte, condivise co
 src/lib/sync/proposals.ts     ciclo di vita, scadenze, applyProposal (lato app)
 src/lib/sync/backup.ts        algoritmo di backup e rotazione astratto su una piccola interfaccia di file system
 src/lib/sync/*.test.ts        node:test
+src/lib/db/syncMetaDb.ts      database separato PivellaSyncMeta: tombstone, meta, writer id, log conflitti
 mcp/src/datasource.ts         interfaccia DataSource e DataSourceError
 mcp/src/fileDataSource.ts     implementazione su file, lock, backup con fs
 mcp/src/tools/*.ts            un file per tool, solo contratto e mapping
@@ -1025,6 +1028,8 @@ mcp/src/cli.ts                avvio, restore, diagnostica
 - Cartelle cloud non supportate, con controllo all'avvio del server (13.2).
 - Scrittura atomica con `.part` e `move()` con feature detection e fallback verificato (13.3), per backup e per file di sync.
 - Il nome del pacchetto npm è rimandato e non blocca nulla: nel frattempo il server si avvia dal repo con `npm run mcp`.
+- `ForfettarioDB` resta a versione 3. Tombstone, meta, writer id e log conflitti stanno in `PivellaSyncMeta` (13.8).
+- La dedup del backup richiede che il file citato in `latest.json` esista con lo stesso hash (13.3).
 
 ## 13.6 Cosa resta davvero da decidere
 
@@ -1049,3 +1054,38 @@ Il calendario serve a tenere traccia del lavoro. Le fatture sono la fonte di ver
 - Nessun campo `fatturaId` sul work log, nessun flag, nessun parametro `workLogIds` in `propose_fattura`.
 - Le giornate si leggono con `list_work_logs` e `get_giornate_per_cliente`, solo quantità. Gli importi si leggono con `list_fatture`, `get_fattura` e `get_riepilogo_anno`, solo da fatture. Nessun tool restituisce un numero che combini i due.
 - Se un utente chiede all'assistente "preparami la fattura di settembre per Acme", il modello può leggere le giornate e leggere la tariffa del cliente da `list_clienti`, ma la proposta di fattura contiene righe scritte esplicitamente con descrizione, quantità e prezzo, che l'utente vede e conferma. Il server non calcola né suggerisce importi a partire dalle giornate.
+
+
+## 13.8 Database separato `PivellaSyncMeta`: perché, e la finestra di non atomicità
+
+### Perché non si alza la versione di `ForfettarioDB`
+
+Verificato in `src/lib/db/IndexedDBManager.ts` **[V]**:
+
+- `openDatabase` apre con `DB_VERSION` e un timeout di 3 secondi; allo scadere rifiuta con `TimeoutError`. Se l'upgrade è bloccato da un'altra connessione, `onblocked` rifiuta con `BlockedError`.
+- `doInit` intercetta esattamente `TimeoutError` e `BlockedError` e **chiama `deleteDatabase()` e poi riapre**. `deleteDatabase` ha a sua volta un timeout di 3 secondi che risolve comunque.
+- L'`onversionchange` sulle connessioni esistenti chiude la connessione, ma non elimina il rischio: una seconda tab lenta a chiudere, un disco lento o un profilo con molti dati portano al timeout, e quindi alla cancellazione dei dati veri dell'utente.
+
+Oggi quel percorso si attiva solo in situazioni anomale, perché la versione non cambia da tempo. **Un bump a versione 4 lo renderebbe una condizione normale del primo avvio.** In più, un'app precedente che apre un database a versione 4 con `indexedDB.open(nome, 3)` riceve `VersionError`, che il codice non gestisce: il rollback a una release precedente diventerebbe impossibile senza cancellare il database.
+
+Decisione: `ForfettarioDB` resta a versione 3 e `onupgradeneeded` non si tocca. Tutto ciò che serve alla sync v2 sta in un secondo database, `PivellaSyncMeta`, versione 1, stesso schema del già esistente `PivellaSync` per gli handle **[V]** `fileSystemSync.ts`:
+
+| Store | Chiave | Contenuto |
+|---|---|---|
+| `tombstones` | `[store, id]` | `Tombstone` come nel file v2 |
+| `meta` | `key` | `writerId`, `lastRestoreAck`, `conflicts` (ultimi 200), `orphans` |
+
+Un'app precedente ignora `PivellaSyncMeta` e continua a funzionare su `ForfettarioDB` invariato.
+
+### Finestra di non atomicità tra cancellazione e tombstone
+
+IndexedDB non permette una transazione che copra due database. Quindi "cancella il record in `ForfettarioDB`" e "scrivi il tombstone in `PivellaSyncMeta`" sono due transazioni. Se l'app muore nel mezzo (chiusura della tab, crash, eviction, spegnimento):
+
+- **Ordine cancella poi tombstone**: il record non c'è più, il tombstone no. Al merge successivo il record, ancora presente nel file di sync, viene reinserito in IndexedDB, perché è "solo nel file senza tombstone". Il record risorge. Non è perdita di dati, è una cancellazione persa che l'utente deve rifare.
+- **Ordine tombstone poi cancella** (quello che si adotta): il tombstone c'è, il record ancora sì. Al merge successivo il tombstone ha `deletedAt` maggiore dell'`updatedAt` del record, quindi il record viene cancellato da IndexedDB e dal file. L'esito è quello voluto, solo ritardato al prossimo merge. Se l'app muore prima del tombstone, non è successo nulla e il record resta, come se l'utente non avesse premuto elimina.
+
+Con l'ordine tombstone-prima la finestra non produce mai una resurrezione. Resta un solo effetto visibile: tra il crash e il merge successivo il record cancellato può comparire ancora nella lista, per al più un avvio.
+
+### Riduzione ulteriore della finestra, proposta e non implementata
+
+All'avvio, subito dopo l'apertura dei due database e prima di caricare lo stato React, una **riconciliazione locale**: leggere tutti i tombstone e cancellare da `ForfettarioDB` ogni record che ha un tombstone con `deletedAt` maggiore del suo `updatedAt`. È lo stesso confronto del merge, applicato in locale, senza file di sync. Costo: una lettura dello store `tombstones` (piccolo, potato a 90 giorni) e al più qualche `delete`. Elimina anche l'unico effetto visibile descritto sopra. Va nel passo 2, dentro `IndexedDBManager.init`, quando Davide lo approva.
