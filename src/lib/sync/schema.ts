@@ -106,7 +106,8 @@ export type V1File = Partial<Record<StoreName, unknown[]>>;
 export function upgradeV1(data: V1File, stamp: Stamp): SyncSnapshot {
   const snapshot = createEmptySnapshot(stamp);
   for (const store of STORES) {
-    const records = Array.isArray(data[store]) ? (data[store] as Record<string, unknown>[]) : [];
+    // Il v1 scritto dall'app ha sempre tutti gli store; uno mancante vale vuoto.
+    const records = data[store] === undefined ? [] : validateStore(store, data[store]);
     (snapshot[store] as SyncRecord[]) = records.map((record) => ({
       ...record,
       updatedAt: stamp.now,
@@ -114,6 +115,29 @@ export function upgradeV1(data: V1File, stamp: Stamp): SyncSnapshot {
     })) as SyncRecord[];
   }
   return snapshot;
+}
+
+/**
+ * Uno store deve essere un array di oggetti con `id` stringa e senza
+ * duplicati. Un file che non rispetta questo non viene fuso né ripristinato:
+ * meglio fermarsi che scartare record in silenzio.
+ */
+function validateStore(store: StoreName, value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Store ${store} non è un array`, { store });
+  }
+  const seen = new Set<string>();
+  for (const record of value) {
+    const id = (record as { id?: unknown } | null)?.id;
+    if (typeof record !== 'object' || record === null || Array.isArray(record) || typeof id !== 'string' || id.length === 0) {
+      throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Record senza id valido nello store ${store}`, { store });
+    }
+    if (seen.has(id)) {
+      throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Id duplicato ${id} nello store ${store}`, { store, id });
+    }
+    seen.add(id);
+  }
+  return value as Record<string, unknown>[];
 }
 
 export interface ParsedSyncFile {
@@ -147,7 +171,8 @@ export function parseSyncFile(text: string, stamp: Stamp): ParsedSyncFile {
   const snapshot = createEmptySnapshot(stamp);
   const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
   for (const store of STORES) {
-    (snapshot[store] as unknown[]) = asArray(obj[store]);
+    // In v2 ogni store è obbligatorio: null o assente non valgono "vuoto".
+    (snapshot[store] as unknown[]) = validateStore(store, obj[store]);
   }
   snapshot.updatedAt = typeof obj.updatedAt === 'string' ? obj.updatedAt : stamp.now;
   snapshot.writer = isWriter(obj.writer) ? obj.writer : { ...stamp.writer };
@@ -207,4 +232,33 @@ export function dataFingerprint(snapshot: SyncSnapshot): string {
     tombstones: [...snapshot.tombstones].sort((x, y) => (tombstoneKey(x) < tombstoneKey(y) ? -1 : 1)),
     proposals: byId(snapshot.proposals),
   });
+}
+
+/**
+ * Istante numerico di un timestamp ISO. Un valore assente o non
+ * interpretabile vale epoca zero, quindi perde contro qualsiasi timestamp
+ * valido. Tutti i confronti temporali del merge passano da qui: mai
+ * confrontare stringhe, perché `10:00:00Z` ordinerebbe dopo `10:00:00.500Z`.
+ */
+export function instantOf(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+export function compareInstants(a: string | null | undefined, b: string | null | undefined): number {
+  const ia = instantOf(a);
+  const ib = instantOf(b);
+  return ia < ib ? -1 : ia > ib ? 1 : 0;
+}
+
+/**
+ * Timestamp da assegnare al tombstone di `record`: strettamente maggiore
+ * dell'`updatedAt` del record, così il merge lo cancella anche se
+ * aggiornamento e cancellazione cadono nello stesso millisecondo (13.8).
+ */
+export function tombstoneTimestamp(now: string, record: { updatedAt?: string }): string {
+  const nowMs = instantOf(now);
+  const recordMs = instantOf(record.updatedAt);
+  return nowMs > recordMs ? now : new Date(recordMs + 1).toISOString();
 }

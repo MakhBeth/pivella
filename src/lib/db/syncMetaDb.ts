@@ -10,7 +10,7 @@
  * memoria e non toccano mai un database reale.
  */
 import type { StoreName } from '../../types';
-import type { Conflict } from '../sync/merge';
+import { pickTombstone, type Conflict } from '../sync/merge';
 import type { Tombstone } from '../sync/schema';
 
 export const SYNC_META_DB_NAME = 'PivellaSyncMeta';
@@ -19,12 +19,23 @@ export const CONFLICT_LOG_LIMIT = 200;
 
 const TOMBSTONES = 'tombstones';
 const META = 'meta';
+const ARCHIVE = 'archive';
 
 export type MetaKey = 'writerId' | 'lastRestoreAck' | 'conflicts' | 'orphans';
 
 export interface TombstoneKey {
   store: StoreName;
   id: string;
+}
+
+/** Copia integrale di un record locale sovrascritto dal merge. Non ha limite: è la sola copia durevole. */
+export interface ArchiveEntry {
+  seq?: number;
+  store: StoreName;
+  id: string;
+  archivedAt: string;
+  reason: Conflict['reason'];
+  record: unknown;
 }
 
 export interface SyncMetaDb {
@@ -37,8 +48,10 @@ export interface SyncMetaDb {
   getMeta<T = unknown>(key: MetaKey): Promise<T | undefined>;
   setMeta(key: MetaKey, value: unknown): Promise<void>;
   getWriterId(): Promise<string>;
-  appendConflicts(conflicts: Conflict[]): Promise<void>;
+  /** Archivia ogni record perdente per intero, poi aggiorna il log limitato. */
+  appendConflicts(conflicts: Conflict[], archivedAt?: string): Promise<void>;
   getConflicts(): Promise<Conflict[]>;
+  getArchive(): Promise<ArchiveEntry[]>;
 }
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
@@ -66,6 +79,9 @@ export function openSyncMetaDb(factory: IDBFactory = globalThis.indexedDB): Prom
       }
       if (!db.objectStoreNames.contains(META)) {
         db.createObjectStore(META, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(ARCHIVE)) {
+        db.createObjectStore(ARCHIVE, { keyPath: 'seq', autoIncrement: true });
       }
     };
     open.onerror = () => reject(open.error);
@@ -99,7 +115,7 @@ function wrap(db: IDBDatabase): SyncMetaDb {
       const tx = db.transaction(TOMBSTONES, 'readwrite');
       const store = tx.objectStore(TOMBSTONES);
       const existing = (await request(store.get([tombstone.store, tombstone.id]))) as Tombstone | undefined;
-      if (!existing || tombstone.deletedAt > existing.deletedAt) store.put(tombstone);
+      if (!existing || pickTombstone(existing, tombstone) === tombstone) store.put(tombstone);
       await complete(tx);
     },
 
@@ -127,25 +143,46 @@ function wrap(db: IDBDatabase): SyncMetaDb {
     setMeta: writeMeta,
 
     async getWriterId() {
-      const existing = await readMeta<string>('writerId');
-      if (existing) return existing;
+      // Lettura e creazione nella stessa transazione readwrite: due chiamate
+      // concorrenti (anche da due tab) vedono lo stesso id.
+      const tx = db.transaction(META, 'readwrite');
+      const store = tx.objectStore(META);
+      const row = (await request(store.get('writerId'))) as { key: MetaKey; value: string } | undefined;
+      if (row?.value) {
+        await complete(tx);
+        return row.value;
+      }
       const id = `app-${globalThis.crypto.randomUUID().slice(0, 8)}`;
-      await writeMeta('writerId', id);
+      store.put({ key: 'writerId', value: id });
+      await complete(tx);
       return id;
     },
 
-    async appendConflicts(conflicts) {
+    async appendConflicts(conflicts, archivedAt = new Date().toISOString()) {
       if (conflicts.length === 0) return;
-      const tx = db.transaction(META, 'readwrite');
-      const store = tx.objectStore(META);
-      const row = (await request(store.get('conflicts'))) as { key: MetaKey; value: Conflict[] } | undefined;
-      const merged = [...(row?.value ?? []), ...conflicts].slice(-CONFLICT_LOG_LIMIT);
-      store.put({ key: 'conflicts', value: merged });
+      // Una sola transazione: o si archiviano tutti i perdenti e si aggiorna il
+      // log, o nulla. Il log resta limitato e senza payload; l'archivio no.
+      const tx = db.transaction([ARCHIVE, META], 'readwrite');
+      const archive = tx.objectStore(ARCHIVE);
+      for (const c of conflicts) {
+        const entry: ArchiveEntry = { store: c.store, id: c.id, archivedAt, reason: c.reason, record: c.droppedRecord };
+        archive.add(entry);
+      }
+      const meta = tx.objectStore(META);
+      const row = (await request(meta.get('conflicts'))) as { key: MetaKey; value: Conflict[] } | undefined;
+      const stripped = conflicts.map(({ droppedRecord: _dropped, ...rest }) => rest as Conflict);
+      const merged = [...(row?.value ?? []), ...stripped].slice(-CONFLICT_LOG_LIMIT);
+      meta.put({ key: 'conflicts', value: merged });
       await complete(tx);
     },
 
     async getConflicts() {
       return (await readMeta<Conflict[]>('conflicts')) ?? [];
+    },
+
+    async getArchive() {
+      const tx = db.transaction(ARCHIVE, 'readonly');
+      return (await request(tx.objectStore(ARCHIVE).getAll())) as ArchiveEntry[];
     },
   };
 }

@@ -30,8 +30,15 @@ export async function atomicWrite(fs: SyncFileSystem, path: string, bytes: Uint8
   }
 
   if (typeof fs.move === 'function') {
-    await fs.move(part, path);
-    return { method: 'move', hash };
+    try {
+      await fs.move(part, path);
+      return { method: 'move', hash };
+    } catch (err) {
+      // Feature detection sul prototipo non basta: Chromium può esporre move()
+      // e rifiutarlo sui file locali. Solo "non supportato" attiva il fallback;
+      // ogni altro errore (I/O, permessi) resta un errore.
+      if (!isNotSupported(err)) throw err;
+    }
   }
 
   await fs.write(path, bytes);
@@ -48,4 +55,8 @@ async function verify(fs: SyncFileSystem, path: string, length: number, hash: st
   }
   const actual = await sha256Hex(readBack);
   if (actual !== hash) throw new Error(`Scrittura non riuscita, verifica fallita: ${path} hash diverso`);
+}
+
+function isNotSupported(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { name?: string }).name === 'NotSupportedError';
 }

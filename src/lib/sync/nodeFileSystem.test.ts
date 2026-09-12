@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { nodeFileSystem } from './nodeFileSystem';
-import { BACKUP_DIR, BackupError, SYNC_FILENAME, writeSyncFile } from './backup';
+import { BACKUP_DIR, BackupError, LATEST_FILE, SYNC_FILENAME, backupBeforeWrite, backupFileName, writeSyncFile } from './backup';
 import { createEmptySnapshot, parseSyncFile, serializeSnapshot } from './schema';
 
 // Tutti i test lavorano solo in una directory temporanea creata ad hoc.
@@ -83,5 +83,67 @@ test('node adapter list ignores subdirectories', async () => {
     await mkdir(join(dir, BACKUP_DIR, 'sub'), { recursive: true });
     await fs.write(`${BACKUP_DIR}/a.json`, enc('a'));
     assert.deepEqual(await fs.list(BACKUP_DIR), ['a.json']);
+  });
+});
+
+// --- F9: symlink fuori dalla root ------------------------------------------
+
+test('node adapter refuses to write through a symlinked directory that escapes the root', async () => {
+  await withTempDir(async (outside) => {
+    await withTempDir(async (dir) => {
+      await symlink(outside, join(dir, BACKUP_DIR));
+      const fs = nodeFileSystem(dir);
+      await assert.rejects(fs.write(`${BACKUP_DIR}/evil.json`, enc('x')), /Symlink non ammesso/);
+      await assert.rejects(fs.list(BACKUP_DIR), /Symlink non ammesso/);
+      await assert.rejects(fs.remove(`${BACKUP_DIR}/whatever.json`), /Symlink non ammesso/);
+      assert.deepEqual(await readdir(outside), []);
+    });
+  });
+});
+
+test('node adapter refuses lexical traversal', async () => {
+  await withTempDir(async (dir) => {
+    const fs = nodeFileSystem(dir);
+    await assert.rejects(fs.read('../secret.json'), /fuori dalla cartella/);
+  });
+});
+
+test('node adapter refuses a dangling symlink whose target is outside the root', async () => {
+  await withTempDir(async (outside) => {
+    await withTempDir(async (dir) => {
+      await mkdir(join(dir, BACKUP_DIR));
+      await symlink(join(outside, 'created-by-attack.json'), join(dir, BACKUP_DIR, 'evil.json'));
+      const fs = nodeFileSystem(dir);
+      await assert.rejects(fs.write(`${BACKUP_DIR}/evil.json`, enc('x')), /Symlink non ammesso/);
+      assert.deepEqual(await readdir(outside), []);
+    });
+  });
+});
+
+test('dedup is not fooled by a backup basename symlinked to the sync file itself', async () => {
+  await withTempDir(async (dir) => {
+    await writeFile(join(dir, SYNC_FILENAME), 'stato');
+    await mkdir(join(dir, BACKUP_DIR));
+    const alias = backupFileName(new Date('2026-09-01T00:00:00.000Z'), 'app');
+    await symlink(join(dir, SYNC_FILENAME), join(dir, BACKUP_DIR, alias));
+    const { createHash } = await import('node:crypto');
+    const hash = createHash('sha256').update('stato').digest('hex');
+    await writeFile(join(dir, LATEST_FILE), JSON.stringify({ hash, file: alias }));
+    const fs = nodeFileSystem(dir);
+    const r = await backupBeforeWrite(fs, { kind: 'app', now: new Date('2026-09-02T00:00:00.000Z') });
+    assert.equal(r.status, 'created');
+    assert.equal(await readFile(join(dir, r.file!), 'utf8'), 'stato');
+  });
+});
+
+test('node adapter rejects a `..` segment even after a nonexistent component', async () => {
+  await withTempDir(async (outside) => {
+    await withTempDir(async (dir) => {
+      await symlink(outside, join(dir, BACKUP_DIR));
+      const fs = nodeFileSystem(dir);
+      await assert.rejects(fs.write(`missing/../${BACKUP_DIR}/escaped.json`, enc('x')), /fuori dalla cartella|Symlink non ammesso/);
+      await assert.rejects(fs.read('missing/../pivella-sync.json'), /fuori dalla cartella/);
+      assert.deepEqual(await readdir(outside), []);
+    });
   });
 });

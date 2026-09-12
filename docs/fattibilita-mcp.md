@@ -812,7 +812,7 @@ Nessun parametro dipende dal trasporto; l'identità del chiamante entra come `Pr
 - `updatedAt`: istante della scrittura del file.
 - `writer.id`: stringa stabile per installazione. L'app la genera una volta e la tiene nello store `meta` di IndexedDB; il server MCP nel file `~/.pivella-mcp/writer-id`. `kind` è `app`, `mcp` o `restore`.
 - `restoredAt`, `restoredFrom`: valorizzati solo da un ripristino (13.3), altrimenti `null`.
-- Gli array degli store contengono i tipi attuali **[V]** con due campi in più su ogni record: `updatedAt` (obbligatorio in v2) e `updatedBy` (writer id).
+- Gli array degli store contengono i tipi attuali **[V]** con due campi in più su ogni record: `updatedAt` (obbligatorio in v2) e `updatedBy` (writer id). In v2 tutti e sei gli store sono obbligatori: uno assente o `null` rende il file non valido, mai "vuoto". Nel server Node nessun componente di percorso sotto la cartella di sync può essere un symlink.
 - File v1 (senza `schemaVersion`) **[V]** formato attuale: viene letto una sola volta, ogni record riceve `updatedAt` pari all'istante della lettura e `updatedBy` del lettore, e il file viene riscritto in v2 dopo un backup con kind `v1`.
 
 ### Tombstone
@@ -823,7 +823,7 @@ Nessun parametro dipende dal trasporto; l'identità del chiamante entra come `Pr
 
 - Ogni `delete` su uno store dell'app produce un tombstone nel database IndexedDB separato `PivellaSyncMeta`, store `tombstones` con `keyPath` composto `[store, id]`, e quindi nel file. `ForfettarioDB` resta a versione 3 (13.8).
 - La cancellazione di un utente **[V]** `deleteUser` produce un tombstone per ogni record dell'utente più uno per lo `users`.
-- Potatura: alla scrittura, i tombstone con `deletedAt` più vecchio di 90 giorni vengono rimossi.
+- Potatura: **fuori dal merge**, in `pruneSnapshot`, chiamata da chi scrive il file. I tombstone con `deletedAt` più vecchio di 90 giorni e le proposte terminali più vecchie di 30 vengono rimossi solo lì, così `merge(merge(a, b), a)` è uguale a `merge(a, b)`. Limite noto e accettato: uno snapshot rimasto fermo più a lungo della retention e poi fuso può far riapparire un record cancellato; con la sync attiva, che fonde a ogni avvio e a ogni focus, serve una copia mai usata per mesi.
 
 ### Proposal
 
@@ -853,7 +853,7 @@ Nessun parametro dipende dal trasporto; l'identità del chiamante entra come `Pr
 
 `merge(A, B)` con A lo snapshot locale (IndexedDB per l'app, oppure il file appena letto per il server MCP) e B l'altro. È commutativa e idempotente per costruzione. Non esiste merge a livello di campo: l'unità è il record intero.
 
-Ordine di confronto tra due versioni dello stesso record: `updatedAt` maggiore vince; a parità di `updatedAt`, vince quella con `updatedBy` minore in ordine lessicografico; a parità anche di quello, la serializzazione JSON canonica (chiavi ordinate) minore. Deterministico su entrambi i lati.
+Ordine di confronto tra due versioni dello stesso record: `updatedAt` maggiore vince; a parità di `updatedAt`, vince quella con `updatedBy` minore in ordine lessicografico; a parità anche di quello, la serializzazione JSON canonica (chiavi ordinate) minore. Deterministico su entrambi i lati. **Tutti i confronti temporali sono per istante** (`Date.parse`), mai per stringa: `10:00:00Z` e `10:00:00.000Z` sono uguali, e un timestamp assente o non interpretabile vale epoca zero. Un file v2 con uno store che non è un array, un record senza `id` stringa o con `id` duplicato viene rifiutato con `SOURCE_UNAVAILABLE` e non fuso.
 
 ### Merge: casi
 
@@ -863,9 +863,9 @@ Ordine di confronto tra due versioni dello stesso record: `updatedAt` maggiore v
 | Record solo in A, tombstone in B con `deletedAt > updatedAt` | cancellato, tombstone conservato |
 | Record solo in A, tombstone in B con `deletedAt <= updatedAt` | resta, il tombstone viene scartato (record ricreato o aggiornato dopo la cancellazione) |
 | Stesso id in A e B, contenuto identico | resta |
-| Stesso id, `updatedAt` diversi | vince il più recente, intero. La versione perdente è annotata nel log conflitti del lato che la perde (`meta.conflicts`, ultimi 200), con store, id, i due `updatedAt` e i due writer. La UI mostra il conteggio in Impostazioni e un toast "1 modifica sovrascritta dalla sincronizzazione". Il contenuto perdente è comunque nel backup (13.3) |
+| Stesso id, `updatedAt` diversi | vince il più recente, intero. La versione perdente viene **archiviata per intero** in `PivellaSyncMeta.archive` (senza limite) e annotata nel log conflitti limitato (`meta.conflicts`, ultimi 200, senza payload), con store, id, i due `updatedAt` e i due writer. La UI mostra il conteggio in Impostazioni e un toast "1 modifica sovrascritta dalla sincronizzazione". Se a perdere è la versione del file, è anche nel backup (13.3); se a perdere è la versione locale, l'archivio è la sola copia |
 | Stesso id, stesso `updatedAt`, contenuto diverso | tiebreak deterministico come sopra, annotato nel log conflitti |
-| Tombstone in entrambi | resta quello con `deletedAt` maggiore |
+| Tombstone in entrambi | resta quello con `deletedAt` maggiore; a parità, `deletedBy` minore, poi JSON canonico minore (deterministico, commutativo) |
 | `config` | stessa regola dei record: chiave `config_<userId>` **[V]**, record intero. Un cambio di tema di colore e un cambio di IBAN fatti in parallelo sui due lati si perdono a vicenda; è accettato e coperto dal backup |
 | `users` | stessa regola; il profilo cancellato su un lato e modificato sull'altro segue la regola tombstone contro `updatedAt` |
 | Record con `userId` senza profilo corrispondente e senza tombstone | resta, contato in `meta.orphans`, non mostrato in UI; nessuna cancellazione automatica |
@@ -880,7 +880,7 @@ Clock: entrambi i writer usano l'orologio della stessa macchina, quindi lo skew 
 ### Protocollo di scrittura dell'app
 
 1. Leggi il file e memorizza `lastModified`.
-2. `merged = merge(IndexedDB, file)`; applica a IndexedDB solo le differenze; aggiorna lo stato React per differenze.
+2. `merged = merge(IndexedDB, file)`. **Prima** di toccare IndexedDB, archivia in `PivellaSyncMeta.archive` ogni **record perdente per intero** (`Conflict.droppedRecord`, `appendConflicts` lo fa in una sola transazione, senza limite di numero) e aggiorna il log limitato: è l'unica copia durevole di una modifica locale che perde contro il file, perché i backup contengono solo il file. Solo dopo applica a IndexedDB le differenze e aggiorna lo stato React.
 3. Se `merged` è uguale al contenuto del file (confronto sul JSON canonico senza `updatedAt` e `writer` della busta), fine.
 4. Acquisisci il lock (13.3); rileggi `lastModified`; se cambiato, torna al punto 1.
 5. Backup (13.3). Se fallisce, rilascia il lock e fermati: IndexedDB è già aggiornato, il file resterà indietro e il tentativo si ripete al prossimo cambiamento o al prossimo giro di polling.
@@ -913,9 +913,9 @@ Entrambi i writer, ciascuno prima della propria scrittura, con lo stesso algorit
 
 1. Leggi i byte correnti del file di sync e calcolane SHA-256 (`crypto.subtle` nell'app, `crypto` in Node).
 2. Se il file non esiste (prima sincronizzazione), il backup è considerato riuscito senza creare nulla; è l'unico caso.
-3. Se esiste un file `pivella-backups/latest.json` con `{ "hash", "file" }`, l'hash coincide con quello corrente, **e il backup citato in `file` esiste davvero nella cartella con quello stesso hash**, allora lo stato è già preservato e il backup è considerato riuscito senza creare un nuovo file. Se una sola di queste condizioni manca (file `latest.json` assente o illeggibile, hash diverso, backup cancellato a mano o corrotto) si crea un backup nuovo. `latest.json` è solo un indice per la dedup e non è mai fidato da solo. Questo evita duplicati quando l'app riscrive dopo un merge senza cambiamenti, senza violare il principio.
-4. Altrimenti scrivi i byte in un file temporaneo `pivella-sync.<timestamp>.<kind>.json.part`, chiudi, rileggi il file scritto, confronta lunghezza e SHA-256 con l'originale.
-5. Se coincidono, rinomina il `.part` nel nome definitivo. Nel server: `fs.rename`, atomico sullo stesso file system. Nell'app: `FileSystemHandle.move(nuovoNome)`, disponibile in Chromium anche per i file locali (verificato da Davide sulla documentazione di developer.chrome.com), con feature detection su `FileSystemFileHandle.prototype.move`. Se manca, fallback esplicito: scrivi una seconda volta i byte direttamente sul nome definitivo, chiudi, rileggi e verifica lunghezza e hash; solo dopo cancella il `.part`. In entrambi i percorsi aggiorna `latest.json` solo a verifica completata. Lo stesso schema, `.part` più `move()` più fallback, vale per la scrittura del file di sync stesso al punto 6, così che un crash a metà scrittura non lasci mai un `pivella-sync.json` troncato.
+3. Se esiste un file `pivella-backups/latest.json` con `{ "hash", "file" }`, `file` è un **nome di backup valido** (niente separatori di percorso, formato riconosciuto), l'hash coincide con quello corrente, **e il backup citato esiste davvero nella cartella con quello stesso hash**, allora lo stato è già preservato e il backup è considerato riuscito senza creare un nuovo file. Se una sola di queste condizioni manca (indice assente, illeggibile, non oggetto, `null`, con percorso, hash diverso, backup cancellato a mano, corrotto o illeggibile) si crea un backup nuovo: qualunque errore nella lettura dell'indice o del backup citato vale come "non corrisponde", mai come fallimento. Per i kind protetti (`v1`, `pre-restore`) la dedup non si applica mai: creano sempre la propria copia, perché un backup ordinario identico può essere rimosso dalla rotazione.
+4. Altrimenti scegli un nome non ancora usato: `pivella-sync.<timestamp>.<kind>.json`, e se esiste già `pivella-sync.<timestamp>-2.<kind>.json`, `-3`, e così via. Un backup esistente non viene mai sostituito, nemmeno con orologio che torna indietro o due scritture nello stesso millisecondo. Scrivi i byte in `<nome>.part`, chiudi, rileggi il file scritto, confronta lunghezza e SHA-256 con l'originale.
+5. Se coincidono, rinomina il `.part` nel nome definitivo. Nel server: `fs.rename`, atomico sullo stesso file system. Nell'app: `FileSystemHandle.move(nuovoNome)`, che Chromium espone anche per i file locali (verificato da Davide sulla documentazione di developer.chrome.com), con feature detection su `FileSystemFileHandle.prototype.move`. La presenza sul prototipo non garantisce il supporto sulla cartella scelta: se `move` rifiuta con `NotSupportedError` si passa al fallback; ogni altro errore resta un errore. Se `move` manca o non è supportato, fallback esplicito: scrivi una seconda volta i byte direttamente sul nome definitivo, chiudi, rileggi e verifica lunghezza e hash; solo dopo cancella il `.part`. In entrambi i percorsi aggiorna `latest.json` solo a verifica completata. Lo stesso schema, `.part` più `move()` più fallback, vale per la scrittura del file di sync stesso al punto 6, così che un crash a metà scrittura non lasci mai un `pivella-sync.json` troncato.
 6. Solo ora la scrittura del file di sync può partire.
 
 ### Se il backup fallisce
@@ -1073,7 +1073,8 @@ Decisione: `ForfettarioDB` resta a versione 3 e `onupgradeneeded` non si tocca. 
 | Store | Chiave | Contenuto |
 |---|---|---|
 | `tombstones` | `[store, id]` | `Tombstone` come nel file v2 |
-| `meta` | `key` | `writerId`, `lastRestoreAck`, `conflicts` (ultimi 200), `orphans` |
+| `meta` | `key` | `writerId`, `lastRestoreAck`, `conflicts` (ultimi 200, senza payload), `orphans` |
+| `archive` | `seq` autoincrement | record locali perdenti per intero: `store`, `id`, `archivedAt`, `reason`, `record`. Nessun limite automatico |
 
 Un'app precedente ignora `PivellaSyncMeta` e continua a funzionare su `ForfettarioDB` invariato.
 
@@ -1082,9 +1083,9 @@ Un'app precedente ignora `PivellaSyncMeta` e continua a funzionare su `Forfettar
 IndexedDB non permette una transazione che copra due database. Quindi "cancella il record in `ForfettarioDB`" e "scrivi il tombstone in `PivellaSyncMeta`" sono due transazioni. Se l'app muore nel mezzo (chiusura della tab, crash, eviction, spegnimento):
 
 - **Ordine cancella poi tombstone**: il record non c'è più, il tombstone no. Al merge successivo il record, ancora presente nel file di sync, viene reinserito in IndexedDB, perché è "solo nel file senza tombstone". Il record risorge. Non è perdita di dati, è una cancellazione persa che l'utente deve rifare.
-- **Ordine tombstone poi cancella** (quello che si adotta): il tombstone c'è, il record ancora sì. Al merge successivo il tombstone ha `deletedAt` maggiore dell'`updatedAt` del record, quindi il record viene cancellato da IndexedDB e dal file. L'esito è quello voluto, solo ritardato al prossimo merge. Se l'app muore prima del tombstone, non è successo nulla e il record resta, come se l'utente non avesse premuto elimina.
+- **Ordine tombstone poi cancella** (quello che si adotta): il tombstone c'è, il record ancora sì. Il `deletedAt` del tombstone è per regola **strettamente maggiore** dell'`updatedAt` del record (`tombstoneTimestamp`: `now`, oppure `updatedAt` più un millisecondo se `now` non è maggiore), quindi al merge successivo il record viene cancellato da IndexedDB e dal file anche se aggiornamento e cancellazione cadono nello stesso millisecondo. L'esito è quello voluto, solo ritardato al prossimo merge. Se l'app muore prima del tombstone, non è successo nulla e il record resta, come se l'utente non avesse premuto elimina.
 
-Con l'ordine tombstone-prima la finestra non produce mai una resurrezione. Resta un solo effetto visibile: tra il crash e il merge successivo il record cancellato può comparire ancora nella lista, per al più un avvio.
+Con l'ordine tombstone-prima e il `deletedAt` strettamente maggiore la finestra non produce mai una resurrezione. Resta un solo effetto visibile: tra il crash e il merge successivo il record cancellato può comparire ancora nella lista, per al più un avvio.
 
 ### Riduzione ulteriore della finestra, proposta e non implementata
 

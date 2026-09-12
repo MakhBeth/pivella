@@ -8,7 +8,9 @@ import type { StoreName } from '../../types';
 import { STORES } from '../constants/fiscali';
 import {
   canonicalJson,
+  compareInstants,
   createEmptySnapshot,
+  instantOf,
   type Proposal,
   type ProposalStatus,
   type SyncRecord,
@@ -36,6 +38,8 @@ export interface Conflict {
   reason: 'newer' | 'tiebreak';
   kept: VersionInfo;
   dropped: VersionInfo;
+  /** Il record perdente per intero: va conservato durevolmente prima di applicare il merge. */
+  droppedRecord: SyncRecord;
 }
 
 export interface StoreChanges {
@@ -58,7 +62,6 @@ export interface MergeResult {
   orphans: Orphan[];
 }
 
-const EPOCH = '';
 const TERMINAL: ReadonlySet<ProposalStatus> = new Set(['applied', 'rejected', 'withdrawn', 'expired']);
 
 export function mergeSnapshots(a: SyncSnapshot, b: SyncSnapshot, options: MergeOptions): MergeResult {
@@ -67,15 +70,12 @@ export function mergeSnapshots(a: SyncSnapshot, b: SyncSnapshot, options: MergeO
   const changes = {} as Record<StoreName, StoreChanges>;
   for (const store of STORES) changes[store] = { upserted: [], deleted: [] };
 
-  const tombstoneRetentionCutoff = shiftDays(options.now, -TOMBSTONE_RETENTION_DAYS);
-  const proposalRetentionCutoff = shiftDays(options.now, -PROPOSAL_RETENTION_DAYS);
-
-  // Tombstone: per (store, id) resta quello con deletedAt maggiore.
+  // Tombstone: per (store, id) resta quello con deletedAt maggiore, con tiebreak deterministico.
   const tombstones = new Map<string, Tombstone>();
   for (const t of [...a.tombstones, ...b.tombstones]) {
     const key = `${t.store}/${t.id}`;
     const current = tombstones.get(key);
-    if (!current || t.deletedAt > current.deletedAt) tombstones.set(key, t);
+    if (!current || pickTombstone(current, t) === t) tombstones.set(key, t);
   }
 
   for (const store of STORES) {
@@ -93,7 +93,7 @@ export function mergeSnapshots(a: SyncSnapshot, b: SyncSnapshot, options: MergeO
         winner = cmp.winner === 'a' ? ra : rb;
         if (cmp.reason) {
           const loser = cmp.winner === 'a' ? rb : ra;
-          conflicts.push({ store, id, reason: cmp.reason, kept: versionOf(winner), dropped: versionOf(loser) });
+          conflicts.push({ store, id, reason: cmp.reason, kept: versionOf(winner), dropped: versionOf(loser), droppedRecord: loser });
         }
       } else {
         winner = (ra ?? rb)!;
@@ -102,7 +102,7 @@ export function mergeSnapshots(a: SyncSnapshot, b: SyncSnapshot, options: MergeO
       const key = `${store}/${id}`;
       const tombstone = tombstones.get(key);
       if (tombstone) {
-        if (tombstone.deletedAt > (winner.updatedAt ?? EPOCH)) {
+        if (compareInstants(tombstone.deletedAt, winner.updatedAt) > 0) {
           if (ra) changes[store].deleted.push(id);
           continue;
         }
@@ -117,16 +117,14 @@ export function mergeSnapshots(a: SyncSnapshot, b: SyncSnapshot, options: MergeO
     (result[store] as SyncRecord[]) = merged;
   }
 
-  result.tombstones = [...tombstones.values()].filter((t) => t.deletedAt >= tombstoneRetentionCutoff);
-  result.proposals = mergeProposals(a.proposals, b.proposals, options.now, proposalRetentionCutoff);
+  result.tombstones = [...tombstones.values()];
+  result.proposals = mergeProposals(a.proposals, b.proposals, options.now);
 
-  if ((a.restoredAt ?? EPOCH) >= (b.restoredAt ?? EPOCH)) {
-    result.restoredAt = a.restoredAt;
-    result.restoredFrom = a.restoredFrom;
-  } else {
-    result.restoredAt = b.restoredAt;
-    result.restoredFrom = b.restoredFrom;
-  }
+  // restoredAt maggiore vince; a parità, restoredFrom minore (commutativo).
+  const byRestore = compareInstants(a.restoredAt, b.restoredAt);
+  const restorePick = byRestore !== 0 ? (byRestore > 0 ? a : b) : compareStrings(a.restoredFrom ?? '', b.restoredFrom ?? '') <= 0 ? a : b;
+  result.restoredAt = restorePick.restoredAt;
+  result.restoredFrom = restorePick.restoredFrom;
 
   const userIds = new Set(result.users.map((u) => u.id));
   const orphans: Orphan[] = [];
@@ -147,6 +145,38 @@ export function mergeSnapshots(a: SyncSnapshot, b: SyncSnapshot, options: MergeO
   return { snapshot: result, changes, hasChanges, conflicts, orphans };
 }
 
+/**
+ * Potatura, separata dal merge: tombstone più vecchi di 90 giorni e proposte
+ * terminali più vecchie di 30. Va chiamata da chi scrive il file, mai dentro
+ * il merge, così `merge(merge(a, b), a)` resta uguale a `merge(a, b)`.
+ *
+ * Limite noto: uno snapshot rimasto fermo più a lungo della retention e poi
+ * fuso può far riapparire un record cancellato. La sync attiva fonde a ogni
+ * avvio e a ogni focus, quindi il caso richiede una copia mai usata per mesi.
+ */
+export function pruneSnapshot(snapshot: SyncSnapshot, now: string): SyncSnapshot {
+  const tombstoneCutoff = instantOf(now) - TOMBSTONE_RETENTION_DAYS * 86_400_000;
+  const proposalCutoff = instantOf(now) - PROPOSAL_RETENTION_DAYS * 86_400_000;
+  return {
+    ...snapshot,
+    tombstones: snapshot.tombstones.filter((t) => instantOf(t.deletedAt) >= tombstoneCutoff),
+    proposals: snapshot.proposals.filter((p) => !(TERMINAL.has(p.status) && instantOf(p.updatedAt) < proposalCutoff)),
+  };
+}
+
+/** Tra due tombstone della stessa chiave: deletedAt maggiore, poi deletedBy minore, poi JSON canonico minore. */
+export function pickTombstone(x: Tombstone, y: Tombstone): Tombstone {
+  const byTime = compareInstants(x.deletedAt, y.deletedAt);
+  if (byTime !== 0) return byTime > 0 ? x : y;
+  const byWriter = compareStrings(x.deletedBy ?? '', y.deletedBy ?? '');
+  if (byWriter !== 0) return byWriter < 0 ? x : y;
+  return canonicalJson(x) <= canonicalJson(y) ? x : y;
+}
+
+function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function indexById<T extends { id: string }>(records: T[]): Map<string, T> {
   const map = new Map<string, T>();
   for (const r of records) map.set(r.id, r);
@@ -165,16 +195,15 @@ function compareVersions(ra: SyncRecord, rb: SyncRecord): { winner: 'a' | 'b'; r
   const ja = canonicalJson(ra);
   const jb = canonicalJson(rb);
   if (ja === jb) return { winner: 'a', reason: null };
-  const ta = ra.updatedAt ?? EPOCH;
-  const tb = rb.updatedAt ?? EPOCH;
-  if (ta !== tb) return { winner: ta > tb ? 'a' : 'b', reason: 'newer' };
+  const byTime = compareInstants(ra.updatedAt, rb.updatedAt);
+  if (byTime !== 0) return { winner: byTime > 0 ? 'a' : 'b', reason: 'newer' };
   const wa = ra.updatedBy ?? '';
   const wb = rb.updatedBy ?? '';
   if (wa !== wb) return { winner: wa < wb ? 'a' : 'b', reason: 'tiebreak' };
   return { winner: ja < jb ? 'a' : 'b', reason: 'tiebreak' };
 }
 
-function mergeProposals(pa: Proposal[], pb: Proposal[], now: string, retentionCutoff: string): Proposal[] {
+function mergeProposals(pa: Proposal[], pb: Proposal[], now: string): Proposal[] {
   const byId = new Map<string, Proposal>();
   for (const p of [...pa, ...pb]) {
     const current = byId.get(p.id);
@@ -182,10 +211,9 @@ function mergeProposals(pa: Proposal[], pb: Proposal[], now: string, retentionCu
   }
   const out: Proposal[] = [];
   for (let p of byId.values()) {
-    if (p.status === 'pending' && p.expiresAt <= now) {
+    if (p.status === 'pending' && compareInstants(p.expiresAt, now) <= 0) {
       p = { ...p, status: 'expired', updatedAt: now };
     }
-    if (TERMINAL.has(p.status) && p.updatedAt < retentionCutoff) continue;
     out.push(p);
   }
   return out;
@@ -199,12 +227,9 @@ function pickProposal(x: Proposal, y: Proposal): Proposal {
     if (x.status === 'applied') return x;
     if (y.status === 'applied') return y;
   }
-  if (x.updatedAt !== y.updatedAt) return x.updatedAt > y.updatedAt ? x : y;
+  const byTime = compareInstants(x.updatedAt, y.updatedAt);
+  if (byTime !== 0) return byTime > 0 ? x : y;
   return canonicalJson(x) <= canonicalJson(y) ? x : y;
-}
-
-function shiftDays(iso: string, days: number): string {
-  return new Date(new Date(iso).getTime() + days * 86_400_000).toISOString();
 }
 
 function sortById<T extends { id: string }>(items: T[]): T[] {

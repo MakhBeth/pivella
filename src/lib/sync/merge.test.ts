@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createEmptySnapshot, snapshotsEquivalent, type Proposal, type SyncSnapshot, type Writer } from './schema';
-import { mergeSnapshots, type MergeOptions } from './merge';
+import { mergeSnapshots, pruneSnapshot, type MergeOptions } from './merge';
 
 const T0 = '2026-09-01T00:00:00.000Z';
 const T1 = '2026-09-02T00:00:00.000Z';
@@ -108,6 +108,7 @@ test('same id with different updatedAt: the newer wins whole and the loser is lo
     store: 'clienti', id: 'c1', reason: 'newer',
     kept: { updatedAt: T2, updatedBy: 'mcp-1' },
     dropped: { updatedAt: T1, updatedBy: 'app-1' },
+    droppedRecord: { ...cliente('c1', 'Vecchio', T1), piva: '111' },
   });
   assert.deepEqual(r.changes.clienti.upserted, ['c1']);
 });
@@ -174,7 +175,9 @@ test('tombstones older than 90 days are pruned, younger ones kept', () => {
     );
   });
   const r = merged(a, snap());
-  assert.deepEqual(r.snapshot.tombstones.map((t) => t.id), ['w2']);
+  assert.deepEqual(r.snapshot.tombstones.map((t) => t.id).sort(), ['w1', 'w2'], 'merge keeps every tombstone');
+  const pruned = pruneSnapshot(r.snapshot, NOW);
+  assert.deepEqual(pruned.tombstones.map((t) => t.id), ['w2']);
 });
 
 // --- proposte ---------------------------------------------------------------
@@ -234,7 +237,9 @@ test('terminal proposals older than 30 days are removed', () => {
       proposal({ id: 'p_pending_old', status: 'pending', updatedAt: '2026-08-01T00:00:00.000Z', expiresAt: '2026-12-01T00:00:00.000Z' }),
     );
   });
-  const ids = merged(a, snap()).snapshot.proposals.map((p) => p.id).sort();
+  const m = merged(a, snap()).snapshot;
+  assert.equal(m.proposals.length, 3, 'merge keeps every proposal');
+  const ids = pruneSnapshot(m, NOW).proposals.map((p) => p.id).sort();
   assert.deepEqual(ids, ['p_pending_old', 'p_recent']);
 });
 
@@ -260,4 +265,62 @@ test('changes describe the diff relative to A: upserted and deleted per store', 
   assert.deepEqual(r.changes.clienti, { upserted: ['c3'], deleted: ['c2'] });
   assert.deepEqual(r.changes.users, { upserted: [], deleted: [] });
   assert.equal(r.hasChanges, true);
+});
+
+// --- F7: la potatura sta fuori dal merge ------------------------------------
+
+test('re-merging a result that applied an old tombstone does not resurrect the record', () => {
+  const old = '2026-05-01T00:00:00.000Z';
+  const deleted = '2026-06-01T00:00:00.000Z'; // oltre 90 giorni prima di NOW
+  const a = snap((s) => { s.clienti.push(cliente('c1', 'Vecchio', old)); });
+  const b = snap((s) => { s.tombstones.push({ store: 'clienti', id: 'c1', deletedAt: deleted, deletedBy: 'mcp-1' }); });
+  const first = merged(a, b).snapshot;
+  assert.equal(first.clienti.length, 0);
+  const again = merged(first, a).snapshot;
+  assert.equal(again.clienti.length, 0, 'record must stay deleted');
+  assert.equal(snapshotsEquivalent(again, first), true);
+});
+
+// --- F6: timestamp senza millisecondi ----------------------------------------
+
+test('record versions are compared as instants, not as strings', () => {
+  const a = snap((s) => { s.clienti.push(cliente('c1', 'Vecchio', '2026-09-01T10:00:00Z')); });
+  const b = snap((s) => { s.clienti.push(cliente('c1', 'Nuovo', '2026-09-01T10:00:00.500Z')); });
+  assert.equal(merged(a, b).snapshot.clienti[0].nome, 'Nuovo');
+  assert.equal(merged(b, a).snapshot.clienti[0].nome, 'Nuovo');
+});
+
+test('tombstone against record is compared as instants', () => {
+  const a = snap((s) => { s.clienti.push(cliente('c1', 'Aggiornato', '2026-09-01T10:00:00.500Z')); });
+  const b = snap((s) => { s.tombstones.push({ store: 'clienti', id: 'c1', deletedAt: '2026-09-01T10:00:00Z', deletedBy: 'mcp-1' }); });
+  assert.equal(merged(a, b).snapshot.clienti.length, 1, 'older deletion must not win over a newer update');
+});
+
+// --- F8: tiebreak deterministico su tombstone e restoredAt -------------------
+
+test('equal-time tombstones with different deletedBy merge commutatively', () => {
+  const a = snap((s) => { s.tombstones.push({ store: 'fatture', id: 'f1', deletedAt: T1, deletedBy: 'mcp-1' }); });
+  const b = snap((s) => { s.tombstones.push({ store: 'fatture', id: 'f1', deletedAt: T1, deletedBy: 'app-1' }); });
+  const ab = merged(a, b).snapshot;
+  const ba = merged(b, a).snapshot;
+  assert.equal(snapshotsEquivalent(ab, ba), true);
+  assert.equal(ab.tombstones[0].deletedBy, 'app-1');
+});
+
+test('equal restoredAt with different restoredFrom merges commutatively', () => {
+  const a = snap((s) => { s.restoredAt = T1; s.restoredFrom = 'b.json'; });
+  const b = snap((s) => { s.restoredAt = T1; s.restoredFrom = 'a.json'; });
+  assert.equal(merged(a, b).snapshot.restoredFrom, 'a.json');
+  assert.equal(merged(b, a).snapshot.restoredFrom, 'a.json');
+});
+
+// --- F12: il contenuto perdente viaggia nel conflitto ------------------------
+
+test('conflicts carry the full dropped record so it can be stored durably', () => {
+  const a = snap((s) => { s.fatture.push({ id: 'f1', userId: 'u1', clienteId: 'c', clienteNome: 'C', data: '2026-09-01', importo: 100, updatedAt: T1, updatedBy: 'app-1' }); });
+  const b = snap((s) => { s.fatture.push({ id: 'f1', userId: 'u1', clienteId: 'c', clienteNome: 'C', data: '2026-09-01', importo: 999, updatedAt: T2, updatedBy: 'mcp-1' }); });
+  const r = merged(a, b);
+  assert.equal(r.conflicts.length, 1);
+  assert.deepEqual(r.conflicts[0].droppedRecord, a.fatture[0]);
+  assert.equal((r.conflicts[0].droppedRecord as { importo: number }).importo, 100);
 });

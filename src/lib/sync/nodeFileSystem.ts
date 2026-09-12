@@ -2,42 +2,69 @@
  * Adapter Node `fs` per `SyncFileSystem`. Usato dal server MCP e dai test.
  * `move` è `fs.rename`, atomico sullo stesso file system.
  */
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, resolve, sep } from 'node:path';
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve, sep } from 'node:path';
 
 import type { SyncFileSystem } from './fileSystem';
 
 export function nodeFileSystem(rootDir: string): SyncFileSystem {
   const root = resolve(rootDir);
 
-  const full = (path: string): string => {
-    const target = resolve(root, ...path.split('/'));
-    if (target !== root && !target.startsWith(root + sep)) {
-      throw new Error(`Percorso fuori dalla cartella di sync: ${path}`);
+  const outside = (path: string) => new Error(`Percorso fuori dalla cartella di sync: ${path}`);
+  let realRootPromise: Promise<string> | null = null;
+  const realRoot = () => (realRootPromise ??= realpath(root));
+
+  /**
+   * Percorso assoluto confinato nella root. Nessun componente sotto la root
+   * può essere un symlink, nemmeno pendente: un link potrebbe far leggere,
+   * scrivere o cancellare fuori dalla cartella, o far passare il file di sync
+   * per un proprio backup.
+   */
+  const full = async (path: string): Promise<string> => {
+    const lexical = resolve(root, ...path.split('/'));
+    if (lexical !== root && !lexical.startsWith(root + sep)) throw outside(path);
+
+    // Nessun `..` in nessuna posizione: la validazione dei componenti sotto
+    // deve poter fermarsi al primo inesistente senza che un `..` successivo
+    // riporti il percorso su un symlink mai controllato.
+    const components = path.split('/').filter((c) => c.length > 0 && c !== '.');
+    if (components.some((c) => c === '..')) throw outside(path);
+
+    const base = await realRoot();
+    let current = base;
+    for (const component of components) {
+      current = join(current, component);
+      try {
+        const info = await lstat(current);
+        if (info.isSymbolicLink()) throw new Error(`Symlink non ammesso nella cartella di sync: ${path}`);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') break;
+        throw err;
+      }
     }
-    return target;
+    return join(base, ...components);
   };
 
   return {
     async read(path) {
       try {
-        return new Uint8Array(await readFile(full(path)));
+        return new Uint8Array(await readFile(await full(path)));
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
         throw err;
       }
     },
     async write(path, bytes) {
-      const target = full(path);
+      const target = await full(path);
       await mkdir(dirname(target), { recursive: true });
       await writeFile(target, bytes);
     },
     async remove(path) {
-      await rm(full(path), { force: true });
+      await rm(await full(path), { force: true });
     },
     async list(dir) {
       try {
-        const entries = await readdir(full(dir), { withFileTypes: true });
+        const entries = await readdir(await full(dir), { withFileTypes: true });
         return entries.filter((e) => e.isFile()).map((e) => e.name);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
@@ -45,7 +72,7 @@ export function nodeFileSystem(rootDir: string): SyncFileSystem {
       }
     },
     async move(from, to) {
-      await rename(full(from), full(to));
+      await rename(await full(from), await full(to));
     },
   };
 }

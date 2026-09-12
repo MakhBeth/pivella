@@ -5,7 +5,10 @@ import {
   SYNC_SCHEMA_VERSION,
   SyncSchemaError,
   canonicalJson,
+  compareInstants,
   createEmptySnapshot,
+  instantOf,
+  tombstoneTimestamp,
   parseSyncFile,
   serializeSnapshot,
   snapshotsEquivalent,
@@ -110,4 +113,80 @@ test('serializeSnapshot produces pretty JSON that parses back', () => {
   const text = serializeSnapshot(snap);
   assert.ok(text.includes('\n  "schemaVersion": 2'));
   assert.deepEqual(JSON.parse(text), snap);
+});
+
+// --- F11: struttura v2 validata ---------------------------------------------
+
+test('parseSyncFile rejects a v2 file whose store is not an array', () => {
+  const text = JSON.stringify({ ...createEmptySnapshot({ now: NOW, writer: WRITER }), fatture: { id: 'x' } });
+  assert.throws(
+    () => parseSyncFile(text, { now: NOW, writer: WRITER }),
+    (err: unknown) => err instanceof SyncSchemaError && err.details?.store === 'fatture'
+  );
+});
+
+test('parseSyncFile rejects a record without a string id', () => {
+  const text = JSON.stringify({ ...createEmptySnapshot({ now: NOW, writer: WRITER }), clienti: [{ nome: 'senza id' }] });
+  assert.throws(() => parseSyncFile(text, { now: NOW, writer: WRITER }), SyncSchemaError);
+});
+
+test('parseSyncFile rejects duplicate ids inside a store', () => {
+  const snap = createEmptySnapshot({ now: NOW, writer: WRITER });
+  snap.clienti.push({ id: 'dup', userId: 'u', nome: 'A', updatedAt: T('01') }, { id: 'dup', userId: 'u', nome: 'B', updatedAt: T('02') });
+  assert.throws(
+    () => parseSyncFile(serializeSnapshot(snap), { now: NOW, writer: WRITER }),
+    (err: unknown) => err instanceof SyncSchemaError && err.details?.store === 'clienti' && err.details?.id === 'dup'
+  );
+});
+
+test('upgradeV1 rejects duplicate ids too', () => {
+  assert.throws(() => upgradeV1({ fatture: [{ id: 'a' }, { id: 'a' }] }, { now: NOW, writer: WRITER }), SyncSchemaError);
+});
+
+// --- F6: confronto per istante, non per stringa -----------------------------
+
+function T(day: string): string {
+  return `2026-09-${day}T00:00:00.000Z`;
+}
+
+test('instantOf parses ISO strings with and without milliseconds and with offsets', () => {
+  assert.equal(instantOf('2026-09-01T10:00:00Z'), Date.parse('2026-09-01T10:00:00.000Z'));
+  assert.equal(instantOf('2026-09-01T12:00:00+02:00'), Date.parse('2026-09-01T10:00:00.000Z'));
+});
+
+test('instantOf treats missing or invalid timestamps as the epoch', () => {
+  assert.equal(instantOf(undefined), 0);
+  assert.equal(instantOf('not a date'), 0);
+});
+
+test('compareInstants orders 10:00:00Z before 10:00:00.500Z', () => {
+  assert.ok(compareInstants('2026-09-01T10:00:00Z', '2026-09-01T10:00:00.500Z') < 0);
+  assert.ok(compareInstants('2026-09-01T10:00:00.500Z', '2026-09-01T10:00:00Z') > 0);
+  assert.equal(compareInstants('2026-09-01T10:00:00Z', '2026-09-01T10:00:00.000Z'), 0);
+});
+
+// --- F13: deletedAt strettamente maggiore dell'updatedAt del record ---------
+
+test('tombstoneTimestamp returns now when now is later than the record', () => {
+  assert.equal(tombstoneTimestamp('2026-09-02T00:00:00.000Z', { updatedAt: '2026-09-01T00:00:00.000Z' }), '2026-09-02T00:00:00.000Z');
+});
+
+test('tombstoneTimestamp adds one millisecond when the record has the same or a later timestamp', () => {
+  assert.equal(tombstoneTimestamp('2026-09-01T00:00:00.000Z', { updatedAt: '2026-09-01T00:00:00.000Z' }), '2026-09-01T00:00:00.001Z');
+  assert.equal(tombstoneTimestamp('2026-09-01T00:00:00.000Z', { updatedAt: '2026-09-01T00:00:00.250Z' }), '2026-09-01T00:00:00.251Z');
+  assert.equal(tombstoneTimestamp('2026-09-01T00:00:00.000Z', {}), '2026-09-01T00:00:00.000Z');
+});
+
+test('parseSyncFile rejects a v2 file with a null or missing store', () => {
+  const base = createEmptySnapshot({ now: NOW, writer: WRITER });
+  assert.throws(
+    () => parseSyncFile(JSON.stringify({ ...base, fatture: null }), { now: NOW, writer: WRITER }),
+    (err: unknown) => err instanceof SyncSchemaError && err.details?.store === 'fatture'
+  );
+  const { fatture: _omitted, ...missing } = base;
+  void _omitted;
+  assert.throws(
+    () => parseSyncFile(JSON.stringify(missing), { now: NOW, writer: WRITER }),
+    (err: unknown) => err instanceof SyncSchemaError && err.details?.store === 'fatture'
+  );
 });

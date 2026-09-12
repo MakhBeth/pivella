@@ -50,7 +50,8 @@ export function backupFileName(now: Date, kind: BackupKind): string {
   return `pivella-sync.${stamp}.${kind}.json`;
 }
 
-const NAME_RE = /^pivella-sync\.(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.([a-z0-9-]+)\.json$/;
+// Il suffisso `-N` dopo la Z evita di sovrascrivere un backup con stesso istante e kind.
+const NAME_RE = /^pivella-sync\.(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)(?:-\d+)?\.([a-z0-9-]+)\.json$/;
 
 export function parseBackupFileName(name: string): { timestamp: Date; kind: BackupKind } | null {
   const m = NAME_RE.exec(name);
@@ -123,11 +124,13 @@ export async function backupBeforeWrite(fs: SyncFileSystem, { kind, now }: Backu
     if (!current) return { status: 'skipped-missing' };
 
     const hash = await sha256Hex(current);
-    if (await latestBackupMatches(fs, hash)) {
+    // I kind protetti creano sempre la propria copia: la rotazione non li tocca,
+    // mentre un backup ordinario identico potrebbe essere cancellato.
+    if (!PROTECTED_KINDS.has(kind) && (await latestBackupMatches(fs, hash))) {
       return { status: 'skipped-identical', hash };
     }
 
-    const name = backupFileName(now, kind);
+    const name = await unusedBackupName(fs, now, kind);
     const file = `${BACKUP_DIR}/${name}`;
     await atomicWrite(fs, file, current);
     const latest: LatestBackup = { hash, file: name };
@@ -145,18 +148,34 @@ export async function backupBeforeWrite(fs: SyncFileSystem, { kind, now }: Backu
  * deve mai far saltare il backup.
  */
 async function latestBackupMatches(fs: SyncFileSystem, hash: string): Promise<boolean> {
-  const raw = await fs.read(LATEST_FILE);
-  if (!raw) return false;
-  let latest: Partial<LatestBackup>;
   try {
-    latest = JSON.parse(new TextDecoder().decode(raw));
+    const raw = await fs.read(LATEST_FILE);
+    if (!raw) return false;
+    const latest = JSON.parse(new TextDecoder().decode(raw)) as unknown;
+    if (typeof latest !== 'object' || latest === null) return false;
+    const { hash: latestHash, file } = latest as Partial<LatestBackup>;
+    if (latestHash !== hash || typeof file !== 'string') return false;
+    // Solo un nome di backup valido, dentro la cartella dei backup: mai un
+    // percorso, che potrebbe indicare il file di sync stesso.
+    if (file.includes('/') || file.includes('\\') || parseBackupFileName(file) === null) return false;
+    const bytes = await fs.read(`${BACKUP_DIR}/${file}`);
+    if (!bytes) return false;
+    return (await sha256Hex(bytes)) === hash;
   } catch {
+    // L'indice è un'ottimizzazione: se non si legge, si fa un backup nuovo.
     return false;
   }
-  if (latest.hash !== hash || typeof latest.file !== 'string') return false;
-  const bytes = await fs.read(`${BACKUP_DIR}/${latest.file}`);
-  if (!bytes) return false;
-  return (await sha256Hex(bytes)) === hash;
+}
+
+/** Nome non ancora usato: mai sostituire un backup esistente. */
+async function unusedBackupName(fs: SyncFileSystem, now: Date, kind: BackupKind): Promise<string> {
+  const base = backupFileName(now, kind);
+  if ((await fs.read(`${BACKUP_DIR}/${base}`)) === null) return base;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = base.replace(`Z.${kind}.json`, `Z-${n}.${kind}.json`);
+    if ((await fs.read(`${BACKUP_DIR}/${candidate}`)) === null) return candidate;
+  }
+  throw new Error(`Troppi backup con lo stesso istante: ${base}`);
 }
 
 async function removeStaleParts(fs: SyncFileSystem): Promise<void> {

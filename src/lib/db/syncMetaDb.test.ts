@@ -18,7 +18,7 @@ test('opens PivellaSyncMeta version 1 with tombstones and meta stores', async ()
   const db = await openSyncMetaDb(factory);
   assert.equal(db.raw.name, SYNC_META_DB_NAME);
   assert.equal(db.raw.version, SYNC_META_DB_VERSION);
-  assert.deepEqual([...db.raw.objectStoreNames].sort(), ['meta', 'tombstones']);
+  assert.deepEqual([...db.raw.objectStoreNames].sort(), ['archive', 'meta', 'tombstones']);
   db.close();
 });
 
@@ -93,6 +93,7 @@ test('appendConflicts keeps the most recent 200 entries', async () => {
   const conflict = (i: number): Conflict => ({
     store: 'clienti', id: `c${i}`, reason: 'newer',
     kept: { updatedAt: 'b', updatedBy: 'x' }, dropped: { updatedAt: 'a', updatedBy: 'y' },
+    droppedRecord: { id: `c${i}`, userId: 'u', nome: 'perdente' },
   });
   await db.appendConflicts(Array.from({ length: 150 }, (_, i) => conflict(i)));
   await db.appendConflicts(Array.from({ length: 100 }, (_, i) => conflict(1000 + i)));
@@ -118,4 +119,74 @@ test('data survives close and reopen', async () => {
   const again = await openSyncMetaDb(factory);
   assert.equal((await again.getTombstones()).length, 1);
   again.close();
+});
+
+// --- F10: writer id atomico ---------------------------------------------------
+
+test('concurrent getWriterId calls on a fresh database all return the same persisted id', async () => {
+  const factory = freshFactory();
+  const db = await openSyncMetaDb(factory);
+  const ids = await Promise.all([db.getWriterId(), db.getWriterId(), db.getWriterId()]);
+  assert.equal(new Set(ids).size, 1);
+  assert.equal(await db.getMeta('writerId'), ids[0]);
+  db.close();
+});
+
+test('concurrent getWriterId calls from two connections agree', async () => {
+  const factory = freshFactory();
+  const [a, b] = await Promise.all([openSyncMetaDb(factory), openSyncMetaDb(factory)]);
+  const [ia, ib] = await Promise.all([a.getWriterId(), b.getWriterId()]);
+  assert.equal(ia, ib);
+  a.close(); b.close();
+});
+
+// --- F6, F8: addTombstone confronta istanti e usa il tiebreak ----------------
+
+test('addTombstone compares deletedAt as instants', async () => {
+  const db = await openSyncMetaDb(freshFactory());
+  await db.addTombstone(t('clienti', 'c1', '2026-09-05T00:00:00.500Z'));
+  await db.addTombstone(t('clienti', 'c1', '2026-09-05T00:00:00Z'));
+  assert.equal((await db.getTombstones())[0].deletedAt, '2026-09-05T00:00:00.500Z');
+  db.close();
+});
+
+test('addTombstone on equal deletedAt keeps the smaller deletedBy regardless of order', async () => {
+  for (const order of [['mcp-1', 'app-1'], ['app-1', 'mcp-1']]) {
+    const db = await openSyncMetaDb(freshFactory());
+    for (const by of order) await db.addTombstone({ store: 'clienti', id: 'c1', deletedAt: '2026-09-05T00:00:00.000Z', deletedBy: by });
+    assert.equal((await db.getTombstones())[0].deletedBy, 'app-1');
+    db.close();
+  }
+});
+
+// --- F12: ogni record perdente viene archiviato per intero, senza limite -----
+
+test('appendConflicts archives every dropped record even beyond the bounded log', async () => {
+  const db = await openSyncMetaDb(freshFactory());
+  const conflict = (i: number): Conflict => ({
+    store: 'fatture', id: `f${i}`, reason: 'newer',
+    kept: { updatedAt: 'b', updatedBy: 'x' }, dropped: { updatedAt: 'a', updatedBy: 'y' },
+    droppedRecord: { id: `f${i}`, userId: 'u', clienteId: 'c', clienteNome: 'C', data: '2026-09-01', importo: i },
+  });
+  await db.appendConflicts(Array.from({ length: 201 }, (_, i) => conflict(i)));
+  assert.equal((await db.getConflicts()).length, 200, 'display log stays bounded');
+  const archive = await db.getArchive();
+  assert.equal(archive.length, 201, 'every losing payload is archived');
+  assert.equal(archive.some((a) => a.store === 'fatture' && a.id === 'f0' && (a.record as { importo: number }).importo === 0), true);
+  db.close();
+});
+
+test('archive entries carry store, id, archivedAt and the full record', async () => {
+  const db = await openSyncMetaDb(freshFactory());
+  await db.appendConflicts([{
+    store: 'clienti', id: 'c1', reason: 'tiebreak',
+    kept: { updatedAt: 'b', updatedBy: 'x' }, dropped: { updatedAt: 'a', updatedBy: 'y' },
+    droppedRecord: { id: 'c1', userId: 'u', nome: 'Perso' },
+  }], '2026-09-13T00:00:00.000Z');
+  const [entry] = await db.getArchive();
+  assert.equal(entry.store, 'clienti');
+  assert.equal(entry.id, 'c1');
+  assert.equal(entry.archivedAt, '2026-09-13T00:00:00.000Z');
+  assert.deepEqual(entry.record, { id: 'c1', userId: 'u', nome: 'Perso' });
+  db.close();
 });

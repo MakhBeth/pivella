@@ -39,6 +39,26 @@ test('atomicWrite falls back to direct write plus verification when move is miss
   assert.deepEqual(fs.log.filter((l) => l.startsWith('write')), ['write a/b.json.part', 'write a/b.json']);
 });
 
+test('atomicWrite falls back when move rejects with NotSupportedError, and only then', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  fs.move = async () => { throw new DOMException('move non supportato qui', 'NotSupportedError'); };
+  const r = await atomicWrite(fs, 'x.json', text('hello'));
+  assert.equal(r.method, 'fallback');
+  assert.equal(fromBytes(fs.files.get('x.json') ?? null), 'hello');
+  assert.equal(fs.files.has('x.json.part'), false);
+
+  const fs2 = memoryFileSystem({ withMove: true });
+  fs2.move = async () => { throw new DOMException('disco in errore', 'InvalidStateError'); };
+  await assert.rejects(atomicWrite(fs2, 'y.json', text('hello')), /disco in errore/);
+});
+
+test('atomicWrite rejects a read-back with the same length but a different hash', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  const original = fs.read.bind(fs);
+  fs.read = async (p) => (p.endsWith('.part') ? text('hellp') : original(p));
+  await assert.rejects(atomicWrite(fs, 'x.json', text('hello')), /hash/);
+});
+
 test('atomicWrite verifies the bytes read back and fails if they differ', async () => {
   const fs = memoryFileSystem({ withMove: true });
   const original = fs.read.bind(fs);
@@ -55,6 +75,11 @@ test('sha256Hex matches a known vector', async () => {
 
 test('backupFileName encodes timestamp and kind in a file-system safe way', () => {
   assert.equal(backupFileName(NOW, 'mcp'), 'pivella-sync.2026-09-12T14-03-22-114Z.mcp.json');
+});
+
+test('parseBackupFileName accepts a collision suffix and keeps the timestamp', () => {
+  const parsed = parseBackupFileName('pivella-sync.2026-09-12T14-03-22-114Z-2.app.json');
+  assert.deepEqual(parsed, { timestamp: NOW, kind: 'app' });
 });
 
 test('parseBackupFileName round-trips and rejects foreign files', () => {
@@ -158,6 +183,67 @@ test('backupBeforeWrite creates a new backup when the latest file is unreadable 
   assert.equal(r.status, 'created');
 });
 
+// --- F1 ---
+test('backupBeforeWrite ignores a latest file that points outside the backup folder', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  await fs.write(SYNC_FILENAME, text('stato'));
+  const hash = await sha256Hex(text('stato'));
+  await fs.write(LATEST_FILE, text(JSON.stringify({ hash, file: '../pivella-sync.json' })));
+  const r = await backupBeforeWrite(fs, { kind: 'app', now: NOW });
+  assert.equal(r.status, 'created');
+  assert.equal(fromBytes(fs.files.get(r.file!) ?? null), 'stato');
+});
+
+// --- F2 ---
+test('backupBeforeWrite never overwrites an existing backup with the same timestamp and kind', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  await fs.write(SYNC_FILENAME, text('v0'));
+  await writeSyncFile(fs, text('v1'), { kind: 'app', now: NOW });
+  await writeSyncFile(fs, text('v2'), { kind: 'app', now: NOW });
+  const backups = (await fs.list(BACKUP_DIR)).filter((n) => n.startsWith('pivella-sync.')).sort();
+  assert.equal(backups.length, 2);
+  const contents = backups.map((n) => fromBytes(fs.files.get(`${BACKUP_DIR}/${n}`) ?? null)).sort();
+  assert.deepEqual(contents, ['v0', 'v1']);
+  for (const n of backups) assert.notEqual(parseBackupFileName(n), null);
+});
+
+// --- F3 ---
+test('backupBeforeWrite always creates a protected backup even if an identical ordinary one exists', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  await fs.write(SYNC_FILENAME, text('same'));
+  await backupBeforeWrite(fs, { kind: 'app', now: NOW });
+  const r = await backupBeforeWrite(fs, { kind: 'pre-restore', now: new Date(NOW.getTime() + 1000) });
+  assert.equal(r.status, 'created');
+  assert.ok(r.file!.endsWith('.pre-restore.json'));
+  const again = await backupBeforeWrite(fs, { kind: 'v1', now: new Date(NOW.getTime() + 2000) });
+  assert.equal(again.status, 'created');
+});
+
+// --- F4 ---
+test('backupBeforeWrite creates a new backup when latest.json is the JSON literal null', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  await fs.write(SYNC_FILENAME, text('same'));
+  await fs.write(LATEST_FILE, text('null'));
+  assert.equal((await backupBeforeWrite(fs, { kind: 'app', now: NOW })).status, 'created');
+});
+
+test('backupBeforeWrite creates a new backup when latest.json cannot be read', async () => {
+  const fs = memoryFileSystem({ withMove: true, failRead: (p) => p === LATEST_FILE });
+  await fs.write(SYNC_FILENAME, text('same'));
+  await fs.write(LATEST_FILE, text('{}'));
+  assert.equal((await backupBeforeWrite(fs, { kind: 'app', now: NOW })).status, 'created');
+});
+
+test('backupBeforeWrite creates a new backup when the referenced backup cannot be read', async () => {
+  const fs = memoryFileSystem({ withMove: true, failRead: (p) => p.startsWith(BACKUP_DIR) && p.endsWith('.app.json') });
+  await fs.write(SYNC_FILENAME, text('same'));
+  const first = await backupBeforeWrite(fs, { kind: 'mcp', now: NOW });
+  assert.equal(first.status, 'created');
+  fs.files.set(LATEST_FILE, text(JSON.stringify({ hash: first.hash, file: backupFileName(NOW, 'app') })));
+  const second = await backupBeforeWrite(fs, { kind: 'mcp', now: new Date(NOW.getTime() + 1000) });
+  assert.equal(second.status, 'created');
+});
+
 test('backupBeforeWrite removes stale .part files from a previous failed attempt', async () => {
   const fs = memoryFileSystem({ withMove: true });
   await fs.write(SYNC_FILENAME, text('x'));
@@ -178,17 +264,47 @@ test('backupBeforeWrite throws BackupError with the reason when the copy fails',
 
 // --- scrittura del file di sync --------------------------------------------
 
-test('writeSyncFile backs up, then writes atomically, then rotates', async () => {
+test('writeSyncFile: backup is written, verified and published before the sync .part is even created, and rotation runs after publication', async () => {
   const fs = memoryFileSystem({ withMove: true });
   await fs.write(SYNC_FILENAME, text('old'));
+  for (const n of names(33, new Date(NOW.getTime() - 86_400_000), 96)) await fs.write(`${BACKUP_DIR}/${n}`, text('b'));
   const r = await writeSyncFile(fs, text('new'), { kind: 'app', now: NOW });
   assert.equal(r.backup.status, 'created');
   assert.equal(fromBytes(fs.files.get(SYNC_FILENAME) ?? null), 'new');
   assert.equal(fromBytes(fs.files.get(r.backup.file!) ?? null), 'old');
-  const order = fs.log.filter((l) => l.startsWith('write ') || l.startsWith('move '));
-  const backupIdx = order.findIndex((l) => l.includes(BACKUP_DIR));
-  const syncIdx = order.findIndex((l) => l === `move ${SYNC_FILENAME}.part ${SYNC_FILENAME}`);
-  assert.ok(backupIdx >= 0 && syncIdx > backupIdx, `backup must precede the sync write: ${order.join(' | ')}`);
+
+  const log = fs.log;
+  const idx = (entry: string) => { const i = log.indexOf(entry); assert.ok(i >= 0, `missing log entry: ${entry}`); return i; };
+  const backupMove = idx(`move ${r.backup.file}.part ${r.backup.file}`);
+  const backupVerifyRead = log.findIndex((l, i) => i < backupMove && l === `read ${r.backup.file}.part`);
+  const latestWrite = idx(`write ${LATEST_FILE}`);
+  const syncPartWrite = idx(`write ${SYNC_FILENAME}.part`);
+  const syncMove = idx(`move ${SYNC_FILENAME}.part ${SYNC_FILENAME}`);
+  const firstRotationRemove = log.findIndex((l, i) => i > syncMove && l.startsWith(`remove ${BACKUP_DIR}/`));
+
+  assert.ok(backupVerifyRead >= 0 && backupVerifyRead < backupMove, 'backup .part is re-read before publication');
+  assert.ok(backupMove < latestWrite, 'index written after backup publication');
+  assert.ok(latestWrite < syncPartWrite, 'sync .part is created only after the backup is fully published');
+  assert.ok(syncPartWrite < syncMove, 'sync published after its .part');
+  assert.ok(firstRotationRemove > syncMove, 'rotation runs only after the sync file is published');
+  assert.ok(r.rotation.deleted.length > 0);
+});
+
+test('writeSyncFile does not touch the sync file when backup publication (move) fails', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  await fs.write(SYNC_FILENAME, text('old'));
+  fs.move = async (from) => { throw new Error(`EIO move ${from}`); };
+  await assert.rejects(writeSyncFile(fs, text('new'), { kind: 'app', now: NOW }), BackupError);
+  assert.equal(fromBytes(fs.files.get(SYNC_FILENAME) ?? null), 'old');
+  assert.equal(fs.log.some((l) => l.includes(`${SYNC_FILENAME}.part`)), false);
+});
+
+test('writeSyncFile does not touch the sync file when the index write fails', async () => {
+  const fs = memoryFileSystem({ withMove: true, failWrite: (p) => p === LATEST_FILE });
+  await fs.write(SYNC_FILENAME, text('old'));
+  await assert.rejects(writeSyncFile(fs, text('new'), { kind: 'app', now: NOW }), BackupError);
+  assert.equal(fromBytes(fs.files.get(SYNC_FILENAME) ?? null), 'old');
+  assert.equal(fs.log.some((l) => l.includes(`${SYNC_FILENAME}.part`)), false);
 });
 
 test('writeSyncFile does not touch the sync file at all when the backup fails', async () => {
