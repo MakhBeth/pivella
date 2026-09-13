@@ -1,12 +1,50 @@
 import type { StoreName, User } from '../../types';
 import { DB_NAME, DB_VERSION, STORES } from '../constants/fiscali';
+import type { MergeResult } from '../sync/merge';
+import { compareInstants, tombstoneTimestamp, type SyncRecord } from '../sync/schema';
+import { openSyncMetaDb, type SyncMetaDb } from './syncMetaDb';
+
+export interface IndexedDBManagerOptions {
+  /** Implementazione IndexedDB; i test passano `fake-indexeddb`, l'app usa quella del browser. */
+  factory?: IDBFactory;
+  /** Orologio per i timbri `updatedAt` e i tombstone, iniettabile nei test. */
+  now?: () => string;
+}
+
+/** Record con i campi di versione della sync v2 (13.2). */
+export interface Stamped {
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+function complete(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Transazione annullata'));
+  });
+}
+
+function request<T>(req: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
 
 export class IndexedDBManager {
   db: IDBDatabase | null;
+  /** Id di questo writer, da `PivellaSyncMeta`. Disponibile dopo `init`. */
+  writerId: string | null = null;
   private initPromise: Promise<IDBDatabase> | null = null;
+  private syncMeta: SyncMetaDb | null = null;
+  private readonly factory: IDBFactory;
+  private readonly now: () => string;
 
-  constructor() {
+  constructor(options: IndexedDBManagerOptions = {}) {
     this.db = null;
+    this.factory = options.factory ?? globalThis.indexedDB;
+    this.now = options.now ?? (() => new Date().toISOString());
   }
 
   async init(): Promise<IDBDatabase> {
@@ -26,10 +64,111 @@ export class IndexedDBManager {
     this.initPromise = this.doInit();
     try {
       const db = await this.initPromise;
+      // PivellaSyncMeta si apre solo dopo ForfettarioDB, fuori dal percorso
+      // con timeout che cancella e ricrea il database (13.8).
+      await this.initSyncMeta();
       return db;
     } finally {
       this.initPromise = null;
     }
+  }
+
+  close(): void {
+    this.db?.close();
+    this.db = null;
+    this.syncMeta?.close();
+    this.syncMeta = null;
+  }
+
+  private async initSyncMeta(): Promise<void> {
+    try {
+      const meta = await this.ensureSyncMeta();
+      this.writerId = await meta.getWriterId();
+    } catch (e) {
+      console.warn('[DB] PivellaSyncMeta non disponibile:', e);
+      return;
+    }
+    // Riconciliazione locale, best effort: un errore qui non blocca l'avvio.
+    try {
+      await this.reconcileTombstones();
+    } catch (e) {
+      console.warn('[DB] Riconciliazione tombstone fallita:', e);
+    }
+  }
+
+  private async ensureSyncMeta(): Promise<SyncMetaDb> {
+    if (!this.syncMeta) {
+      this.syncMeta = await openSyncMetaDb(this.factory);
+      this.syncMeta.raw.onversionchange = () => {
+        this.syncMeta?.close();
+        this.syncMeta = null;
+      };
+    }
+    return this.syncMeta;
+  }
+
+  /**
+   * Cancella da ForfettarioDB ogni record con un tombstone strettamente più
+   * recente del suo `updatedAt` (13.8). Un record senza `updatedAt` vale come
+   * più vecchio di qualsiasi tombstone. Stesso confronto del merge, in locale.
+   */
+  async reconcileTombstones(): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+    const meta = await this.ensureSyncMeta();
+    const tombstones = await meta.getTombstones();
+    if (tombstones.length === 0) return 0;
+    const stores = [...new Set(tombstones.map((t) => t.store))];
+    const tx = this.db.transaction(stores, 'readwrite');
+    let removed = 0;
+    for (const t of tombstones) {
+      const store = tx.objectStore(t.store);
+      const record = (await request(store.get(t.id))) as Stamped | undefined;
+      if (record && compareInstants(t.deletedAt, record.updatedAt) > 0) {
+        store.delete(t.id);
+        removed++;
+      }
+    }
+    await complete(tx);
+    return removed;
+  }
+
+  /** Timbra sempre `updatedAt` e `updatedBy`: da usare negli hook a ogni modifica dell'utente. */
+  stamp<T extends object>(record: T): T & Required<Stamped> {
+    return { ...record, updatedAt: this.now(), updatedBy: this.writerId ?? 'app-unknown' };
+  }
+
+  /**
+   * Applica a ForfettarioDB l'esito di `mergeSnapshots`. Ordine obbligato:
+   * prima l'archivio dei record locali perdenti (la loro unica copia), poi i
+   * tombstone fusi, poi le differenze per store in una sola transazione, così
+   * un crash a metà non lascia nulla di mezzo applicato.
+   */
+  async mergeIntoDb(result: MergeResult): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    const meta = await this.ensureSyncMeta();
+    await meta.appendConflicts(result.conflicts, this.now());
+    await meta.replaceTombstones(result.snapshot.tombstones);
+    if (result.orphans.length > 0) await meta.setMeta('orphans', result.orphans);
+
+    const touched = STORES.filter((s) => result.changes[s].upserted.length > 0 || result.changes[s].deleted.length > 0);
+    if (touched.length === 0) return;
+    const tx = this.db.transaction(touched, 'readwrite');
+    try {
+      for (const storeName of touched) {
+        const store = tx.objectStore(storeName);
+        const byId = new Map((result.snapshot[storeName] as SyncRecord[]).map((r) => [r.id, r]));
+        for (const id of result.changes[storeName].upserted) {
+          const record = byId.get(id);
+          if (!record) throw new Error(`Record ${storeName}/${id} assente dallo snapshot fuso`);
+          store.put(record);
+        }
+        for (const id of result.changes[storeName].deleted) store.delete(id);
+      }
+    } catch (e) {
+      tx.abort();
+      throw e;
+    }
+    await complete(tx);
   }
 
   private async doInit(): Promise<IDBDatabase> {
@@ -57,7 +196,7 @@ export class IndexedDBManager {
 
   private closeExistingConnections(): Promise<void> {
     return new Promise((resolve) => {
-      const request = indexedDB.open(DB_NAME);
+      const request = this.factory.open(DB_NAME);
 
       const timeout = setTimeout(() => {
         console.log('[DB] Close connections timeout');
@@ -83,7 +222,7 @@ export class IndexedDBManager {
   private deleteDatabase(): Promise<void> {
     return new Promise((resolve, reject) => {
       console.log('[DB] Deleting database...');
-      const request = indexedDB.deleteDatabase(DB_NAME);
+      const request = this.factory.deleteDatabase(DB_NAME);
 
       const timeout = setTimeout(() => {
         console.warn('[DB] Delete timeout, continuing anyway...');
@@ -110,7 +249,7 @@ export class IndexedDBManager {
   private openDatabase(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       console.log('[DB] Opening database version', DB_VERSION);
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = this.factory.open(DB_NAME, DB_VERSION);
 
       // Timeout to detect stuck database
       const timeout = setTimeout(() => {
@@ -206,23 +345,40 @@ export class IndexedDBManager {
     });
   }
 
+  /** Rete di sicurezza: timbra `updatedAt` e `updatedBy` solo se mancano. Chi arriva dal merge conserva i suoi. */
   async put(storeName: StoreName, data: any): Promise<IDBValidKey> {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
+    const record = data && typeof data === 'object' && (!data.updatedAt || !data.updatedBy)
+      ? { ...data, updatedAt: data.updatedAt || this.now(), updatedBy: data.updatedBy || this.writerId || 'app-unknown' }
+      : data;
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(storeName, 'readwrite');
       const store = transaction.objectStore(storeName);
-      const request = store.put(data);
+      const request = store.put(record);
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
     });
   }
 
+  /**
+   * Prima il tombstone in PivellaSyncMeta, con `deletedAt` strettamente
+   * maggiore dell'`updatedAt` del record, poi la cancellazione (13.8). Un
+   * crash nel mezzo ritarda la cancellazione al merge successivo, mai la annulla.
+   */
   async delete(storeName: StoreName, key: string): Promise<void> {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
+    const meta = await this.ensureSyncMeta();
+    const existing = ((await this.get(storeName, key)) ?? {}) as Stamped;
+    await meta.addTombstone({
+      store: storeName,
+      id: key,
+      deletedAt: tombstoneTimestamp(this.now(), existing),
+      deletedBy: this.writerId ?? (await meta.getWriterId()),
+    });
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(storeName, 'readwrite');
       const store = transaction.objectStore(storeName);
