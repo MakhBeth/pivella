@@ -57,9 +57,11 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
     saveConfig();
   }, [config, dbManager, dbReady, currentUserId]);
 
+  // Ogni modifica dell'utente timbra updatedAt e updatedBy; il caricamento da
+  // DB no, così una config arrivata dal file non torna "più nuova" a ogni avvio.
   const updateConfig = useCallback((updates: Partial<Config>) => {
-    setConfig(prev => ({ ...prev, ...updates }));
-  }, []);
+    setConfig(prev => dbManager.stamp({ ...prev, ...updates }));
+  }, [dbManager]);
 
   return { config, setConfig, updateConfig };
 }

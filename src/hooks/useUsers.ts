@@ -69,11 +69,11 @@ export function useUsers(dbManager: IndexedDBManager, dbReady: boolean) {
       throw new Error('Database non pronto');
     }
     try {
-      const newUser: User = {
+      const newUser: User = dbManager.stamp({
         id: 'user_' + Date.now().toString(),
         nome,
         createdAt: new Date().toISOString()
-      };
+      });
       await dbManager.put('users', newUser);
       setUsers(prev => [...prev, newUser]);
       return newUser;
@@ -83,11 +83,12 @@ export function useUsers(dbManager: IndexedDBManager, dbReady: boolean) {
     }
   }, [dbManager, dbReady]);
 
-  const updateUser = useCallback(async (user: User) => {
+  const updateUser = useCallback(async (input: User) => {
     if (!dbReady || !dbManager.db) {
       throw new Error('Database non pronto');
     }
     try {
+      const user = dbManager.stamp(input);
       await dbManager.put('users', user);
       setUsers(prev => prev.map(u => u.id === user.id ? user : u));
     } catch (error) {
