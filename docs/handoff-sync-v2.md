@@ -4,11 +4,11 @@ Per un agente che non ha visto il lavoro precedente. Leggi questo file, poi solo
 
 ## 1. Stato del branch
 
-Branch `feat/sync-v2-merge-backup`, 9 commit oltre `main`, working tree pulito, **mai pushato**. Ultimo commit `6392ad0 fix(sync): rilievi review Codex`.
+Branch `feat/sync-v2-merge-backup`, 13 commit oltre `main`, working tree pulito, **mai pushato**. Passo 1 e passo 2 chiusi il 13/9/2026.
 
 | Verifica | Esito |
 |---|---|
-| `npm test` (node:test via tsx) | 128 verdi, 0 falliti |
+| `npm test` (node:test via tsx) | 140 verdi, 0 falliti |
 | `npm run lint` (`tsc --noEmit`) | pulito |
 | `npm run build` | ok |
 
@@ -18,9 +18,14 @@ Fatto e testato, tutto codice puro non ancora collegato all'app in esecuzione:
 - `src/lib/sync/merge.ts`: `mergeSnapshots` a record intero, commutativo e idempotente, tombstone con tiebreak, conflitti con `droppedRecord` intero, orfani contati, diff `changes` rispetto al lato A. `pruneSnapshot` separata (tombstone 90 giorni, proposte terminali 30). `pickTombstone` condivisa.
 - `src/lib/sync/atomicWrite.ts`: `.part`, rilettura con lunghezza e SHA-256, `move` se c'è, fallback su `NotSupportedError`.
 - `src/lib/sync/backup.ts`: `backupBeforeWrite`, `writeSyncFile` (backup, poi scrittura, poi rotazione; se il backup fallisce il file di sync non viene toccato), `latest.json` con `{hash, file}` mai fidato da solo, suffisso `-N` anti-collisione, kind protetti mai dedup, `planRotation` pura.
-- `src/lib/sync/fileSystem.ts`, `nodeFileSystem.ts` (symlink e `..` rifiutati), `fsaFileSystem.ts` (File System Access, non testabile in Node, non ancora usato), `testing/memoryFileSystem.ts` (solo test).
+- `src/lib/sync/fileSystem.ts`, `nodeFileSystem.ts` (symlink, `..` e backslash rifiutati; root canonica ricontrollata a ogni chiamata), `fsaFileSystem.ts` (File System Access, non testabile in Node, non ancora usato), `testing/memoryFileSystem.ts` (solo test).
 - `src/lib/db/syncMetaDb.ts`: database IndexedDB separato `PivellaSyncMeta` v1 con store `tombstones` (chiave `[store, id]`), `meta` (writer id, `lastRestoreAck`, log conflitti limitato a 200 senza payload), `archive` (record locali perdenti per intero, senza limite). Accetta un `IDBFactory` esplicito; i test usano `fake-indexeddb`.
 - `src/types/index.ts`: `updatedAt?` e `updatedBy?` opzionali su User, Cliente, Fattura, WorkLog, Config, Scadenza.
+
+Passo 2, fatto e testato con `fake-indexeddb` (`src/lib/db/IndexedDBManager.test.ts`), collegato all'app ma non ancora alla sync su file:
+
+- `src/lib/db/IndexedDBManager.ts`: costruttore con `factory` e `now` iniettabili; `init` apre `PivellaSyncMeta` **dopo** `doInit`, recupera `writerId`, poi riconciliazione locale best effort. `put` timbra solo se manca. `stamp()` timbra sempre. `delete` scrive prima il tombstone con `tombstoneTimestamp`, poi cancella. `mergeIntoDb(result)`: `appendConflicts`, `replaceTombstones` con i tombstone fusi, `orphans` in meta, poi tutte le differenze in **una sola transazione** su tutti gli store toccati. `reconcileTombstones()` pubblico. `close()`. `importAll` e `onupgradeneeded` invariati.
+- Hook `useFatture`, `useWorkLogs`, `useClienti`, `useScadenze`, `useUsers`, `useConfig`: ogni modifica dell'utente passa da `dbManager.stamp`. In `useConfig` timbra solo `updateConfig`, non il caricamento da DB.
 
 ## 2. Specifica: cosa leggere davvero
 
@@ -41,11 +46,11 @@ File `docs/fattibilita-mcp.md`. Le sezioni 0-12 sono storia e analisi: non rileg
 - Numero fattura: il progressivo che l'app assegna già. Cartelle cloud (Dropbox, iCloud, Drive) non supportate. `move()` con feature detection e fallback. Merge a record intero, mai a campo. Proposte nello stesso file di sync. Nome pacchetto npm rimandato.
 - Ogni passo che tocca i dati veri (`ForfettarioDB`, file di sync reale) va **approvato da Davide a parte** prima di iniziare.
 
-## 4. Tre micro decisioni aperte prima del passo 2
+## 4. Tre micro decisioni, chiuse da Davide il 13/9/2026
 
-1. **Dove timbrare `updatedAt` e `updatedBy`.** Proposta: negli hook (`useFatture`, `useWorkLogs`, `useClienti`, `useScadenze`, `useConfig`, `useUsers`) così lo stato React è coerente, con `IndexedDBManager.put` che timbra comunque se manca, come rete di sicurezza.
-2. **Riconciliazione locale all'avvio** (13.8, ultimo paragrafo): cancellare da `ForfettarioDB` ogni record con tombstone più recente. Proposta: sì, subito, dentro `init`.
-3. **Granularità di `mergeIntoDb`.** Proposta: una transazione per store, così un crash a metà non lascia uno store mezzo aggiornato.
+1. **Timbro di `updatedAt` e `updatedBy`**: negli hook a ogni modifica, con `put` come rete che timbra solo se manca. Così `mergeIntoDb` non ritimbra i record arrivati dal file.
+2. **Riconciliazione locale all'avvio**: sì, fuori da `doInit`, best effort, cancella solo se il tombstone è strettamente più recente; un record senza `updatedAt` vale come più vecchio.
+3. **`mergeIntoDb`**: una transazione unica su tutti gli store toccati, non una per store. L'archivio dei perdenti in `PivellaSyncMeta` resta una transazione separata, eseguita prima.
 
 ## 5. Passi da 2 a 6
 
@@ -53,7 +58,7 @@ Ordine obbligato. Stime per una persona.
 
 | Passo | File | Cosa | Stima | Dati veri |
 |---|---|---|---|---|
-| 2 | `src/lib/db/IndexedDBManager.ts` | apre anche `PivellaSyncMeta` e recupera il writer id; `put` timbra; `delete` scrive **prima** il tombstone con `tombstoneTimestamp` e poi cancella; `mergeIntoDb(result)`: archivia i `droppedRecord` con `appendConflicts`, poi applica `changes` per store; riconciliazione all'avvio; `IDBFactory` iniettabile per i test. `importAll` e `onupgradeneeded` invariati | 2 gg | sì |
+| 2 (fatto) | `src/lib/db/IndexedDBManager.ts` | apre anche `PivellaSyncMeta` e recupera il writer id; `put` timbra; `delete` scrive **prima** il tombstone con `tombstoneTimestamp` e poi cancella; `mergeIntoDb(result)`: archivia i `droppedRecord` con `appendConflicts`, poi applica `changes` per store; riconciliazione all'avvio; `IDBFactory` iniettabile per i test. `importAll` e `onupgradeneeded` invariati | 2 gg | sì |
 | 3 | `src/lib/utils/fileSystemSync.ts` | lettura con `parseSyncFile` (v1 e v2), scrittura con `writeSyncFile` su `fsaFileSystem`, `pruneSnapshot` prima di serializzare, `lastModified` dall'handle, lock advisory `pivella-sync.lock` (13.3), backup kind `v1` al primo file legacy (già garantito da `writeSyncFile`) | 1,5 gg | sì |
 | 4 | `src/hooks/useFolderSync.ts` | ciclo leggi, fondi, applica, riscrivi solo se diverso; polling `lastModified` ogni 3 s a tab visibile; stato errore backup con banner e Riprova; gestione permesso da rinnovare | 1,5 gg | sì |
 | 5 | `src/context/AppContext.tsx` | `handleDataLoaded` aggiorna lo stato React per differenze del merge invece di sostituirlo | 1 gg | indiretto |
