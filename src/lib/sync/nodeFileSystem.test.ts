@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rename, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -145,5 +145,30 @@ test('node adapter rejects a `..` segment even after a nonexistent component', a
       await assert.rejects(fs.read('missing/../pivella-sync.json'), /fuori dalla cartella/);
       assert.deepEqual(await readdir(outside), []);
     });
+  });
+});
+
+test('node adapter refuses to operate once the root has been replaced by a symlink', async () => {
+  await withTempDir(async (outside) => {
+    await withTempDir(async (parent) => {
+      const root = join(parent, 'root');
+      await mkdir(root);
+      const fs = nodeFileSystem(root);
+      await fs.write('marker.json', enc('x'));
+      await rename(root, join(parent, 'root-original'));
+      await symlink(outside, root);
+      await assert.rejects(fs.write('escaped.json', enc('x')), /cartella di sync/);
+      await assert.rejects(fs.read('marker.json'), /cartella di sync/);
+      assert.deepEqual(await readdir(outside), []);
+    });
+  });
+});
+
+test('node adapter rejects backslashes so Windows-style separators cannot hide `..`', async () => {
+  await withTempDir(async (dir) => {
+    const fs = nodeFileSystem(dir);
+    await assert.rejects(fs.write(`missing\\..\\${BACKUP_DIR}\\escaped.json`, enc('x')), /fuori dalla cartella/);
+    await assert.rejects(fs.read(`${BACKUP_DIR}\\x.json`), /fuori dalla cartella/);
+    assert.deepEqual(await readdir(dir), []);
   });
 });

@@ -812,7 +812,7 @@ Nessun parametro dipende dal trasporto; l'identità del chiamante entra come `Pr
 - `updatedAt`: istante della scrittura del file.
 - `writer.id`: stringa stabile per installazione. L'app la genera una volta e la tiene nello store `meta` di IndexedDB; il server MCP nel file `~/.pivella-mcp/writer-id`. `kind` è `app`, `mcp` o `restore`.
 - `restoredAt`, `restoredFrom`: valorizzati solo da un ripristino (13.3), altrimenti `null`.
-- Gli array degli store contengono i tipi attuali **[V]** con due campi in più su ogni record: `updatedAt` (obbligatorio in v2) e `updatedBy` (writer id). In v2 tutti e sei gli store sono obbligatori: uno assente o `null` rende il file non valido, mai "vuoto". Nel server Node nessun componente di percorso sotto la cartella di sync può essere un symlink.
+- Gli array degli store contengono i tipi attuali **[V]** con due campi in più su ogni record: `updatedAt` (obbligatorio in v2) e `updatedBy` (writer id). In v2 tutti e sei gli store sono obbligatori: uno assente o `null` rende il file non valido, mai "vuoto". Nel server Node nessun componente di percorso sotto la cartella di sync può essere un symlink, i percorsi con backslash sono rifiutati e la root canonica viene ricontrollata a ogni operazione: se la cartella viene sostituita da un symlink dopo l'avvio, ogni operazione si ferma.
 - File v1 (senza `schemaVersion`) **[V]** formato attuale: viene letto una sola volta, ogni record riceve `updatedAt` pari all'istante della lettura e `updatedBy` del lettore, e il file viene riscritto in v2 dopo un backup con kind `v1`.
 
 ### Tombstone

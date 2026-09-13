@@ -103,7 +103,7 @@ Review in chat (4 scambi, verdetto finale APPROVED), poi una verifica indipenden
 | F13 | tombstone nello stesso millisecondo dell'aggiornamento perdeva | `tombstoneTimestamp` strettamente maggiore |
 | F14 | asserzioni di ordine backup/scrittura deboli | ordine completo verificato sul log delle operazioni |
 
-**Aperti dopo la verifica finale su F9** (segnalati da Codex, non corretti, decide Davide):
+**Verifica finale su F9** (sessione Codex separata, 13/9 00:30, verdetto "NON TIENE" con il bypass originale chiuso): due rilievi residui, entrambi corretti con test dedicati nel commit successivo a `0db8236`.
 
-1. `nodeFileSystem.ts:15` e `:38`: la realpath della root è calcolata una volta; se la cartella viene rinominata e sostituita da un symlink dopo l'avvio, la scrittura finisce fuori. Fix proposto: ricalcolare `realpath(root)` a ogni chiamata e rifiutare se diversa da quella iniziale.
-2. `nodeFileSystem.ts:30` e `:36`: split solo su `/`; con semantica Windows `missing\..\x` resta un componente unico. Irrilevante su macOS. Fix proposto: rifiutare il backslash nei componenti.
+1. `nodeFileSystem.ts`: la realpath della root era calcolata una volta; se la cartella veniva sostituita da un symlink dopo l'avvio, la scrittura finiva fuori. Ora `realpath(root)` è ricalcolata a ogni chiamata e rifiutata se diversa da quella iniziale.
+2. `nodeFileSystem.ts`: split solo su `/`; con semantica Windows `missing\..\x` restava un componente unico. Ora ogni percorso con backslash è rifiutato.

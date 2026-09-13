@@ -11,8 +11,16 @@ export function nodeFileSystem(rootDir: string): SyncFileSystem {
   const root = resolve(rootDir);
 
   const outside = (path: string) => new Error(`Percorso fuori dalla cartella di sync: ${path}`);
-  let realRootPromise: Promise<string> | null = null;
-  const realRoot = () => (realRootPromise ??= realpath(root));
+  // La root canonica viene ricalcolata a ogni chiamata e confrontata con la
+  // prima: se la cartella viene rinominata e al suo posto compare un symlink,
+  // ogni operazione si ferma invece di seguire il link fuori dalla cartella.
+  let initialRealRoot: string | null = null;
+  const realRoot = async (): Promise<string> => {
+    const current = await realpath(root);
+    initialRealRoot ??= current;
+    if (current !== initialRealRoot) throw new Error(`La cartella di sync è stata sostituita: ${root}`);
+    return current;
+  };
 
   /**
    * Percorso assoluto confinato nella root. Nessun componente sotto la root
@@ -21,6 +29,9 @@ export function nodeFileSystem(rootDir: string): SyncFileSystem {
    * per un proprio backup.
    */
   const full = async (path: string): Promise<string> => {
+    // Il separatore è solo `/`. Un backslash con semantica Windows farebbe
+    // passare `missing\..\x` come un componente unico, nascondendo il `..`.
+    if (path.includes('\\')) throw outside(path);
     const lexical = resolve(root, ...path.split('/'));
     if (lexical !== root && !lexical.startsWith(root + sep)) throw outside(path);
 
