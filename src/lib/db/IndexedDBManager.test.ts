@@ -218,3 +218,27 @@ test('exportSnapshot builds the local v2 snapshot from every store plus the loca
   assert.equal(snapshot.restoredFrom, null);
   for (const store of STORES) assert.ok(Array.isArray(snapshot[store]));
 });
+
+test('restoreFromSnapshot replaces every store, clears local tombstones and acknowledges the restore', async () => {
+  const { factory, db } = manager();
+  await db.init();
+  await db.put('clienti', cliente('locale', 'Solo locale', { updatedAt: T0, updatedBy: 'app-a' }));
+  await db.put('fatture', { id: 'f1', userId: 'u1', updatedAt: T0, updatedBy: 'app-a' });
+  await db.delete('fatture', 'f1');
+
+  const snapshot = createEmptySnapshot({ now: T1, writer: { id: 'restore-1', kind: 'restore' } });
+  snapshot.clienti.push(cliente('dalBackup', 'Dal backup', { updatedAt: T0, updatedBy: 'app-a' }) as any);
+  snapshot.restoredAt = T1;
+  snapshot.restoredFrom = 'pivella-sync.2026-09-02T00-00-00-000Z.app.json';
+  await db.restoreFromSnapshot(snapshot);
+
+  assert.deepEqual((await db.getAll('clienti')).map((c) => c.id), ['dalBackup']);
+  assert.deepEqual(await db.getAll('fatture'), []);
+  assert.equal(await db.getLastRestoreAck(), T1);
+  const meta = await openSyncMetaDb(factory);
+  assert.deepEqual(await meta.getTombstones(), []);
+  meta.close();
+  const exported = await db.exportSnapshot();
+  assert.equal(exported.restoredAt, T1);
+  assert.equal(exported.restoredFrom, snapshot.restoredFrom, 'a parità di restoredAt il merge confronta restoredFrom: va ricordato');
+});

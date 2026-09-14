@@ -21,7 +21,7 @@ const TOMBSTONES = 'tombstones';
 const META = 'meta';
 const ARCHIVE = 'archive';
 
-export type MetaKey = 'writerId' | 'lastRestoreAck' | 'conflicts' | 'orphans';
+export type MetaKey = 'writerId' | 'lastRestoreAck' | 'lastRestoreFrom' | 'conflicts' | 'orphans';
 
 export interface TombstoneKey {
   store: StoreName;

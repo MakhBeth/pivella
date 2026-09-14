@@ -145,7 +145,29 @@ export class IndexedDBManager {
     for (const store of STORES) (snapshot[store] as SyncRecord[]) = await this.getAll(store);
     snapshot.tombstones = await meta.getTombstones();
     snapshot.restoredAt = (await meta.getMeta<string>('lastRestoreAck')) ?? null;
+    snapshot.restoredFrom = (await meta.getMeta<string>('lastRestoreFrom')) ?? null;
     return snapshot;
+  }
+
+  async getLastRestoreAck(): Promise<string | null> {
+    const meta = await this.ensureSyncMeta();
+    return (await meta.getMeta<string>('lastRestoreAck')) ?? null;
+  }
+
+  /**
+   * Ripristino: rimpiazzo totale, non un merge (13.3, punti 4 e 6). Tutti gli
+   * store da `importAll`, tombstone locali svuotati, `lastRestoreAck` =
+   * `restoredAt` del file così i giri successivi tornano al merge.
+   */
+  async restoreFromSnapshot(snapshot: SyncSnapshot): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    const meta = await this.ensureSyncMeta();
+    const data: Record<string, any[]> = {};
+    for (const store of STORES) data[store] = snapshot[store] as any[];
+    await this.importAll(data);
+    await meta.replaceTombstones([]);
+    await meta.setMeta('lastRestoreAck', snapshot.restoredAt ?? this.now());
+    await meta.setMeta('lastRestoreFrom', snapshot.restoredFrom);
   }
 
   /** Timbra sempre `updatedAt` e `updatedBy`: da usare negli hook a ogni modifica dell'utente. */
