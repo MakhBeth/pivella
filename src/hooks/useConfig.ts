@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Config } from '../types';
 import { DEFAULT_CONFIG } from '../lib/constants/fiscali';
+import { canonicalJson } from '../lib/sync/schema';
 import type { IndexedDBManager } from '../lib/db/IndexedDBManager';
 
 export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, currentUserId: string | null) {
@@ -19,12 +20,15 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
         const configId = `config_${currentUserId}`;
         const savedConfig = await dbManager.get('config', configId);
         if (savedConfig) {
-          setConfig({
+          const loaded: Config = {
             ...DEFAULT_CONFIG,
             ...savedConfig,
             id: configId,
             userId: currentUserId,
-          });
+          };
+          // La versione normalizzata vale come già persistita: non va riscritta.
+          persistedRef.current = { json: canonicalJson(loaded), updatedAt: loaded.updatedAt };
+          setConfig(loaded);
         } else {
           // Create default config for this user
           const newConfig: Config = {
@@ -32,6 +36,7 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
             id: configId,
             userId: currentUserId
           };
+          persistedRef.current = null;
           setConfig(newConfig);
         }
       } catch (error) {
@@ -41,20 +46,31 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
     loadConfig();
   }, [dbManager, dbReady, currentUserId]);
 
-  // Save config to DB whenever it changes
+  // Salva solo ciò che è cambiato rispetto all'ultima versione caricata o
+  // salvata. Il caricamento normalizza la config con i default: riscriverla
+  // con il vecchio timbro produrrebbe un conflitto fasullo a ogni avvio
+  // contro il file di sync. Una modifica arrivata senza timbro nuovo (setConfig
+  // diretto) viene timbrata qui.
+  const persistedRef = useRef<{ json: string; updatedAt?: string } | null>(null);
   useEffect(() => {
     if (!dbReady || !currentUserId) return;
-    // Don't save if config doesn't match current user
     if (config.userId !== currentUserId) return;
+    const json = canonicalJson(config);
+    if (persistedRef.current?.json === json) return;
 
+    const toSave = persistedRef.current && config.updatedAt === persistedRef.current.updatedAt
+      ? dbManager.stamp(config)
+      : config;
+    persistedRef.current = { json: canonicalJson(toSave), updatedAt: toSave.updatedAt };
     const saveConfig = async () => {
       try {
-        await dbManager.put('config', config);
+        await dbManager.put('config', toSave);
       } catch (error) {
         console.error('Errore salvataggio config:', error);
       }
     };
     saveConfig();
+    if (toSave !== config) setConfig(toSave);
   }, [config, dbManager, dbReady, currentUserId]);
 
   // Ogni modifica dell'utente timbra updatedAt e updatedBy; il caricamento da

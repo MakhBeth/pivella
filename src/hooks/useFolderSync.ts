@@ -66,7 +66,7 @@ export function useFolderSync({
   onSynced,
   prepareRemote
 }: UseFolderSyncOptions): UseFolderSyncReturn {
-  const [syncFolderHandle, setSyncFolderHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [syncFolderHandle, setSyncFolderHandleState] = useState<FileSystemDirectoryHandle | null>(null);
   const [syncFolderName, setSyncFolderName] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
@@ -83,9 +83,12 @@ export function useFolderSync({
   const onSyncedRef = useRef(onSynced);
   const prepareRemoteRef = useRef(prepareRemote);
 
-  useEffect(() => {
-    syncFolderHandleRef.current = syncFolderHandle;
-  }, [syncFolderHandle]);
+  // Il ref va aggiornato subito, non in un effect: chi seleziona una cartella
+  // chiama syncNow nello stesso tick e il giro deve vedere il nuovo handle.
+  const setSyncFolderHandle = useCallback((handle: FileSystemDirectoryHandle | null) => {
+    syncFolderHandleRef.current = handle;
+    setSyncFolderHandleState(handle);
+  }, []);
 
   useEffect(() => {
     onSyncedRef.current = onSynced;
