@@ -4,11 +4,11 @@ Per un agente che non ha visto il lavoro precedente. Leggi questo file, poi solo
 
 ## 1. Stato del branch
 
-Branch `feat/sync-v2-merge-backup`, 27 commit oltre `main`, working tree pulito, **mai pushato**. Passi 1 e 2 chiusi il 13/9/2026, passi da 3 a 6 il 14/9/2026. Il ripristino dall'app non è ancora stato provato a mano in Chrome.
+Branch `feat/sync-v2-merge-backup`, 32 commit oltre `main`, working tree pulito, **mai pushato**. Passi 1 e 2 chiusi il 13/9/2026, passi da 3 a 6 il 14/9/2026. Ripristino dall'app provato in Chrome il 14/9/2026 (due volte, con verifica dei file): ok dopo due correzioni, il fallback di `move` su `NotAllowedError` e la config da merge o ripristino che non va ritimbrata (`applyPersistedConfig`).
 
 | Verifica | Esito |
 |---|---|
-| `npm test` (node:test via tsx) | 182 verdi, 0 falliti |
+| `npm test` (node:test via tsx) | 183 verdi, 0 falliti |
 | `npm run lint` (`tsc --noEmit`) | pulito |
 | `npm run build` | ok |
 
