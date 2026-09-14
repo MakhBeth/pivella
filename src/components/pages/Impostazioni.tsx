@@ -926,7 +926,7 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
                   <div className="table-wrapper">
                     <table className="table">
                       <thead>
-                        <tr><th scope="col">Data</th><th scope="col">Tipo</th><th scope="col">Dimensione</th><th scope="col"><span className="sr-only">Azioni</span></th></tr>
+                        <tr><th scope="col">Data</th><th scope="col">Tipo</th><th scope="col">Dimensione</th><th scope="col">Azioni</th></tr>
                       </thead>
                       <tbody>
                         {backups.map((b) => (
