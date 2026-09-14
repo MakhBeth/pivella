@@ -1,7 +1,7 @@
 import type { StoreName, User } from '../../types';
 import { DB_NAME, DB_VERSION, STORES } from '../constants/fiscali';
 import type { MergeResult } from '../sync/merge';
-import { compareInstants, tombstoneTimestamp, type SyncRecord } from '../sync/schema';
+import { compareInstants, createEmptySnapshot, tombstoneTimestamp, type SyncRecord, type SyncSnapshot } from '../sync/schema';
 import { openSyncMetaDb, type SyncMetaDb } from './syncMetaDb';
 
 export interface IndexedDBManagerOptions {
@@ -130,6 +130,22 @@ export class IndexedDBManager {
     }
     await complete(tx);
     return removed;
+  }
+
+  /**
+   * Snapshot v2 dello stato locale: tutti gli store di ForfettarioDB più i
+   * tombstone di PivellaSyncMeta. Le proposte vivono solo nel file, quindi
+   * qui sono vuote; `restoredAt` è l'ultimo ripristino riconosciuto (13.3).
+   */
+  async exportSnapshot(): Promise<SyncSnapshot> {
+    if (!this.db) throw new Error('Database not initialized');
+    const meta = await this.ensureSyncMeta();
+    const writerId = this.writerId ?? (await meta.getWriterId());
+    const snapshot = createEmptySnapshot({ now: this.now(), writer: { id: writerId, kind: 'app' } });
+    for (const store of STORES) (snapshot[store] as SyncRecord[]) = await this.getAll(store);
+    snapshot.tombstones = await meta.getTombstones();
+    snapshot.restoredAt = (await meta.getMeta<string>('lastRestoreAck')) ?? null;
+    return snapshot;
   }
 
   /** Timbra sempre `updatedAt` e `updatedBy`: da usare negli hook a ogni modifica dell'utente. */

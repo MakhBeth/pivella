@@ -195,3 +195,26 @@ test('mergeIntoDb with no changes touches nothing and does not fail', async () =
   await db.mergeIntoDb(result);
   for (const store of STORES) assert.deepEqual(await db.getAll(store), []);
 });
+
+test('exportSnapshot builds the local v2 snapshot from every store plus the local tombstones', async () => {
+  const { factory, db } = manager();
+  await db.init();
+  await db.put('clienti', cliente('c1', 'Locale', { updatedAt: T0, updatedBy: 'app-a' }));
+  await db.put('fatture', { id: 'f1', userId: 'u1', updatedAt: T0, updatedBy: 'app-a' });
+  await db.delete('fatture', 'f1');
+  const meta = await openSyncMetaDb(factory);
+  await meta.setMeta('lastRestoreAck', T1);
+  meta.close();
+
+  const snapshot = await db.exportSnapshot();
+  assert.equal(snapshot.schemaVersion, 2);
+  assert.equal(snapshot.updatedAt, NOW);
+  assert.deepEqual(snapshot.writer, { id: db.writerId, kind: 'app' });
+  assert.deepEqual(snapshot.clienti.map((c) => c.id), ['c1']);
+  assert.deepEqual(snapshot.fatture, []);
+  assert.deepEqual(snapshot.tombstones.map((t) => `${t.store}/${t.id}`), ['fatture/f1']);
+  assert.deepEqual(snapshot.proposals, []);
+  assert.equal(snapshot.restoredAt, T1);
+  assert.equal(snapshot.restoredFrom, null);
+  for (const store of STORES) assert.ok(Array.isArray(snapshot[store]));
+});
