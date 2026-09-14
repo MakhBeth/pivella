@@ -268,3 +268,35 @@ test('a change to the legacy file during the read is detected and reread', async
   assert.equal((await db.get('clienti', 'c1')).nome, 'Seconda');
   assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).clienti[0].nome, 'Seconda');
 });
+
+test('inLock runs under the lock after the merge and its snapshot is written even when nothing else changed', async () => {
+  const { db, fs, run } = await setup();
+  await fs.write(SYNC_FILENAME, text(remoteWith((s) => { s.clienti.push(cliente('c1', 'Remoto', T0, 'mcp-1') as any); })));
+  await run();
+  const before = fs.log.length;
+  let lockedDuring = false;
+  const outcome = await run({
+    inLock: async (merged: SyncSnapshot) => {
+      lockedDuring = fs.files.has(LOCK_FILE);
+      await db.put('clienti', cliente('c2', 'Nuovo', NOW, db.writerId!));
+      const local = await db.exportSnapshot();
+      return { ...merged, clienti: local.clienti };
+    },
+  });
+  assert.equal(outcome.status, 'written');
+  assert.equal(lockedDuring, true);
+  const written = JSON.parse(fromBytes(fs.files.get(SYNC_FILENAME) ?? null)!);
+  assert.deepEqual(written.clienti.map((c: any) => c.id).sort(), ['c1', 'c2']);
+  assert.equal(fs.files.has(LOCK_FILE), false);
+  assert.ok(fs.log.slice(before).some((l) => l.startsWith(`write ${BACKUP_DIR}/`)), 'backup before the write');
+});
+
+test('inLock returning null leaves the normal behaviour: unchanged file is not rewritten', async () => {
+  const { fs, run } = await setup();
+  await fs.write(SYNC_FILENAME, text(remoteWith((s) => { s.clienti.push(cliente('c1', 'Remoto', T0, 'mcp-1') as any); })));
+  await run();
+  const writes = fs.log.filter((l) => l.startsWith(`write ${SYNC_FILENAME}`)).length;
+  const outcome = await run({ inLock: async () => null });
+  assert.equal(outcome.status, 'unchanged');
+  assert.equal(fs.log.filter((l) => l.startsWith(`write ${SYNC_FILENAME}`)).length, writes);
+});
