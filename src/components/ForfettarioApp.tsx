@@ -14,6 +14,7 @@ import {
 } from './shared/icons';
 import { AppProvider, useApp } from "../context/AppContext";
 import { Toast } from "./shared/Toast";
+import { ProposteBanner } from "./shared/ProposteInbox";
 import { LoadingSpinner } from "./shared/LoadingSpinner";
 import { useDesignStyle } from "./shared/DesignStyleSwitch";
 import { UserSelector } from "./shared/UserSelector";
@@ -646,6 +647,7 @@ function ForfettarioAppInner() {
         </nav>
 
         <main id="main-content" className="main-content">
+          <ProposteBanner showLink={currentPage !== "impostazioni"} />
           <Suspense fallback={<LoadingSpinner />}>
             {currentPage === "dashboard" && (
               <Dashboard

@@ -1,10 +1,26 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Sparkles, X } from './icons';
 import { useApp } from '../../context/AppContext';
 import type { Proposal } from '../../lib/sync/schema';
 import { proposalTitle } from '../../lib/sync/applyProposal';
 import { fatturaPreview, type FatturaPayload } from '../../lib/sync/validate';
 import { MISC_CLIENT_ID, VACATION_CLIENT_ID } from '../../types';
+
+export const PROPOSTE_ANCHOR = 'proposte';
+
+// Il router è a hash (`#/impostazioni`), quindi un secondo `#proposte` non
+// passa: il banner chiede lo scorrimento qui e il riquadro lo esegue appena montato.
+let scrollRequested = false;
+
+export function goToProposte(): void {
+  scrollRequested = true;
+  if (window.location.hash === '#/impostazioni') {
+    document.getElementById(PROPOSTE_ANCHOR)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    scrollRequested = false;
+  } else {
+    window.location.hash = '#/impostazioni';
+  }
+}
 
 const KIND_LABEL: Record<Proposal['kind'], string> = {
   workLog: 'Giornata',
@@ -56,6 +72,14 @@ export function ProposteInbox() {
   const { pendingProposals, confirmProposal, rejectProposal, clienti, fatture, scadenze, isSyncing, showToast } = useApp();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRequested && boxRef.current) {
+      scrollRequested = false;
+      boxRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [pendingProposals.length]);
 
   if (pendingProposals.length === 0) return null;
 
@@ -84,7 +108,7 @@ export function ProposteInbox() {
   };
 
   return (
-    <div className="backup-info" style={{ marginTop: 0, marginBottom: 16, border: '1px solid var(--accent-blue)' }} aria-live="polite">
+    <div id={PROPOSTE_ANCHOR} ref={boxRef} className="backup-info" style={{ marginTop: 0, marginBottom: 16, border: '1px solid var(--accent-blue)', scrollMarginTop: 16 }} aria-live="polite">
       <h2><Sparkles size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} aria-hidden="true" /> Proposte dell'assistente ({pendingProposals.length})</h2>
       <p>Arrivano dal server MCP di Pivella. Niente viene scritto finché non confermi: ogni proposta viene ricontrollata alla conferma.</p>
       <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0 0' }}>
@@ -120,22 +144,25 @@ export function ProposteInbox() {
   );
 }
 
-/** Avviso compatto per la Dashboard: quante proposte aspettano, con il salto a Impostazioni. */
-export function ProposteBanner() {
+/**
+ * Infobox in cima all'app, su ogni pagina: quante proposte aspettano, con il
+ * salto a Impostazioni dove si confermano. Sparisce quando non ce ne sono.
+ */
+export function ProposteBanner({ showLink = true }: { showLink?: boolean }) {
   const { pendingProposals } = useApp();
   if (pendingProposals.length === 0) return null;
   const n = pendingProposals.length;
   return (
     <div
       role="status"
-      style={{ padding: '12px 16px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.35)', borderRadius: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+      style={{ padding: '12px 16px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.35)', borderRadius: 12, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
     >
       <Sparkles size={18} aria-hidden="true" />
       <span style={{ flex: 1, minWidth: 200 }}>
         {n === 1 ? "L'assistente ha una proposta in attesa di conferma." : `L'assistente ha ${n} proposte in attesa di conferma.`}
       </span>
-      <button className="btn btn-secondary btn-sm" onClick={() => { window.location.hash = '#/impostazioni'; }}>
-        Vedi le proposte
+      <button className="btn btn-secondary btn-sm" onClick={goToProposte}>
+        {showLink ? 'Vedi le proposte' : 'Vai alle proposte'}
       </button>
     </div>
   );
