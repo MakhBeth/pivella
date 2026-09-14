@@ -19,8 +19,12 @@ import type { StoreName } from '../../types';
 
 export interface SyncSource {
   fs: SyncFileSystem;
-  /** `lastModified` del file di sync, null se manca. Cambia a ogni scrittura da qualunque writer. */
-  lastModified(): Promise<number | null>;
+  /**
+   * Versione del file letto: identità e `lastModified` del file di sync, o
+   * del file legacy se il corrente manca; null se non c'è nessuno dei due.
+   * Cambia a ogni scrittura da qualunque writer e quando compare il file corrente.
+   */
+  lastModified(): Promise<string | null>;
 }
 
 export interface SyncCycleOptions {

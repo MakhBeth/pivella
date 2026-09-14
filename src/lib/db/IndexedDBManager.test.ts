@@ -314,3 +314,36 @@ test('mergeIntoDb drops a local tombstone only when the merge dropped it and it 
   meta.close();
   assert.equal((await db.get('fatture', 'f1')).updatedBy, 'mcp-1');
 });
+
+test('mergeIntoDb does not resurrect a record created and deleted locally after the snapshot', async () => {
+  const { db } = manager();
+  await db.init();
+  const local = await db.exportSnapshot();
+  const remote = createEmptySnapshot({ now: T1, writer: { id: 'mcp-1', kind: 'mcp' } });
+  remote.clienti.push(cliente('c1', 'Dal file', { updatedAt: T0, updatedBy: 'mcp-1' }) as any);
+  const result = mergeAgainstLocal(local, remote);
+  // Nel frattempo l'utente crea e cancella c1: resta il tombstone, più recente del record nel file.
+  await db.put('clienti', cliente('c1', 'Creato e cancellato', { updatedAt: T1, updatedBy: 'app-a' }));
+  await db.delete('clienti', 'c1');
+  const applied = await db.mergeIntoDb(result, local);
+  assert.equal(await db.get('clienti', 'c1'), undefined);
+  assert.deepEqual(applied.clienti.upserted, []);
+});
+
+test('restoreFromSnapshot archives every local record that the restore drops or changes', async () => {
+  const { factory, db } = manager();
+  await db.init();
+  await db.put('clienti', cliente('solo-locale', 'Mai nel file', { updatedAt: NOW, updatedBy: 'app-a' }));
+  await db.put('clienti', cliente('comune', 'Versione locale', { updatedAt: NOW, updatedBy: 'app-a' }));
+  await db.put('clienti', cliente('uguale', 'Identico', { updatedAt: T0, updatedBy: 'app-a' }));
+  const snapshot = createEmptySnapshot({ now: T1, writer: { id: 'restore-1', kind: 'restore' } });
+  snapshot.clienti.push(cliente('comune', 'Versione del backup', { updatedAt: T0, updatedBy: 'app-a' }) as any, cliente('uguale', 'Identico', { updatedAt: T0, updatedBy: 'app-a' }) as any);
+  snapshot.restoredAt = T1;
+  await db.restoreFromSnapshot(snapshot);
+  const meta = await openSyncMetaDb(factory);
+  const archive = await meta.getArchive();
+  meta.close();
+  assert.deepEqual(archive.map((a) => a.id).sort(), ['comune', 'solo-locale']);
+  assert.ok(archive.every((a) => a.reason === 'restore'));
+  assert.deepEqual((await db.getAll('clienti')).map((c) => c.id).sort(), ['comune', 'uguale']);
+});

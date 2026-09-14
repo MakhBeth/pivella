@@ -23,6 +23,7 @@ import { SYNC_FILENAME } from '../sync/backup';
 import type { SyncFileSystem } from '../sync/fileSystem';
 import { fsaFileSystem } from '../sync/fsaFileSystem';
 import type { SyncSource } from '../sync/syncCycle';
+import { LEGACY_SYNC_FILENAME } from '../sync/syncFile';
 
 const HANDLE_STORE_KEY = 'syncDirectoryHandle';
 
@@ -183,20 +184,28 @@ export function syncFileSystemOf(handle: FileSystemDirectoryHandle): SyncFileSys
   return fsaFileSystem(handle);
 }
 
-/** `lastModified` del file di sync, null se non esiste. Serve al ciclo leggi-fondi-scrivi per capire se rileggere. */
-export async function getSyncFileLastModified(handle: FileSystemDirectoryHandle): Promise<number | null> {
+async function fileVersion(handle: FileSystemDirectoryHandle, name: string): Promise<string | null> {
   try {
-    const file = await (await handle.getFileHandle(SYNC_FILENAME)).getFile();
-    return file.lastModified;
+    const file = await (await handle.getFileHandle(name)).getFile();
+    return `${name}:${file.lastModified}:${file.size}`;
   } catch (err: any) {
     if (err?.name === 'NotFoundError') return null;
     throw err;
   }
 }
 
+/**
+ * Versione della sorgente letta dal ciclo: file di sync, oppure il file legacy
+ * se il corrente manca. Serve al ciclo leggi-fondi-scrivi per capire se
+ * qualcuno ha scritto nel frattempo, compreso il file legacy.
+ */
+export async function getSyncSourceVersion(handle: FileSystemDirectoryHandle): Promise<string | null> {
+  return (await fileVersion(handle, SYNC_FILENAME)) ?? (await fileVersion(handle, LEGACY_SYNC_FILENAME));
+}
+
 /** Sorgente per `runSyncCycle`: file system sull'handle più `lastModified` del file di sync. */
 export function folderSyncSource(handle: FileSystemDirectoryHandle): SyncSource {
-  return { fs: syncFileSystemOf(handle), lastModified: () => getSyncFileLastModified(handle) };
+  return { fs: syncFileSystemOf(handle), lastModified: () => getSyncSourceVersion(handle) };
 }
 
 /**

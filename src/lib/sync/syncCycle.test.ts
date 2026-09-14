@@ -33,7 +33,7 @@ function memorySource(fs: MemoryFileSystem): SyncSource & { bump: () => void } {
   if (move) fs.move = async (from, to) => { if (to === SYNC_FILENAME) version++; return move(from, to); };
   return {
     fs,
-    lastModified: async () => ((await fs.read(SYNC_FILENAME)) ? version : null),
+    lastModified: async () => ((await fs.read(SYNC_FILENAME)) ? `current:${version}` : null),
     bump: () => { version++; },
   };
 }
@@ -239,4 +239,32 @@ test('onApplied is called for every merge committed to IndexedDB, even when the 
   const seen: string[][] = [];
   await assert.rejects(run({ onApplied: async (applied: any) => { seen.push(applied.clienti.upserted); } }), BackupError);
   assert.deepEqual(seen, [['c2']], 'il record importato viene pubblicato anche se poi il backup fallisce');
+});
+
+test('a change to the legacy file during the read is detected and reread', async () => {
+  const { db, fs } = await setup();
+  const v1 = (nome: string) => JSON.stringify({ users: [], config: [], clienti: [{ id: 'c1', userId: 'u1', nome }], fatture: [], workLogs: [], scadenze: [] });
+  await fs.write(LEGACY_SYNC_FILENAME, text(v1('Prima')));
+  // lastModified della sorgente: token che distingue il file corrente dal legacy e cambia a ogni scrittura.
+  let legacyVersion = 0;
+  const write = fs.write.bind(fs);
+  fs.write = async (path, bytes) => { if (path === LEGACY_SYNC_FILENAME) legacyVersion++; return write(path, bytes); };
+  const source = {
+    fs,
+    lastModified: async () => ((await fs.read(SYNC_FILENAME)) ? 'current:1' : (await fs.read(LEGACY_SYNC_FILENAME)) ? `legacy:${legacyVersion}` : null),
+  };
+  const read = fs.read.bind(fs);
+  let swapped = false;
+  fs.read = async (path) => {
+    const bytes = await read(path);
+    if (path === LEGACY_SYNC_FILENAME && !swapped) {
+      swapped = true;
+      await fs.write(LEGACY_SYNC_FILENAME, text(v1('Seconda')));
+    }
+    return bytes;
+  };
+  const outcome = await runSyncCycle({ db, source, writer: { id: db.writerId!, kind: 'app' }, now: () => new Date(NOW) });
+  assert.equal(outcome.status, 'written');
+  assert.equal((await db.get('clienti', 'c1')).nome, 'Seconda');
+  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).clienti[0].nome, 'Seconda');
 });

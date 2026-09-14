@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useCallback, ReactNode, useEffect, useRef } from 'react';
-import type { Config, Cliente, Fattura, WorkLog, Toast, Scadenza, User } from '../types';
+import type { Config, Cliente, Fattura, WorkLog, Toast, Scadenza, StoreName, User } from '../types';
 import { useDatabase } from '../hooks/useDatabase';
 import { useToast } from '../hooks/useToast';
 import { useUsers } from '../hooks/useUsers';
@@ -12,7 +12,7 @@ import { useFolderSync } from '../hooks/useFolderSync';
 import type { SyncSnapshot } from '../lib/sync/schema';
 import type { AppliedChanges } from '../lib/sync/syncCycle';
 import type { MergeResult } from '../lib/sync/merge';
-import { applyStoreChanges } from '../lib/sync/applyChanges';
+import { applyStoreChanges, tombstonesFor } from '../lib/sync/applyChanges';
 import type { BackupEntry, BackupPreview } from '../lib/sync/restore';
 
 // Helper to adjust color brightness
@@ -227,12 +227,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await reloadStateFromDb();
       return;
     }
-    const tombstones = snapshot.tombstones;
-    setUsersRef.current(applyStoreChanges(usersRef.current, applied.users, snapshot.users, undefined, tombstones));
-    setClientiRef.current((prev) => applyStoreChanges(prev, applied.clienti, snapshot.clienti, userId, tombstones));
-    setFattureRef.current((prev) => applyStoreChanges(prev, applied.fatture, snapshot.fatture, userId, tombstones));
-    setWorkLogsRef.current((prev) => applyStoreChanges(prev, applied.workLogs, snapshot.workLogs, userId, tombstones));
-    setScadenzeRef.current((prev) => applyStoreChanges(prev, applied.scadenze, snapshot.scadenze, userId, tombstones));
+    const t = (store: StoreName) => tombstonesFor(store, snapshot.tombstones);
+    setUsersRef.current(applyStoreChanges(usersRef.current, applied.users, snapshot.users, undefined, t('users')));
+    setClientiRef.current((prev) => applyStoreChanges(prev, applied.clienti, snapshot.clienti, userId, t('clienti')));
+    setFattureRef.current((prev) => applyStoreChanges(prev, applied.fatture, snapshot.fatture, userId, t('fatture')));
+    setWorkLogsRef.current((prev) => applyStoreChanges(prev, applied.workLogs, snapshot.workLogs, userId, t('workLogs')));
+    setScadenzeRef.current((prev) => applyStoreChanges(prev, applied.scadenze, snapshot.scadenze, userId, t('scadenze')));
     if (userId && applied.config.upserted.includes(`config_${userId}`)) {
       const userConfig = snapshot.config.find((c) => c.id === `config_${userId}`);
       if (userConfig) setConfigRef.current(userConfig);

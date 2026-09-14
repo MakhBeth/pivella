@@ -10,8 +10,14 @@
  * recente del record in stato. IndexedDB ha già la versione giusta: il giro
  * successivo riallinea.
  */
+import type { StoreName } from '../../types';
 import type { StoreChanges } from './merge';
 import { compareInstants, type Tombstone } from './schema';
+
+/** Gli id sono unici per store, non globali: a ogni store i suoi tombstone. */
+export function tombstonesFor(store: StoreName, tombstones: Tombstone[]): Tombstone[] {
+  return tombstones.filter((t) => t.store === store);
+}
 
 export function applyStoreChanges<T extends { id: string; userId?: string; updatedAt?: string }>(
   prev: T[],

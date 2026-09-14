@@ -35,7 +35,8 @@ export interface VersionInfo {
 export interface Conflict {
   store: StoreName;
   id: string;
-  reason: 'newer' | 'tiebreak';
+  /** `restore`: record locale sostituito o eliminato da un ripristino, non dal merge. */
+  reason: 'newer' | 'tiebreak' | 'restore';
   kept: VersionInfo;
   dropped: VersionInfo;
   /** Il record perdente per intero: va conservato durevolmente prima di applicare il merge. */

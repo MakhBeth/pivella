@@ -147,7 +147,7 @@ test('restoreBackupSafely first syncs unsynced local edits into the file, so the
   fs.write = async (path, bytes) => { if (path === SYNC_FILENAME) version++; return write(path, bytes); };
   const move = fs.move!.bind(fs);
   fs.move = async (from, to) => { if (to === SYNC_FILENAME) version++; return move(from, to); };
-  const source = { fs, lastModified: async () => ((await fs.read(SYNC_FILENAME)) ? version : null) };
+  const source = { fs, lastModified: async () => ((await fs.read(SYNC_FILENAME)) ? `current:${version}` : null) };
   const outcome = await restoreBackupSafely(source, db, APP_NAME, { now: () => new Date(NOW) });
   const preRestore = JSON.parse(fromBytes(await fs.read(outcome.write.backup.file!))!);
   assert.ok(preRestore.clienti.some((c: any) => c.id === 'c-unsynced'), 'il pre-restore contiene la modifica locale');
@@ -162,8 +162,21 @@ test('restoreBackupSafely aborts before touching anything when the preliminary s
     if (path.startsWith(`${BACKUP_DIR}/`)) throw new Error('ENOSPC');
     return write(path, bytes);
   };
-  const source = { fs, lastModified: async () => 1 };
+  const source = { fs, lastModified: async () => 'current:1' };
   await assert.rejects(restoreBackupSafely(source, db, APP_NAME, { now: () => new Date(NOW) }), BackupError);
   assert.ok((await db.getAll('clienti')).some((c) => c.id === 'c-unsynced'));
   assert.equal(await db.getLastRestoreAck(), null);
+});
+
+test('restoreBackupSafely reports a restore applied by the preliminary sync before giving up', async () => {
+  const { db, fs } = await setup();
+  const pending = createEmptySnapshot({ now: NOW, writer: { id: 'restore-9', kind: 'restore' } });
+  pending.users.push({ id: 'u1', nome: 'Utente', createdAt: T0 } as any);
+  pending.restoredAt = NOW;
+  pending.restoredFrom = 'altro.json';
+  await fs.write(SYNC_FILENAME, text(JSON.stringify(pending)));
+  let restoredCalls = 0;
+  const source = { fs, lastModified: async () => 'current:1' };
+  await assert.rejects(restoreBackupSafely(source, db, APP_NAME, { now: () => new Date(NOW), onRestored: () => { restoredCalls++; } }), /ripristino più recente/);
+  assert.equal(restoredCalls, 1, 'lo stato React deve sapere che il database è stato rimpiazzato');
 });

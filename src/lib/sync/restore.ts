@@ -65,6 +65,8 @@ export interface RestoreOptions {
   prepare?: (snapshot: SyncSnapshot) => SyncSnapshot;
   /** Solo per `restoreBackupSafely`: pubblicazione delle applicazioni del giro preliminare. */
   onApplied?: SyncCycleOptions['onApplied'];
+  /** Solo per `restoreBackupSafely`: il giro preliminare ha applicato un ripristino già presente nel file. */
+  onRestored?: () => Promise<void> | void;
 }
 
 export interface RestoreOutcome {
@@ -102,6 +104,10 @@ export async function restoreBackupSafely(source: SyncSource, db: IndexedDBManag
   const writer: Writer = { id: db.writerId ?? 'app-unknown', kind: 'app' };
   const outcome = await runSyncCycle({ db, source, writer, now: options.now, prepareRemote: options.prepare, onApplied: options.onApplied });
   if (outcome.status === 'stale') throw new Error('Il file di sincronizzazione continua a cambiare: ripristino annullato');
-  if (outcome.status === 'restored') throw new Error('Il file conteneva già un ripristino più recente, applicato ora: ricontrolla e riprova');
+  if (outcome.status === 'restored') {
+    // Il database è stato rimpiazzato: chi ascolta deve saperlo anche se qui ci si ferma.
+    await options.onRestored?.();
+    throw new Error('Il file conteneva già un ripristino più recente, applicato ora: ricontrolla e riprova');
+  }
   return restoreFromBackup(source.fs, db, name, options);
 }

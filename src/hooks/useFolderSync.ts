@@ -238,6 +238,7 @@ export function useFolderSync({
       await restoreBackupSafely(folderSyncSource(handle), dbManager, name, {
         prepare: prepareRemoteRef.current,
         onApplied: (applied, merge) => onAppliedRef.current?.(applied, merge),
+        onRestored: () => onRestoredRef.current?.(),
       });
       await onRestoredRef.current?.();
       setSyncError(null);

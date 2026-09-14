@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Config } from '../types';
 import { DEFAULT_CONFIG } from '../lib/constants/fiscali';
-import { canonicalJson } from '../lib/sync/schema';
+import { canonicalJson, compareInstants } from '../lib/sync/schema';
 import type { IndexedDBManager } from '../lib/db/IndexedDBManager';
 
 export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, currentUserId: string | null) {
@@ -12,6 +12,8 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
   });
 
   const persistedRef = useRef<{ json: string; updatedAt?: string } | null>(null);
+  const configRef = useRef(config);
+  configRef.current = config;
 
   // Load config from DB when user changes
   useEffect(() => {
@@ -47,6 +49,9 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
    */
   const applyPersistedConfig = useCallback((saved: Config) => {
     const loaded: Config = { ...DEFAULT_CONFIG, ...saved, id: saved.id, userId: saved.userId };
+    // Una modifica dell'utente in attesa di salvataggio (timbro più recente) non va sovrascritta.
+    const current = configRef.current;
+    if (current.id === loaded.id && compareInstants(current.updatedAt, loaded.updatedAt) > 0) return;
     persistedRef.current = { json: canonicalJson(loaded), updatedAt: loaded.updatedAt };
     setConfig(loaded);
   }, []);

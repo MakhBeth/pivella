@@ -1,6 +1,6 @@
 import type { StoreName, User } from '../../types';
 import { DB_NAME, DB_VERSION, STORES } from '../constants/fiscali';
-import type { MergeResult, StoreChanges } from '../sync/merge';
+import type { Conflict, MergeResult, StoreChanges } from '../sync/merge';
 import { canonicalJson, compareInstants, createEmptySnapshot, tombstoneTimestamp, type SyncRecord, type SyncSnapshot } from '../sync/schema';
 import { openSyncMetaDb, type SyncMetaDb } from './syncMetaDb';
 
@@ -169,6 +169,26 @@ export class IndexedDBManager {
   async restoreFromSnapshot(snapshot: SyncSnapshot): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     const meta = await this.ensureSyncMeta();
+    // Ogni record locale che il ripristino cambia o elimina finisce
+    // nell'archivio per intero: è la sua unica copia (i backup sono del file).
+    const local = await this.exportSnapshot();
+    const dropped: Conflict[] = [];
+    for (const store of STORES) {
+      const restored = new Map((snapshot[store] as SyncRecord[]).map((r) => [r.id, r]));
+      for (const record of local[store] as SyncRecord[]) {
+        const next = restored.get(record.id);
+        if (next && canonicalJson(next) === canonicalJson(record)) continue;
+        dropped.push({
+          store,
+          id: record.id,
+          reason: 'restore',
+          kept: { updatedAt: next?.updatedAt ?? null, updatedBy: next?.updatedBy ?? null },
+          dropped: { updatedAt: record.updatedAt ?? null, updatedBy: record.updatedBy ?? null },
+          droppedRecord: record,
+        });
+      }
+    }
+    await meta.appendConflicts(dropped, this.now());
     const data: Record<string, any[]> = {};
     for (const store of STORES) data[store] = snapshot[store] as any[];
     await this.importAll(data);
@@ -201,6 +221,9 @@ export class IndexedDBManager {
     if (base) await meta.mergeTombstones(result.snapshot.tombstones, base.tombstones);
     else await meta.replaceTombstones(result.snapshot.tombstones);
     if (result.orphans.length > 0) await meta.setMeta('orphans', result.orphans);
+    // Tombstone correnti, compresi quelli scritti dopo lo snapshot: un record
+    // creato e cancellato nel frattempo non deve tornare con l'upsert del file.
+    const deletedAt = new Map((await meta.getTombstones()).map((t) => [`${t.store}/${t.id}`, t.deletedAt]));
 
     const applied = {} as Record<StoreName, StoreChanges>;
     for (const s of STORES) applied[s] = { upserted: [], deleted: [] };
@@ -225,6 +248,7 @@ export class IndexedDBManager {
           const record = byId.get(id);
           if (!record) throw new Error(`Record ${storeName}/${id} assente dallo snapshot fuso`);
           if (!(await unchangedSinceBase(id))) continue;
+          if (compareInstants(deletedAt.get(`${storeName}/${id}`), (record as Stamped).updatedAt) > 0) continue;
           store.put(record);
           applied[storeName].upserted.push(id);
         }

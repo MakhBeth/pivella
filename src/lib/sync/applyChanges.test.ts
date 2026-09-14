@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applyStoreChanges } from './applyChanges';
+import { applyStoreChanges, tombstonesFor } from './applyChanges';
 
 type Rec = { id: string; userId?: string; nome: string };
 const r = (id: string, nome: string, userId = 'u1'): Rec => ({ id, userId, nome });
@@ -60,4 +60,14 @@ test('a delete is skipped when the record was edited after the tombstone', () =>
   assert.equal(next.length, 1);
   const older = [stamped('a', 'Vecchio', '2026-09-14T09:00:00.000Z')];
   assert.equal(applyStoreChanges(older, { upserted: [], deleted: ['a'] }, [], 'u1', tombstones).length, 0);
+});
+
+test('tombstonesFor keeps only the tombstones of one store, so an id reused in another store does not shadow it', () => {
+  const tombstones = [
+    { store: 'fatture' as const, id: 'x', deletedAt: '2026-09-14T09:00:00.000Z', deletedBy: 'mcp-1' },
+    { store: 'clienti' as const, id: 'x', deletedAt: '2026-09-14T10:00:00.000Z', deletedBy: 'mcp-1' },
+  ];
+  const prev = [stamped('x', 'Cliente', '2026-09-14T09:30:00.000Z')];
+  assert.equal(applyStoreChanges(prev, { upserted: [], deleted: ['x'] }, [], 'u1', tombstonesFor('clienti', tombstones)).length, 0);
+  assert.equal(applyStoreChanges(prev, { upserted: [], deleted: ['x'] }, [], 'u1', tombstonesFor('fatture', tombstones)).length, 1);
 });
