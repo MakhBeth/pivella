@@ -23,10 +23,10 @@ export function useWorkLogs(dbManager: IndexedDBManager, dbReady: boolean, curre
   const addWorkLog = useCallback(async (workLog: Omit<WorkLog, 'userId'> & { userId?: string }) => {
     if (!currentUserId) return;
     try {
-      const workLogWithUser: WorkLog = {
+      const workLogWithUser: WorkLog = dbManager.stamp({
         ...workLog,
         userId: currentUserId
-      };
+      });
       await dbManager.put('workLogs', workLogWithUser);
       setWorkLogs(prev => [...prev, workLogWithUser]);
     } catch (error) {
@@ -35,8 +35,9 @@ export function useWorkLogs(dbManager: IndexedDBManager, dbReady: boolean, curre
     }
   }, [dbManager, currentUserId]);
 
-  const updateWorkLog = useCallback(async (workLog: WorkLog) => {
+  const updateWorkLog = useCallback(async (input: WorkLog) => {
     try {
+      const workLog = dbManager.stamp(input);
       await dbManager.put('workLogs', workLog);
       setWorkLogs(prev => prev.map(w => w.id === workLog.id ? workLog : w));
     } catch (error) {

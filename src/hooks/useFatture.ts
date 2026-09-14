@@ -23,10 +23,10 @@ export function useFatture(dbManager: IndexedDBManager, dbReady: boolean, curren
   const addFattura = useCallback(async (fattura: Omit<Fattura, 'userId'> & { userId?: string }) => {
     if (!currentUserId) return;
     try {
-      const fatturaWithUser: Fattura = {
+      const fatturaWithUser: Fattura = dbManager.stamp({
         ...fattura,
         userId: currentUserId
-      };
+      });
       await dbManager.put('fatture', fatturaWithUser);
       setFatture(prev => [...prev, fatturaWithUser]);
     } catch (error) {
@@ -35,8 +35,9 @@ export function useFatture(dbManager: IndexedDBManager, dbReady: boolean, curren
     }
   }, [dbManager, currentUserId]);
 
-  const updateFattura = useCallback(async (fattura: Fattura) => {
+  const updateFattura = useCallback(async (input: Fattura) => {
     try {
+      const fattura = dbManager.stamp(input);
       await dbManager.put('fatture', fattura);
       setFatture(prev => prev.map(f => f.id === fattura.id ? fattura : f));
     } catch (error) {

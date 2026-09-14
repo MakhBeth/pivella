@@ -22,10 +22,10 @@ export function useScadenze(dbManager: IndexedDBManager, dbReady: boolean, curre
   const addScadenza = useCallback(async (scadenza: Omit<Scadenza, 'userId'> & { userId?: string }) => {
     if (!currentUserId) return;
     try {
-      const scadenzaWithUser: Scadenza = {
+      const scadenzaWithUser: Scadenza = dbManager.stamp({
         ...scadenza,
         userId: currentUserId
-      };
+      });
       await dbManager.put('scadenze', scadenzaWithUser);
       setScadenze(prev => [...prev, scadenzaWithUser]);
     } catch (error) {
@@ -34,8 +34,9 @@ export function useScadenze(dbManager: IndexedDBManager, dbReady: boolean, curre
     }
   }, [dbManager, currentUserId]);
 
-  const updateScadenza = useCallback(async (scadenza: Scadenza) => {
+  const updateScadenza = useCallback(async (input: Scadenza) => {
     try {
+      const scadenza = dbManager.stamp(input);
       await dbManager.put('scadenze', scadenza);
       setScadenze(prev => prev.map(s => s.id === scadenza.id ? scadenza : s));
     } catch (error) {
@@ -72,7 +73,7 @@ export function useScadenze(dbManager: IndexedDBManager, dbReady: boolean, curre
   const bulkSaveScadenze = useCallback(async (newScadenze: Array<Omit<Scadenza, 'userId'> & { userId?: string }>) => {
     if (!currentUserId) return;
     try {
-      const scadenzeWithUser: Scadenza[] = newScadenze.map(s => ({
+      const scadenzeWithUser: Scadenza[] = newScadenze.map(s => dbManager.stamp({
         ...s,
         userId: currentUserId
       }));

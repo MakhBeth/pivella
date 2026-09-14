@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useCallback, ReactNode, useEffect, useRef } from 'react';
-import type { Config, Cliente, Fattura, WorkLog, Toast, Scadenza, User } from '../types';
+import type { Config, Cliente, Fattura, WorkLog, Toast, Scadenza, StoreName, User } from '../types';
 import { useDatabase } from '../hooks/useDatabase';
 import { useToast } from '../hooks/useToast';
 import { useUsers } from '../hooks/useUsers';
@@ -9,6 +9,11 @@ import { useFatture } from '../hooks/useFatture';
 import { useWorkLogs } from '../hooks/useWorkLogs';
 import { useScadenze } from '../hooks/useScadenze';
 import { useFolderSync } from '../hooks/useFolderSync';
+import type { SyncSnapshot } from '../lib/sync/schema';
+import type { AppliedChanges } from '../lib/sync/syncCycle';
+import type { MergeResult } from '../lib/sync/merge';
+import { applyStoreChanges, tombstonesFor } from '../lib/sync/applyChanges';
+import type { BackupEntry, BackupPreview } from '../lib/sync/restore';
 
 // Helper to adjust color brightness
 function adjustColorBrightness(hex: string, percent: number): string {
@@ -85,7 +90,13 @@ interface AppContextValue {
   syncFolderName: string | null;
   isSyncing: boolean;
   lastSyncTime: Date | null;
+  syncError: string | null;
   syncToFolder: () => Promise<void>;
+  syncNow: () => Promise<void>;
+  syncStatus: { conflicts: number; archived: number } | null;
+  listBackups: () => Promise<BackupEntry[]>;
+  previewBackup: (name: string) => Promise<BackupPreview>;
+  restoreBackup: (name: string) => Promise<void>;
   setSyncFolderHandle: (handle: FileSystemDirectoryHandle | null) => void;
   setSyncFolderName: (name: string | null) => void;
   setLastSyncTime: (time: Date | null) => void;
@@ -103,7 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Users hook - must be initialized before other data hooks
   const {
     users,
-    setUsers,
+    replaceUsers,
     currentUserId,
     currentUser,
     isInitialized: isUsersInitialized,
@@ -114,143 +125,119 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } = useUsers(dbManager, dbReady);
 
   // Data hooks with user filtering
-  const { config, setConfig, updateConfig } = useConfig(dbManager, dbReady, currentUserId);
+  const { config, setConfig, updateConfig, applyPersistedConfig, resetConfig } = useConfig(dbManager, dbReady, currentUserId);
   const { clienti, setClienti, addCliente, updateCliente, removeCliente } = useClienti(dbManager, dbReady, currentUserId);
   const { fatture, setFatture, addFattura, updateFattura, removeFattura } = useFatture(dbManager, dbReady, currentUserId);
   const { workLogs, setWorkLogs, addWorkLog, updateWorkLog, removeWorkLog } = useWorkLogs(dbManager, dbReady, currentUserId);
   const { scadenze, setScadenze, addScadenza, updateScadenza, removeScadenza, removeScadenzeByYear, bulkSaveScadenze, getScadenzeByYear, getPaidAccontiForYear } = useScadenze(dbManager, dbReady, currentUserId);
 
   // Refs to hold setters for folder sync callback
-  const setConfigRef = useRef(setConfig);
+  // Le config che arrivano dalla sync sono già nel database: non vanno risalvate.
+  const setConfigRef = useRef(applyPersistedConfig);
   const setClientiRef = useRef(setClienti);
   const setFattureRef = useRef(setFatture);
   const setWorkLogsRef = useRef(setWorkLogs);
   const setScadenzeRef = useRef(setScadenze);
-  const setUsersRef = useRef(setUsers);
+  const setUsersRef = useRef(replaceUsers);
+  const resetConfigRef = useRef(resetConfig);
+  const usersRef = useRef(users);
 
   useEffect(() => {
-    setConfigRef.current = setConfig;
+    usersRef.current = users;
+  }, [users]);
+
+  useEffect(() => {
+    setConfigRef.current = applyPersistedConfig;
     setClientiRef.current = setClienti;
     setFattureRef.current = setFatture;
     setWorkLogsRef.current = setWorkLogs;
     setScadenzeRef.current = setScadenze;
-    setUsersRef.current = setUsers;
-  }, [setConfig, setClienti, setFatture, setWorkLogs, setScadenze, setUsers]);
+    setUsersRef.current = replaceUsers;
+    resetConfigRef.current = resetConfig;
+  }, [applyPersistedConfig, setClienti, setFatture, setWorkLogs, setScadenze, replaceUsers, resetConfig]);
 
-  // Folder sync with load on startup
-  // Returns true if data was migrated and needs to be synced back
-  const handleDataLoaded = useCallback(async (data: Record<string, any[]>): Promise<boolean> => {
-    console.log('[AppContext] handleDataLoaded called with:', data);
-    console.log('[AppContext] currentUserId:', currentUserId);
+  const currentUserIdRef = useRef(currentUserId);
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
 
-    // Check if data needs migration (no users or records without userId)
-    let targetUserId = currentUserId;
-    let wasMigrated = false;
+  /**
+   * File senza profili (precedente al multi utente): ogni record senza userId
+   * prende l'utente corrente e la lista utenti contiene solo lui. La
+   * differenza rispetto al file viene riscritta dal ciclo di sync.
+   */
+  const prepareRemote = useCallback((snapshot: SyncSnapshot): SyncSnapshot => {
+    if (snapshot.users.length > 0) return snapshot;
+    const userId = currentUserIdRef.current;
+    if (!userId) return snapshot;
+    console.log('[AppContext] File di sync senza profili: assegno i record a', userId);
+    const withUser = <T extends { userId?: string }>(records: T[]): T[] => records.map((r) => (r.userId ? r : { ...r, userId }));
+    const current = usersRef.current.find((u) => u.id === userId);
+    return {
+      ...snapshot,
+      users: current ? [current] : [],
+      config: snapshot.config.map((c) => (c.userId ? c : { ...c, id: `config_${userId}`, userId })),
+      clienti: withUser(snapshot.clienti),
+      fatture: withUser(snapshot.fatture),
+      workLogs: withUser(snapshot.workLogs),
+      scadenze: withUser(snapshot.scadenze),
+    };
+  }, []);
 
-    if (!data.users || data.users.length === 0) {
-      console.log('[AppContext] No users in synced data, migrating...');
-      wasMigrated = true;
+  /**
+   * Ricarica per intero lo stato dal database: solo dopo un ripristino, che è
+   * un rimpiazzo totale. Se il profilo attivo non esiste più nei dati
+   * ripristinati si passa al primo; un profilo senza config ne riceve una di
+   * default, salvata.
+   */
+  const reloadStateFromDb = useCallback(async (): Promise<void> => {
+    const [allUsers, allConfig, allClienti, allFatture, allWorkLogs, allScadenze] = await Promise.all([
+      dbManager.getAll('users'),
+      dbManager.getAll('config'),
+      dbManager.getAll('clienti'),
+      dbManager.getAll('fatture'),
+      dbManager.getAll('workLogs'),
+      dbManager.getAll('scadenze'),
+    ]);
+    setUsersRef.current(allUsers);
+    const previous = currentUserIdRef.current;
+    const userId = previous && allUsers.some((u: User) => u.id === previous) ? previous : allUsers[0]?.id ?? null;
+    if (!userId) return;
+    currentUserIdRef.current = userId;
+    const userConfig = allConfig.find((c: Config) => c.userId === userId);
+    if (userConfig) setConfigRef.current(userConfig, { force: true });
+    else resetConfigRef.current(userId);
+    setClientiRef.current(allClienti.filter((c: Cliente) => c.userId === userId));
+    setFattureRef.current(allFatture.filter((f: Fattura) => f.userId === userId));
+    setWorkLogsRef.current(allWorkLogs.filter((w: WorkLog) => w.userId === userId));
+    setScadenzeRef.current(allScadenze.filter((s: Scadenza) => s.userId === userId));
+  }, [dbManager]);
 
-      // Use existing currentUserId if available (from useUsers migration)
-      // Otherwise create a new one
-      let defaultUserId = currentUserId;
-      if (!defaultUserId) {
-        // This shouldn't happen since we wait for isUsersInitialized
-        console.warn('[AppContext] No currentUserId available, creating new user');
-        defaultUserId = 'user_' + Date.now().toString();
-      }
-
-      // Get existing user from DB if available
-      const existingUsers = await dbManager.getAll('users');
-      console.log('[AppContext] Existing users in DB:', existingUsers);
-
-      let userToUse: User;
-      if (existingUsers.length > 0 && existingUsers.find((u: User) => u.id === defaultUserId)) {
-        userToUse = existingUsers.find((u: User) => u.id === defaultUserId)!;
-        console.log('[AppContext] Using existing user:', userToUse);
-      } else if (existingUsers.length > 0) {
-        userToUse = existingUsers[0];
-        defaultUserId = userToUse.id;
-        console.log('[AppContext] Using first existing user:', userToUse);
-      } else {
-        userToUse = {
-          id: defaultUserId,
-          nome: 'Utente Principale',
-          createdAt: new Date().toISOString()
-        };
-        console.log('[AppContext] Creating new user:', userToUse);
-      }
-
-      data.users = [userToUse];
-      targetUserId = defaultUserId;
-
-      // Migrate config
-      if (data.config) {
-        data.config = data.config.map((c: any) => ({
-          ...c,
-          id: c.userId ? c.id : `config_${defaultUserId}`,
-          userId: c.userId || defaultUserId
-        }));
-      }
-
-      // Migrate all other records
-      if (data.clienti) {
-        data.clienti = data.clienti.map((c: any) => ({ ...c, userId: c.userId || defaultUserId }));
-      }
-      if (data.fatture) {
-        data.fatture = data.fatture.map((f: any) => ({ ...f, userId: f.userId || defaultUserId }));
-      }
-      if (data.workLogs) {
-        data.workLogs = data.workLogs.map((w: any) => ({ ...w, userId: w.userId || defaultUserId }));
-      }
-      if (data.scadenze) {
-        data.scadenze = data.scadenze.map((s: any) => ({ ...s, userId: s.userId || defaultUserId }));
-      }
-
-      // Store the user id
-      localStorage.setItem('pivella_current_user_id', defaultUserId!);
-      console.log('[AppContext] Migration complete, userId:', defaultUserId);
-    } else {
-      // Use the first user if currentUserId is not set
-      if (!targetUserId) {
-        targetUserId = data.users[0].id;
-        localStorage.setItem('pivella_current_user_id', targetUserId!);
-      }
+  /**
+   * Dopo ogni applicazione a IndexedDB, lo stato React viene aggiornato per
+   * differenze: solo i record applicati davvero, presi dallo snapshot fuso.
+   * Una modifica fatta nel frattempo su un record resta com'è (controllo su
+   * updatedAt in applyStoreChanges). Se il merge ha tolto il profilo attivo,
+   * si ricarica tutto e si passa a un altro profilo.
+   */
+  const handleApplied = useCallback(async (applied: AppliedChanges, merge: MergeResult): Promise<void> => {
+    const { snapshot } = merge;
+    const userId = currentUserIdRef.current ?? undefined;
+    if (userId && applied.users.deleted.includes(userId)) {
+      await reloadStateFromDb();
+      return;
     }
-
-    // Import data into IndexedDB
-    console.log('[AppContext] Importing data to IndexedDB...');
-    try {
-      await dbManager.importAll(data);
-      console.log('[AppContext] Import complete');
-    } catch (err) {
-      console.error('[AppContext] Import failed:', err);
-      throw err;
-    }
-
-    // Then update state - filter by target user for data, but keep all users
-    if (data.users) {
-      setUsersRef.current(data.users);
-    }
-    if (data.config && targetUserId) {
-      const userConfig = data.config.find((c: Config) => c.userId === targetUserId);
+    const t = (store: StoreName) => tombstonesFor(store, snapshot.tombstones);
+    setUsersRef.current(applyStoreChanges(usersRef.current, applied.users, snapshot.users, undefined, t('users')));
+    setClientiRef.current((prev) => applyStoreChanges(prev, applied.clienti, snapshot.clienti, userId, t('clienti')));
+    setFattureRef.current((prev) => applyStoreChanges(prev, applied.fatture, snapshot.fatture, userId, t('fatture')));
+    setWorkLogsRef.current((prev) => applyStoreChanges(prev, applied.workLogs, snapshot.workLogs, userId, t('workLogs')));
+    setScadenzeRef.current((prev) => applyStoreChanges(prev, applied.scadenze, snapshot.scadenze, userId, t('scadenze')));
+    if (userId && applied.config.upserted.includes(`config_${userId}`)) {
+      const userConfig = snapshot.config.find((c) => c.id === `config_${userId}`);
       if (userConfig) setConfigRef.current(userConfig);
     }
-    if (data.clienti && targetUserId) {
-      setClientiRef.current(data.clienti.filter((c: Cliente) => c.userId === targetUserId));
-    }
-    if (data.fatture && targetUserId) {
-      setFattureRef.current(data.fatture.filter((f: Fattura) => f.userId === targetUserId));
-    }
-    if (data.workLogs && targetUserId) {
-      setWorkLogsRef.current(data.workLogs.filter((w: WorkLog) => w.userId === targetUserId));
-    }
-    if (data.scadenze && targetUserId) {
-      setScadenzeRef.current(data.scadenze.filter((s: Scadenza) => s.userId === targetUserId));
-    }
-
-    return wasMigrated;
-  }, [dbManager, currentUserId]);
+  }, [reloadStateFromDb]);
 
   const {
     syncFolderHandle,
@@ -258,7 +245,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     isSyncing,
     lastSyncTime,
     isInitialLoadDone,
+    syncError,
     syncToFolder,
+    syncNow,
+    syncStatus,
+    listBackups,
+    previewBackup,
+    restoreBackup,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime
@@ -266,7 +259,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dbManager,
     dbReady,
     isUsersInitialized,
-    onDataLoaded: handleDataLoaded
+    onApplied: handleApplied,
+    onRestored: reloadStateFromDb,
+    prepareRemote
   });
 
   // Track previous values to detect changes
@@ -480,7 +475,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     syncFolderName,
     isSyncing,
     lastSyncTime,
+    syncError,
     syncToFolder,
+    syncNow,
+    syncStatus,
+    listBackups,
+    previewBackup,
+    restoreBackup,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime

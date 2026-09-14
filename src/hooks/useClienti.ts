@@ -23,10 +23,10 @@ export function useClienti(dbManager: IndexedDBManager, dbReady: boolean, curren
   const addCliente = useCallback(async (cliente: Omit<Cliente, 'userId'> & { userId?: string }) => {
     if (!currentUserId) return;
     try {
-      const clienteWithUser: Cliente = {
+      const clienteWithUser: Cliente = dbManager.stamp({
         ...cliente,
         userId: currentUserId
-      };
+      });
       await dbManager.put('clienti', clienteWithUser);
       setClienti(prev => [...prev, clienteWithUser]);
     } catch (error) {
@@ -35,8 +35,9 @@ export function useClienti(dbManager: IndexedDBManager, dbReady: boolean, curren
     }
   }, [dbManager, currentUserId]);
 
-  const updateCliente = useCallback(async (cliente: Cliente) => {
+  const updateCliente = useCallback(async (input: Cliente) => {
     try {
+      const cliente = dbManager.stamp(input);
       await dbManager.put('clienti', cliente);
       setClienti(prev => prev.map(c => c.id === cliente.id ? cliente : c));
     } catch (error) {

@@ -1,0 +1,211 @@
+/**
+ * Database IndexedDB separato `PivellaSyncMeta` (specifica 13.8).
+ *
+ * Contiene ciò che serve alla sync v2 e non ai dati di dominio: tombstone,
+ * writer id, ultimo ripristino riconosciuto, log conflitti. Esiste come
+ * database a parte per non alzare la versione di `ForfettarioDB`, il cui
+ * percorso di apertura cancella e ricrea il database su blocco o timeout.
+ *
+ * Accetta un `IDBFactory` esplicito così i test usano un'implementazione in
+ * memoria e non toccano mai un database reale.
+ */
+import type { StoreName } from '../../types';
+import { pickTombstone, type Conflict } from '../sync/merge';
+import type { Tombstone } from '../sync/schema';
+
+export const SYNC_META_DB_NAME = 'PivellaSyncMeta';
+export const SYNC_META_DB_VERSION = 1;
+export const CONFLICT_LOG_LIMIT = 200;
+
+const TOMBSTONES = 'tombstones';
+const META = 'meta';
+const ARCHIVE = 'archive';
+
+export type MetaKey = 'writerId' | 'lastRestoreAck' | 'lastRestoreFrom' | 'conflicts' | 'orphans';
+
+export interface TombstoneKey {
+  store: StoreName;
+  id: string;
+}
+
+/** Copia integrale di un record locale sovrascritto dal merge. Non ha limite: è la sola copia durevole. */
+export interface ArchiveEntry {
+  seq?: number;
+  store: StoreName;
+  id: string;
+  archivedAt: string;
+  reason: Conflict['reason'];
+  record: unknown;
+}
+
+export interface SyncMetaDb {
+  readonly raw: IDBDatabase;
+  close(): void;
+  addTombstone(tombstone: Tombstone): Promise<void>;
+  getTombstones(): Promise<Tombstone[]>;
+  removeTombstones(keys: TombstoneKey[]): Promise<void>;
+  replaceTombstones(tombstones: Tombstone[]): Promise<void>;
+  /**
+   * Applica l'esito di un merge calcolato su `base`: i tombstone fusi entrano
+   * (vince il più recente), quelli di `base` che il merge ha fatto decadere
+   * escono solo se nel frattempo non sono cambiati. Un tombstone scritto da
+   * `delete` dopo lo snapshot sopravvive sempre.
+   */
+  mergeTombstones(merged: Tombstone[], base: Tombstone[]): Promise<void>;
+  getMeta<T = unknown>(key: MetaKey): Promise<T | undefined>;
+  setMeta(key: MetaKey, value: unknown): Promise<void>;
+  getWriterId(): Promise<string>;
+  /** Archivia ogni record perdente per intero, poi aggiorna il log limitato. */
+  appendConflicts(conflicts: Conflict[], archivedAt?: string): Promise<void>;
+  getConflicts(): Promise<Conflict[]>;
+  getArchive(): Promise<ArchiveEntry[]>;
+}
+
+function request<T>(req: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function complete(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Transazione annullata'));
+  });
+}
+
+export function openSyncMetaDb(factory: IDBFactory = globalThis.indexedDB): Promise<SyncMetaDb> {
+  return new Promise((resolve, reject) => {
+    const open = factory.open(SYNC_META_DB_NAME, SYNC_META_DB_VERSION);
+    open.onupgradeneeded = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains(TOMBSTONES)) {
+        db.createObjectStore(TOMBSTONES, { keyPath: ['store', 'id'] });
+      }
+      if (!db.objectStoreNames.contains(META)) {
+        db.createObjectStore(META, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(ARCHIVE)) {
+        db.createObjectStore(ARCHIVE, { keyPath: 'seq', autoIncrement: true });
+      }
+    };
+    open.onerror = () => reject(open.error);
+    open.onblocked = () => reject(new Error(`Apertura di ${SYNC_META_DB_NAME} bloccata`));
+    open.onsuccess = () => {
+      const db = open.result;
+      db.onversionchange = () => db.close();
+      resolve(wrap(db));
+    };
+  });
+}
+
+function wrap(db: IDBDatabase): SyncMetaDb {
+  const readMeta = async <T,>(key: MetaKey): Promise<T | undefined> => {
+    const tx = db.transaction(META, 'readonly');
+    const row = (await request(tx.objectStore(META).get(key))) as { key: MetaKey; value: T } | undefined;
+    return row?.value;
+  };
+
+  const writeMeta = async (key: MetaKey, value: unknown): Promise<void> => {
+    const tx = db.transaction(META, 'readwrite');
+    tx.objectStore(META).put({ key, value });
+    await complete(tx);
+  };
+
+  return {
+    raw: db,
+    close: () => db.close(),
+
+    async addTombstone(tombstone) {
+      const tx = db.transaction(TOMBSTONES, 'readwrite');
+      const store = tx.objectStore(TOMBSTONES);
+      const existing = (await request(store.get([tombstone.store, tombstone.id]))) as Tombstone | undefined;
+      if (!existing || pickTombstone(existing, tombstone) === tombstone) store.put(tombstone);
+      await complete(tx);
+    },
+
+    async getTombstones() {
+      const tx = db.transaction(TOMBSTONES, 'readonly');
+      return (await request(tx.objectStore(TOMBSTONES).getAll())) as Tombstone[];
+    },
+
+    async removeTombstones(keys) {
+      const tx = db.transaction(TOMBSTONES, 'readwrite');
+      const store = tx.objectStore(TOMBSTONES);
+      for (const key of keys) store.delete([key.store, key.id]);
+      await complete(tx);
+    },
+
+    async replaceTombstones(tombstones) {
+      const tx = db.transaction(TOMBSTONES, 'readwrite');
+      const store = tx.objectStore(TOMBSTONES);
+      store.clear();
+      for (const tombstone of tombstones) store.put(tombstone);
+      await complete(tx);
+    },
+
+    async mergeTombstones(merged, base) {
+      const tx = db.transaction(TOMBSTONES, 'readwrite');
+      const store = tx.objectStore(TOMBSTONES);
+      const mergedKeys = new Set(merged.map((t) => `${t.store}/${t.id}`));
+      for (const t of merged) {
+        const existing = (await request(store.get([t.store, t.id]))) as Tombstone | undefined;
+        if (!existing || pickTombstone(existing, t) === t) store.put(t);
+      }
+      for (const t of base) {
+        if (mergedKeys.has(`${t.store}/${t.id}`)) continue;
+        const existing = (await request(store.get([t.store, t.id]))) as Tombstone | undefined;
+        if (existing && existing.deletedAt === t.deletedAt && existing.deletedBy === t.deletedBy) store.delete([t.store, t.id]);
+      }
+      await complete(tx);
+    },
+
+    getMeta: readMeta,
+    setMeta: writeMeta,
+
+    async getWriterId() {
+      // Lettura e creazione nella stessa transazione readwrite: due chiamate
+      // concorrenti (anche da due tab) vedono lo stesso id.
+      const tx = db.transaction(META, 'readwrite');
+      const store = tx.objectStore(META);
+      const row = (await request(store.get('writerId'))) as { key: MetaKey; value: string } | undefined;
+      if (row?.value) {
+        await complete(tx);
+        return row.value;
+      }
+      const id = `app-${globalThis.crypto.randomUUID().slice(0, 8)}`;
+      store.put({ key: 'writerId', value: id });
+      await complete(tx);
+      return id;
+    },
+
+    async appendConflicts(conflicts, archivedAt = new Date().toISOString()) {
+      if (conflicts.length === 0) return;
+      // Una sola transazione: o si archiviano tutti i perdenti e si aggiorna il
+      // log, o nulla. Il log resta limitato e senza payload; l'archivio no.
+      const tx = db.transaction([ARCHIVE, META], 'readwrite');
+      const archive = tx.objectStore(ARCHIVE);
+      for (const c of conflicts) {
+        const entry: ArchiveEntry = { store: c.store, id: c.id, archivedAt, reason: c.reason, record: c.droppedRecord };
+        archive.add(entry);
+      }
+      const meta = tx.objectStore(META);
+      const row = (await request(meta.get('conflicts'))) as { key: MetaKey; value: Conflict[] } | undefined;
+      const stripped = conflicts.map(({ droppedRecord: _dropped, ...rest }) => rest as Conflict);
+      const merged = [...(row?.value ?? []), ...stripped].slice(-CONFLICT_LOG_LIMIT);
+      meta.put({ key: 'conflicts', value: merged });
+      await complete(tx);
+    },
+
+    async getConflicts() {
+      return (await readMeta<Conflict[]>('conflicts')) ?? [];
+    },
+
+    async getArchive() {
+      const tx = db.transaction(ARCHIVE, 'readonly');
+      return (await request(tx.objectStore(ARCHIVE).getAll())) as ArchiveEntry[];
+    },
+  };
+}

@@ -6,15 +6,22 @@ export const MISC_CLIENT_ID = '__misc__';
 
 export type StoreName = 'config' | 'clienti' | 'fatture' | 'workLogs' | 'scadenze' | 'users';
 
+// Sync metadata (formato file v2): ogni record degli store porta chi e quando
+// lo ha modificato per ultimo. Opzionali perché i dati esistenti non li hanno.
+export interface SyncMeta {
+  updatedAt?: string; // ISO 8601 UTC
+  updatedBy?: string; // writer id
+}
+
 // User interface for multi-user support
-export interface User {
+export interface User extends SyncMeta {
   id: string;
   nome: string;
   createdAt: string;
   color?: string; // Hex color for user theme
 }
 
-export interface Cliente {
+export interface Cliente extends SyncMeta {
   id: string;
   userId: string;
   nome: string;
@@ -33,7 +40,7 @@ export interface Cliente {
   nazione?: string; // Default: IT
 }
 
-export interface Fattura {
+export interface Fattura extends SyncMeta {
   id: string;
   userId: string;
   numero?: string;
@@ -50,7 +57,7 @@ export interface Fattura {
   tassoCambio?: number; // ECB exchange rate: 1 EUR = X foreign currency
 }
 
-export interface WorkLog {
+export interface WorkLog extends SyncMeta {
   id: string;
   userId: string;
   clienteId: string;
@@ -68,7 +75,7 @@ export interface ValutaConfig {
 
 export type GestionePrevidenziale = 'gestione_separata' | 'artigiani' | 'commercianti';
 
-export interface Config {
+export interface Config extends SyncMeta {
   id: string;
   userId: string;
   coefficiente: number;
@@ -222,7 +229,7 @@ export interface PaymentScheduleItem {
 
 export type ScadenzaTipo = 'saldo_irpef' | 'acconto_irpef' | 'saldo_inps' | 'acconto_inps';
 
-export interface Scadenza {
+export interface Scadenza extends SyncMeta {
   id: string;
   userId: string;
   visibleId: string;

@@ -19,9 +19,12 @@ declare global {
   }
 }
 
-const SYNC_FILENAME = 'pivella-sync.json';
-// Pre-rename filename, read as fallback so existing sync folders keep working
-const LEGACY_SYNC_FILENAME = 'forfettino-sync.json';
+import { SYNC_FILENAME } from '../sync/backup';
+import type { SyncFileSystem } from '../sync/fileSystem';
+import { fsaFileSystem } from '../sync/fsaFileSystem';
+import type { SyncSource } from '../sync/syncCycle';
+import { LEGACY_SYNC_FILENAME } from '../sync/syncFile';
+
 const HANDLE_STORE_KEY = 'syncDirectoryHandle';
 
 /**
@@ -172,46 +175,37 @@ export async function selectSyncFolder(): Promise<FileSystemDirectoryHandle | nu
   }
 }
 
-/**
- * Write sync data to the selected folder
- */
-export async function writeSyncFile(
-  handle: FileSystemDirectoryHandle,
-  data: Record<string, any[]>
-): Promise<void> {
-  const fileHandle = await handle.getFileHandle(SYNC_FILENAME, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(JSON.stringify(data, null, 2));
-  await writable.close();
+// --- Sync v2 (13.2, 13.3) ----------------------------------------------------
+//
+// La logica sta in `lib/sync/syncCycle.ts`, `syncFile.ts` e `lock.ts`, pure e
+// testate in Node. Qui solo l'adattamento all'handle della cartella.
+
+export function syncFileSystemOf(handle: FileSystemDirectoryHandle): SyncFileSystem {
+  return fsaFileSystem(handle);
+}
+
+async function fileVersion(handle: FileSystemDirectoryHandle, name: string): Promise<string | null> {
+  try {
+    const file = await (await handle.getFileHandle(name)).getFile();
+    return `${name}:${file.lastModified}:${file.size}`;
+  } catch (err: any) {
+    if (err?.name === 'NotFoundError') return null;
+    throw err;
+  }
 }
 
 /**
- * Read sync data from the selected folder
+ * Versione della sorgente letta dal ciclo: file di sync, oppure il file legacy
+ * se il corrente manca. Serve al ciclo leggi-fondi-scrivi per capire se
+ * qualcuno ha scritto nel frattempo, compreso il file legacy.
  */
-export async function readSyncFile(
-  handle: FileSystemDirectoryHandle
-): Promise<Record<string, any[]> | null> {
-  try {
-    const fileHandle = await handle.getFileHandle(SYNC_FILENAME);
-    const file = await fileHandle.getFile();
-    const text = await file.text();
-    return JSON.parse(text);
-  } catch (err: any) {
-    // File doesn't exist yet: fall back to the legacy filename
-    if (err.name === 'NotFoundError') {
-      try {
-        const legacyHandle = await handle.getFileHandle(LEGACY_SYNC_FILENAME);
-        const legacyFile = await legacyHandle.getFile();
-        return JSON.parse(await legacyFile.text());
-      } catch (legacyErr: any) {
-        if (legacyErr.name === 'NotFoundError') {
-          return null;
-        }
-        throw legacyErr;
-      }
-    }
-    throw err;
-  }
+export async function getSyncSourceVersion(handle: FileSystemDirectoryHandle): Promise<string | null> {
+  return (await fileVersion(handle, SYNC_FILENAME)) ?? (await fileVersion(handle, LEGACY_SYNC_FILENAME));
+}
+
+/** Sorgente per `runSyncCycle`: file system sull'handle più `lastModified` del file di sync. */
+export function folderSyncSource(handle: FileSystemDirectoryHandle): SyncSource {
+  return { fs: syncFileSystemOf(handle), lastModified: () => getSyncSourceVersion(handle) };
 }
 
 /**
