@@ -1038,7 +1038,7 @@ mcp/package.json              pacchetto npm pivella-mcp
 - L'app continua a usare `Date.now()` per i propri id.
 - Prima release senza polling (solo avvio, focus e modifiche; il polling a 3 secondi è rimandato, vedi `docs/handoff-sync-v2.md`); proposte valide 14 giorni, tombstone potati a 90 giorni, 30 backup più uno al giorno per 90 giorni.
 - Il numero fattura è il progressivo che l'app assegna già oggi, `max + 1` sul valore intero di `numero` tra le fatture dell'anno della data della fattura **[V]**, con due cifre minime. In un anno nuovo riparte da 1. Nessun altro formato.
-- Cartelle cloud non supportate, con controllo all'avvio del server (13.2).
+- Cartelle cloud (Dropbox, iCloud, Google Drive, OneDrive) in **beta** per decisione di Davide del 14/9/2026: con scritture rare il rischio è basso. Il server le riconosce all'avvio e avvisa su stderr senza rifiutarle; l'app lo dice in Impostazioni. Rischio accettato: una "copia in conflitto" del provider non viene vista dalla sync.
 - Scrittura atomica con `.part` e `move()` con feature detection e fallback verificato (13.3), per backup e per file di sync.
 - Il pacchetto npm si chiama `pivella-mcp` (deciso da Davide il 14/9/2026): `npx -y pivella-mcp --dir <cartella>`; `mcp/package.json` con `bin`, bundle esbuild in `mcp/dist/cli.js`, `@modelcontextprotocol/sdk` e `zod` come dipendenze. Dal repo: `npm run mcp`.
 - `ForfettarioDB` resta a versione 3. Tombstone, meta, writer id e log conflitti stanno in `PivellaSyncMeta` (13.8).

@@ -53,7 +53,12 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
   return { command, dir };
 }
 
-/** Cartelle cloud non supportate (13.5): il lock advisory e la scrittura atomica non reggono la sincronizzazione del provider. */
+/**
+ * Cartelle cloud (Dropbox, iCloud, Google Drive, OneDrive): supporto in beta
+ * per decisione di Davide del 14/9/2026. Il server parte e avvisa: il provider
+ * può produrre una "copia in conflitto" se due dispositivi scrivono vicini nel
+ * tempo, e quel file la sync non lo vede.
+ */
 export function isCloudFolder(path: string): boolean {
   return /(^|\/)(Dropbox|Google ?Drive|OneDrive|CloudStorage)(\/|$)|\/Library\/Mobile Documents(\/|$)/i.test(path);
 }
@@ -99,7 +104,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, version: stri
   const args = parseArgs(argv, env);
   const dir = resolve(args.dir);
   if (isCloudFolder(dir)) {
-    throw new Error(`La cartella ${dir} sta in una cartella cloud (Dropbox, iCloud, Google Drive, OneDrive): non supportata. Usa una cartella locale.`);
+    log(`attenzione: ${dir} sta in una cartella cloud (Dropbox, iCloud, Google Drive, OneDrive). Supporto in beta: con scritture rare funziona, ma se due dispositivi scrivono vicini nel tempo il provider può creare una copia in conflitto che la sync ignora.`);
   }
   const writerId = await loadWriterId();
   if (args.command === 'check') {

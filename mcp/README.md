@@ -70,7 +70,7 @@ Diagnostica senza avviare il server:
 npx -y pivella-mcp check --dir /percorso/cartella-di-sync
 ```
 
-La cartella è quella scelta in Impostazioni per la sync su file e può arrivare anche da `PIVELLA_SYNC_DIR`. Le cartelle cloud (Dropbox, iCloud, Google Drive, OneDrive) vengono rifiutate all'avvio. Il writer id sta in `~/.pivella-mcp/writer-id`. Il server locale vede tutti i profili del file, come chi ha accesso al Mac.
+La cartella è quella scelta in Impostazioni per la sync su file e può arrivare anche da `PIVELLA_SYNC_DIR`. Le cartelle cloud (Dropbox, iCloud, Google Drive, OneDrive) sono in beta: il server parte e avvisa su stderr; con scritture rare funziona, ma se due dispositivi scrivono vicini nel tempo il provider può creare una copia in conflitto che la sync ignora. Il writer id sta in `~/.pivella-mcp/writer-id`. Il server locale vede tutti i profili del file, come chi ha accesso al Mac.
 
 ## Dal repo, senza pacchetto
 

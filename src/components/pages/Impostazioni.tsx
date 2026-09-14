@@ -980,7 +980,7 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
         <div className="backup-info" style={{ marginTop: 16 }}>
           <h2>ℹ️ Come funziona</h2>
           <p>I dati vengono salvati nel file <code>pivella-sync.json</code> dentro la cartella scelta. Prima di ogni scrittura il file precedente viene copiato in <code>pivella-backups</code>: si conservano gli ultimi 30 backup, poi uno al giorno per 90 giorni. Il file originale del formato precedente, se c'era, viene conservato per sempre.</p>
-          <p style={{ marginTop: 8 }}>Le cartelle sincronizzate da servizi cloud (Dropbox, iCloud Drive, Google Drive, OneDrive) non sono supportate: la sincronizzazione presuppone un solo computer e un solo orologio.</p>
+          <p style={{ marginTop: 8 }}>Cartelle sincronizzate da servizi cloud (Dropbox, iCloud Drive, Google Drive, OneDrive): supporto in beta. Con poche scritture funziona, ma se due dispositivi scrivono nello stesso momento il servizio può creare una "copia in conflitto" che la sincronizzazione ignora. Se la vedi, controlla i backup.</p>
           <p style={{ marginTop: 8 }}>Copiare a mano un backup sopra <code>pivella-sync.json</code> non è un ripristino: usa la cronologia qui sopra, altrimenti le modifiche più recenti vincerebbero comunque.</p>
         </div>
       </div>
