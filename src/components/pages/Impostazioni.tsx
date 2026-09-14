@@ -5,6 +5,7 @@ import type { Cliente, EmittenteConfig, User, ValutaConfig } from '../../types';
 import { calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva } from '../../lib/utils/forfettario';
 import { GESTIONI_PREVIDENZIALI } from '../../lib/constants/fiscali';
 import { ThemeSwitch } from '../shared/ThemeSwitch';
+import { ProposteInbox } from '../shared/ProposteInbox';
 import { DesignStyleSwitch } from '../shared/DesignStyleSwitch';
 import { getClientColor } from '../../lib/utils/colorUtils';
 import {
@@ -869,6 +870,7 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
 
         {syncFolderHandle && syncFolderName ? (
           <>
+            <ProposteInbox />
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <FolderOpen size={20} style={{ color: 'var(--accent-green)' }} />
               <div style={{ flex: 1 }}>
