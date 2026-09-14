@@ -14,7 +14,21 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["mcp", "pivella", "forfettario", "fatture"],
+  "keywords": [
+    "mcp",
+    "pivella",
+    "forfettario",
+    "fatture"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MakhBeth/pivella.git",
+    "directory": "mcp"
+  },
+  "homepage": "https://pivella.it",
+  "scripts": {
+    "prepublishOnly": "cd .. && npm run mcp:build"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4.6.5"

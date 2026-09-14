@@ -33,13 +33,35 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
+Codex CLI:
+
+```sh
+codex mcp add pivella -- npx -y pivella-mcp --dir /percorso/cartella-di-sync
+```
+
+oppure in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.pivella]
+command = "npx"
+args = ["-y", "pivella-mcp", "--dir", "/percorso/cartella-di-sync"]
+```
+
+Cursor: lo stesso JSON di Claude Desktop in `.cursor/mcp.json` del progetto o in `~/.cursor/mcp.json`. Gemini CLI: lo stesso JSON dentro `~/.gemini/settings.json`, chiave `mcpServers`. Qualunque altro client MCP: server di tipo stdio, comando `npx`, argomenti `-y pivella-mcp --dir /percorso/cartella-di-sync`. Niente porta, niente token, niente URL.
+
+Da sapere:
+
+- le app grafiche come Claude Desktop non ereditano il `PATH` del terminale: se `npx` non viene trovato, usa il percorso completo che ottieni con `which npx`;
+- ogni client avvia la propria copia del server; possono girare insieme e insieme all'app, perché si coordinano con il lock e ognuno fa il backup prima di scrivere;
+- con più profili nel file, il modello chiede quale sei: `list_users` li elenca e ogni tool riceve `userId`.
+
 Diagnostica senza avviare il server:
 
 ```sh
 npx -y pivella-mcp check --dir /percorso/cartella-di-sync
 ```
 
-La cartella è quella scelta in Impostazioni per la sync su file e può arrivare anche da `PIVELLA_SYNC_DIR`. Le cartelle cloud (Dropbox, iCloud, Google Drive, OneDrive) vengono rifiutate all'avvio. Il writer id sta in `~/.pivella-mcp/writer-id`. Con più profili nel file, `list_users` li elenca tutti e ogni tool riceve `userId`: il server locale vede tutti i profili, come chi ha accesso al Mac.
+La cartella è quella scelta in Impostazioni per la sync su file e può arrivare anche da `PIVELLA_SYNC_DIR`. Le cartelle cloud (Dropbox, iCloud, Google Drive, OneDrive) vengono rifiutate all'avvio. Il writer id sta in `~/.pivella-mcp/writer-id`. Il server locale vede tutti i profili del file, come chi ha accesso al Mac.
 
 ## Dal repo, senza pacchetto
 
@@ -49,7 +71,7 @@ npm run mcp -- --dir /percorso/cartella-di-sync         # server su stdio (tsx s
 npm run mcp:build                                       # bundle in mcp/dist/cli.js
 ```
 
-Per Claude Code dal repo: `claude mcp add pivella -- npx tsx /percorso/repo/mcp/src/bin.ts --dir /percorso/cartella-di-sync`.
+Per usare i sorgenti al posto del pacchetto, in qualunque client, il comando è `npx tsx /percorso/repo/mcp/src/bin.ts --dir /percorso/cartella-di-sync`. Per Claude Code: `claude mcp add pivella -- npx tsx /percorso/repo/mcp/src/bin.ts --dir /percorso/cartella-di-sync`.
 
 Per provare senza toccare i dati veri: copia la cartella di sync in una cartella usa e getta e passa quella.
 
@@ -58,9 +80,10 @@ Per provare senza toccare i dati veri: copia la cartella di sync in una cartella
 `mcp/package.json` è il pacchetto: `bin` punta a `dist/cli.js`, dipendenze `@modelcontextprotocol/sdk` e `zod`, il resto (moduli di `src/lib/sync` compresi) è nel bundle. Dalla radice del repo:
 
 ```sh
-npm run mcp:build
 cd mcp && npm publish
 ```
+
+`prepublishOnly` esegue il bundle da solo. Per vedere cosa finisce nel pacchetto senza pubblicare: `npm publish --dry-run`. Alza la versione in `mcp/package.json` a ogni pubblicazione.
 
 ## Struttura
 
