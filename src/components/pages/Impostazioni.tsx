@@ -36,7 +36,7 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
     syncFolderName,
     isSyncing,
     lastSyncTime,
-    syncToFolder,
+    syncNow,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime,
@@ -64,8 +64,8 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
         setSyncFolderHandle(handle);
         setSyncFolderName(getFolderName(handle));
         showToast('Cartella di sincronizzazione selezionata!');
-        // Trigger initial sync
-        syncToFolder();
+        // Primo giro subito, senza debounce
+        void syncNow();
       }
     } catch (err) {
       showToast('Errore nella selezione della cartella', 'error');
@@ -801,7 +801,7 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
             <div className="backup-section">
               <button
                 className="btn btn-primary"
-                onClick={syncToFolder}
+                onClick={() => void syncNow()}
                 disabled={isSyncing}
               >
                 <RefreshCw size={18} className={isSyncing ? 'spinning' : ''} aria-hidden="true" />

@@ -19,12 +19,10 @@ declare global {
   }
 }
 
-import { SYNC_FILENAME, type WriteSyncFileResult } from '../sync/backup';
+import { SYNC_FILENAME } from '../sync/backup';
 import type { SyncFileSystem } from '../sync/fileSystem';
 import { fsaFileSystem } from '../sync/fsaFileSystem';
-import { acquireLock } from '../sync/lock';
-import type { Stamp, SyncSnapshot, Writer } from '../sync/schema';
-import { LEGACY_SYNC_FILENAME, readSyncSnapshot, writeSyncSnapshot, type SyncFileRead } from '../sync/syncFile';
+import type { SyncSource } from '../sync/syncCycle';
 
 const HANDLE_STORE_KEY = 'syncDirectoryHandle';
 
@@ -176,15 +174,10 @@ export async function selectSyncFolder(): Promise<FileSystemDirectoryHandle | nu
   }
 }
 
-// --- Sync v2: lettura, lock, scrittura con backup (13.2, 13.3) --------------
+// --- Sync v2 (13.2, 13.3) ----------------------------------------------------
 //
-// La logica sta in `lib/sync/syncFile.ts` e `lib/sync/lock.ts`, pure e
+// La logica sta in `lib/sync/syncCycle.ts`, `syncFile.ts` e `lock.ts`, pure e
 // testate in Node. Qui solo l'adattamento all'handle della cartella.
-
-export interface FolderSnapshotRead extends SyncFileRead {
-  /** `lastModified` di `pivella-sync.json` al momento della lettura, null se manca. */
-  lastModified: number | null;
-}
 
 export function syncFileSystemOf(handle: FileSystemDirectoryHandle): SyncFileSystem {
   return fsaFileSystem(handle);
@@ -201,92 +194,9 @@ export async function getSyncFileLastModified(handle: FileSystemDirectoryHandle)
   }
 }
 
-/** Legge il file di sync (v1 o v2, anche sotto il vecchio nome) e ricorda `lastModified`. */
-export async function readSyncSnapshotFromFolder(handle: FileSystemDirectoryHandle, stamp: Stamp): Promise<FolderSnapshotRead | null> {
-  const lastModified = await getSyncFileLastModified(handle);
-  const read = await readSyncSnapshot(syncFileSystemOf(handle), stamp);
-  return read ? { ...read, lastModified } : null;
-}
-
-export interface WriteSnapshotToFolderOptions {
-  writer: Writer;
-  previous: SyncFileRead | null;
-  now?: Date;
-  /**
-   * Chiamato con il lock acquisito, prima del backup: se torna false la
-   * scrittura non parte (il file è cambiato nel frattempo e va rifuso).
-   */
-  stillCurrent?: () => Promise<boolean>;
-}
-
-export type WriteSnapshotToFolderResult = { status: 'written'; result: WriteSyncFileResult } | { status: 'stale' };
-
-/**
- * Lock advisory, ricontrollo opzionale, backup verificato, scrittura atomica,
- * rilascio del lock, rotazione. Se il backup fallisce il lock viene
- * rilasciato e l'errore (`BackupError`) risale al chiamante: IndexedDB è già
- * aggiornato, il file resta indietro fino al prossimo tentativo.
- */
-export async function writeSyncSnapshotToFolder(
-  handle: FileSystemDirectoryHandle,
-  snapshot: SyncSnapshot,
-  options: WriteSnapshotToFolderOptions,
-): Promise<WriteSnapshotToFolderResult> {
-  const fs = syncFileSystemOf(handle);
-  const lock = await acquireLock(fs, { writerId: options.writer.id, kind: options.writer.kind });
-  try {
-    if (options.stillCurrent && !(await options.stillCurrent())) return { status: 'stale' };
-    const result = await writeSyncSnapshot(fs, snapshot, { now: options.now ?? new Date(), writer: options.writer, previous: options.previous });
-    return { status: 'written', result };
-  } finally {
-    await lock.release();
-  }
-}
-
-// --- Formato v1: usato ancora da useFolderSync, sostituito al passo 4 ---------
-
-/**
- * Write sync data to the selected folder
- * @deprecated formato v1 senza backup: da rimuovere quando `useFolderSync` passa a `writeSyncSnapshotToFolder`.
- */
-export async function writeSyncFile(
-  handle: FileSystemDirectoryHandle,
-  data: Record<string, any[]>
-): Promise<void> {
-  const fileHandle = await handle.getFileHandle(SYNC_FILENAME, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(JSON.stringify(data, null, 2));
-  await writable.close();
-}
-
-/**
- * Read sync data from the selected folder
- * @deprecated formato v1: da rimuovere quando `useFolderSync` passa a `readSyncSnapshotFromFolder`.
- */
-export async function readSyncFile(
-  handle: FileSystemDirectoryHandle
-): Promise<Record<string, any[]> | null> {
-  try {
-    const fileHandle = await handle.getFileHandle(SYNC_FILENAME);
-    const file = await fileHandle.getFile();
-    const text = await file.text();
-    return JSON.parse(text);
-  } catch (err: any) {
-    // File doesn't exist yet: fall back to the legacy filename
-    if (err.name === 'NotFoundError') {
-      try {
-        const legacyHandle = await handle.getFileHandle(LEGACY_SYNC_FILENAME);
-        const legacyFile = await legacyHandle.getFile();
-        return JSON.parse(await legacyFile.text());
-      } catch (legacyErr: any) {
-        if (legacyErr.name === 'NotFoundError') {
-          return null;
-        }
-        throw legacyErr;
-      }
-    }
-    throw err;
-  }
+/** Sorgente per `runSyncCycle`: file system sull'handle più `lastModified` del file di sync. */
+export function folderSyncSource(handle: FileSystemDirectoryHandle): SyncSource {
+  return { fs: syncFileSystemOf(handle), lastModified: () => getSyncFileLastModified(handle) };
 }
 
 /**
