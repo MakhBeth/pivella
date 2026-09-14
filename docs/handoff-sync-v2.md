@@ -4,11 +4,11 @@ Per un agente che non ha visto il lavoro precedente. Leggi questo file, poi solo
 
 ## 1. Stato del branch
 
-Branch `feat/sync-v2-merge-backup`, 24 commit oltre `main`, working tree pulito, **mai pushato**. Passi 1 e 2 chiusi il 13/9/2026, passi 3, 4 e 5 il 14/9/2026.
+Branch `feat/sync-v2-merge-backup`, 27 commit oltre `main`, working tree pulito, **mai pushato**. Passi 1 e 2 chiusi il 13/9/2026, passi da 3 a 6 il 14/9/2026. Il ripristino dall'app non è ancora stato provato a mano in Chrome.
 
 | Verifica | Esito |
 |---|---|
-| `npm test` (node:test via tsx) | 174 verdi, 0 falliti |
+| `npm test` (node:test via tsx) | 182 verdi, 0 falliti |
 | `npm run lint` (`tsc --noEmit`) | pulito |
 | `npm run build` | ok |
 
@@ -43,6 +43,13 @@ Passo 4, fatto e **provato a mano in Chrome il 14/9/2026** su `~/pivella-prova-s
 
 Passo 5, fatto: `src/lib/sync/applyChanges.ts` (`applyStoreChanges`, pura e testata) e `handleSynced` in AppContext aggiornano lo stato React per differenze del merge, filtrate per utente corrente; la config si aggiorna solo se il suo id è tra gli upserted. La ricarica totale dal DB resta solo dopo un ripristino.
 - `src/lib/utils/fileSystemSync.ts`: `folderSyncSource(handle)`, `getSyncFileLastModified`. Le funzioni v1 sono rimosse.
+
+Passo 6, fatto:
+
+- `src/lib/sync/restore.ts` (puro, testato): `listBackups` (solo nomi validi, dal più recente, con kind, data e dimensione), `readBackup` (v1 o v2, conteggi per store e profili, nomi con separatori rifiutati), `restoreFromBackup` (13.3): lock, `writeSyncSnapshot` con kind `pre-restore` e busta `restoredAt`, `restoredFrom`, `writer.kind = restore`, tombstone vuoti, poi `restoreFromSnapshot`. Prima il file, poi il database: se l'app muore nel mezzo il giro successivo completa il rimpiazzo locale. Se il `pre-restore` fallisce non succede nulla.
+- `writeSyncSnapshot` accetta `kind` esplicito. `IndexedDBManager.getSyncStatus()` per i conteggi di conflitti e archivio.
+- `useFolderSync`: `syncStatus`, `listBackups`, `previewBackup`, `restoreBackup` (esclusivo con il giro di sync, passa da `onSynced` con esito `restored`).
+- `Impostazioni`: banner `syncError` con Riprova, conteggio conflitti e archivio, cronologia con tabella, anteprima dei conteggi e conferma inline prima del ripristino, pulsanti Cambia Cartella e Rimuovi disabilitati durante la sync, testi su cartelle cloud non supportate, rotazione, e sul fatto che copiare a mano un backup non è un ripristino.
 
 ## 2. Specifica: cosa leggere davvero
 
@@ -79,7 +86,7 @@ Ordine obbligato. Stime per una persona.
 | 3 (fatto) | `src/lib/utils/fileSystemSync.ts` | lettura con `parseSyncFile` (v1 e v2), scrittura con `writeSyncFile` su `fsaFileSystem`, `pruneSnapshot` prima di serializzare, `lastModified` dall'handle, lock advisory `pivella-sync.lock` (13.3), backup kind `v1` al primo file legacy (già garantito da `writeSyncFile`) | 1,5 gg | sì |
 | 4 (fatto, senza polling) | `src/hooks/useFolderSync.ts` | ciclo leggi, fondi, applica, riscrivi solo se diverso; polling `lastModified` ogni 3 s a tab visibile; stato errore backup con banner e Riprova; gestione permesso da rinnovare | 1,5 gg | sì |
 | 5 (fatto) | `src/context/AppContext.tsx` | `handleDataLoaded` aggiorna lo stato React per differenze del merge invece di sostituirlo | 1 gg | indiretto |
-| 6 | `src/components/pages/Impostazioni.tsx` | conteggio conflitti e archivio, stato backup, cronologia con ripristino (`pre-restore`, rimpiazzo totale, `restoredAt`), testo su cartelle cloud non supportate | 1,5 gg | sì |
+| 6 (fatto) | `src/components/pages/Impostazioni.tsx` | conteggio conflitti e archivio, stato backup, cronologia con ripristino (`pre-restore`, rimpiazzo totale, `restoredAt`), testo su cartelle cloud non supportate | 1,5 gg | sì |
 
 Totale 7,5 giornate. Dopo: server MCP in `mcp/` con i 17 tool (13.1, 13.4) e UI delle proposte, circa 5,5 giornate, fuori da questo handoff.
 
