@@ -924,9 +924,9 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
                   <p style={{ color: 'var(--text-muted)' }}>Nessun backup nella cartella. Il primo viene creato alla prima modifica dopo il collegamento.</p>
                 ) : (
                   <div className="table-wrapper">
-                    <table>
+                    <table className="table">
                       <thead>
-                        <tr><th>Data</th><th>Tipo</th><th>Dimensione</th><th></th></tr>
+                        <tr><th scope="col">Data</th><th scope="col">Tipo</th><th scope="col">Dimensione</th><th scope="col"><span className="sr-only">Azioni</span></th></tr>
                       </thead>
                       <tbody>
                         {backups.map((b) => (
