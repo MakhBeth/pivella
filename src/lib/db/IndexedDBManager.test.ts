@@ -347,3 +347,28 @@ test('restoreFromSnapshot archives every local record that the restore drops or 
   assert.ok(archive.every((a) => a.reason === 'restore'));
   assert.deepEqual((await db.getAll('clienti')).map((c) => c.id).sort(), ['comune', 'uguale']);
 });
+
+test('restoreFromSnapshot never loses a record written between the archive and the replacement', async () => {
+  const { factory, db } = manager();
+  await db.init();
+  await db.put('clienti', cliente('prima', 'Prima', { updatedAt: T0, updatedBy: 'app-a' }));
+  const snapshot = createEmptySnapshot({ now: T1, writer: { id: 'restore-1', kind: 'restore' } });
+  snapshot.clienti.push(cliente('dalBackup', 'Dal backup', { updatedAt: T0, updatedBy: 'app-a' }) as any);
+  snapshot.restoredAt = T1;
+  // Una scrittura locale arriva dopo l'archiviazione e prima del rimpiazzo.
+  const meta = (db as any).syncMeta;
+  const append = meta.appendConflicts.bind(meta);
+  let injected = false;
+  meta.appendConflicts = async (...args: any[]) => {
+    await append(...args);
+    if (!injected) {
+      injected = true;
+      await db.put('clienti', cliente('in-corsa', 'Scritto durante il ripristino', { updatedAt: NOW, updatedBy: 'app-a' }));
+    }
+  };
+  await db.restoreFromSnapshot(snapshot);
+  const archive = await (await openSyncMetaDb(factory)).getArchive();
+  assert.ok(archive.some((a) => a.id === 'in-corsa'), 'il record scritto durante il ripristino è in archivio');
+  assert.ok(archive.some((a) => a.id === 'prima'));
+  assert.deepEqual((await db.getAll('clienti')).map((c) => c.id), ['dalBackup']);
+});

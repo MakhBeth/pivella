@@ -32,6 +32,31 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
+function sortById<T extends { id: string }>(records: T[]): T[] {
+  return [...records].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/** Record locali che un ripristino con `snapshot` cambierebbe o eliminerebbe. */
+function droppedByRestore(local: SyncSnapshot, snapshot: SyncSnapshot): Conflict[] {
+  const dropped: Conflict[] = [];
+  for (const store of STORES) {
+    const restored = new Map((snapshot[store] as SyncRecord[]).map((r) => [r.id, r]));
+    for (const record of local[store] as SyncRecord[]) {
+      const next = restored.get(record.id);
+      if (next && canonicalJson(next) === canonicalJson(record)) continue;
+      dropped.push({
+        store,
+        id: record.id,
+        reason: 'restore',
+        kept: { updatedAt: next?.updatedAt ?? null, updatedBy: next?.updatedBy ?? null },
+        dropped: { updatedAt: record.updatedAt ?? null, updatedBy: record.updatedBy ?? null },
+        droppedRecord: record,
+      });
+    }
+  }
+  return dropped;
+}
+
 export class IndexedDBManager {
   db: IDBDatabase | null;
   /** Id di questo writer, da `PivellaSyncMeta`. Disponibile dopo `init`. */
@@ -171,30 +196,57 @@ export class IndexedDBManager {
     const meta = await this.ensureSyncMeta();
     // Ogni record locale che il ripristino cambia o elimina finisce
     // nell'archivio per intero: è la sua unica copia (i backup sono del file).
-    const local = await this.exportSnapshot();
-    const dropped: Conflict[] = [];
-    for (const store of STORES) {
-      const restored = new Map((snapshot[store] as SyncRecord[]).map((r) => [r.id, r]));
-      for (const record of local[store] as SyncRecord[]) {
-        const next = restored.get(record.id);
-        if (next && canonicalJson(next) === canonicalJson(record)) continue;
-        dropped.push({
-          store,
-          id: record.id,
-          reason: 'restore',
-          kept: { updatedAt: next?.updatedAt ?? null, updatedBy: next?.updatedBy ?? null },
-          dropped: { updatedAt: record.updatedAt ?? null, updatedBy: record.updatedBy ?? null },
-          droppedRecord: record,
-        });
+    // Archivio e rimpiazzo stanno in due database, quindi in due transazioni:
+    // il rimpiazzo avviene in una sola transazione che prima rilegge gli
+    // store e li confronta con ciò che è stato archiviato. Se qualcosa è
+    // cambiato nel frattempo (anche da un'altra scheda) si archivia di nuovo
+    // e si riprova, così nessun record resta senza copia.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const local = await this.exportSnapshot();
+      await meta.appendConflicts(droppedByRestore(local, snapshot), this.now());
+      if (await this.replaceStoresIfUnchanged(snapshot, local)) {
+        await meta.replaceTombstones([]);
+        await meta.setMeta('lastRestoreAck', snapshot.restoredAt ?? this.now());
+        await meta.setMeta('lastRestoreFrom', snapshot.restoredFrom);
+        return;
       }
     }
-    await meta.appendConflicts(dropped, this.now());
-    const data: Record<string, any[]> = {};
-    for (const store of STORES) data[store] = snapshot[store] as any[];
-    await this.importAll(data);
-    await meta.replaceTombstones([]);
-    await meta.setMeta('lastRestoreAck', snapshot.restoredAt ?? this.now());
-    await meta.setMeta('lastRestoreFrom', snapshot.restoredFrom);
+    throw new Error('Ripristino annullato: il database continua a cambiare durante il rimpiazzo');
+  }
+
+  /**
+   * Rimpiazzo totale di tutti gli store in una sola transazione, solo se il
+   * contenuto corrente è ancora identico a `expected`. La transazione
+   * readwrite su tutti gli store serializza anche le scritture delle altre
+   * schede, quindi tra il confronto e il rimpiazzo non passa nulla.
+   */
+  private async replaceStoresIfUnchanged(snapshot: SyncSnapshot, expected: SyncSnapshot): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+    const tx = this.db.transaction([...STORES], 'readwrite');
+    let unchanged = true;
+    try {
+      for (const store of STORES) {
+        const current = (await request(tx.objectStore(store).getAll())) as SyncRecord[];
+        if (canonicalJson(sortById(current)) !== canonicalJson(sortById(expected[store] as SyncRecord[]))) {
+          unchanged = false;
+          break;
+        }
+      }
+      if (!unchanged) {
+        tx.abort();
+        return false;
+      }
+      for (const store of STORES) {
+        const objectStore = tx.objectStore(store);
+        objectStore.clear();
+        for (const record of snapshot[store] as SyncRecord[]) objectStore.put(record);
+      }
+    } catch (e) {
+      tx.abort();
+      throw e;
+    }
+    await complete(tx);
+    return true;
   }
 
   /** Timbra sempre `updatedAt` e `updatedBy`: da usare negli hook a ogni modifica dell'utente. */

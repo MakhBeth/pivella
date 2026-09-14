@@ -205,7 +205,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!userId) return;
     currentUserIdRef.current = userId;
     const userConfig = allConfig.find((c: Config) => c.userId === userId);
-    if (userConfig) setConfigRef.current(userConfig);
+    if (userConfig) setConfigRef.current(userConfig, { force: true });
     else resetConfigRef.current(userId);
     setClientiRef.current(allClienti.filter((c: Cliente) => c.userId === userId));
     setFattureRef.current(allFatture.filter((f: Fattura) => f.userId === userId));

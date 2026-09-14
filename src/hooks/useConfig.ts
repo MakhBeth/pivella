@@ -47,11 +47,12 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
    * normalizzata con i default e messa in stato senza essere risalvata, così
    * non riceve un timbro nuovo e non genera un conflitto fasullo con il file.
    */
-  const applyPersistedConfig = useCallback((saved: Config) => {
+  const applyPersistedConfig = useCallback((saved: Config, options: { force?: boolean } = {}) => {
     const loaded: Config = { ...DEFAULT_CONFIG, ...saved, id: saved.id, userId: saved.userId };
-    // Una modifica dell'utente in attesa di salvataggio (timbro più recente) non va sovrascritta.
+    // Una modifica dell'utente in attesa di salvataggio (timbro più recente)
+    // non va sovrascritta da un merge. Un ripristino invece è autoritativo.
     const current = configRef.current;
-    if (current.id === loaded.id && compareInstants(current.updatedAt, loaded.updatedAt) > 0) return;
+    if (!options.force && current.id === loaded.id && compareInstants(current.updatedAt, loaded.updatedAt) > 0) return;
     persistedRef.current = { json: canonicalJson(loaded), updatedAt: loaded.updatedAt };
     setConfig(loaded);
   }, []);
