@@ -39,6 +39,15 @@ test('atomicWrite falls back to direct write plus verification when move is miss
   assert.deepEqual(fs.log.filter((l) => l.startsWith('write')), ['write a/b.json.part', 'write a/b.json']);
 });
 
+test('atomicWrite falls back when move rejects with NotAllowedError, as Chrome does on local folders', async () => {
+  const fs = memoryFileSystem({ withMove: true });
+  fs.move = async () => { throw new DOMException('The request is not allowed by the user agent or the platform in the current context.', 'NotAllowedError'); };
+  const r = await atomicWrite(fs, 'x.json', text('hello'));
+  assert.equal(r.method, 'fallback');
+  assert.equal(fromBytes(fs.files.get('x.json') ?? null), 'hello');
+  assert.equal(fs.files.has('x.json.part'), false);
+});
+
 test('atomicWrite falls back when move rejects with NotSupportedError, and only then', async () => {
   const fs = memoryFileSystem({ withMove: true });
   fs.move = async () => { throw new DOMException('move non supportato qui', 'NotSupportedError'); };

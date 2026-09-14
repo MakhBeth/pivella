@@ -34,10 +34,13 @@ export async function atomicWrite(fs: SyncFileSystem, path: string, bytes: Uint8
       await fs.move(part, path);
       return { method: 'move', hash };
     } catch (err) {
-      // Feature detection sul prototipo non basta: Chromium può esporre move()
-      // e rifiutarlo sui file locali. Solo "non supportato" attiva il fallback;
-      // ogni altro errore (I/O, permessi) resta un errore.
-      if (!isNotSupported(err)) throw err;
+      // Feature detection sul prototipo non basta: Chromium espone move() e
+      // sui file locali lo rifiuta, a volte con NotSupportedError, a volte con
+      // NotAllowedError ("not allowed by the user agent or the platform in the
+      // current context", visto il 14/9/2026). Entrambi attivano il fallback:
+      // se fosse davvero un permesso mancante, anche la scrittura diretta
+      // fallirebbe con lo stesso errore, e quello resta un errore.
+      if (!isMoveRefused(err)) throw err;
     }
   }
 
@@ -57,6 +60,7 @@ async function verify(fs: SyncFileSystem, path: string, length: number, hash: st
   if (actual !== hash) throw new Error(`Scrittura non riuscita, verifica fallita: ${path} hash diverso`);
 }
 
-function isNotSupported(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { name?: string }).name === 'NotSupportedError';
+function isMoveRefused(err: unknown): boolean {
+  const name = typeof err === 'object' && err !== null ? (err as { name?: string }).name : undefined;
+  return name === 'NotSupportedError' || name === 'NotAllowedError';
 }
