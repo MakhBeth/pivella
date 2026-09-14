@@ -1023,7 +1023,9 @@ mcp/src/datasource.ts         interfaccia DataSource e DataSourceError
 mcp/src/fileDataSource.ts     implementazione su file, lock, backup con fs
 mcp/src/tools/*.ts            un file per tool, solo contratto e mapping
 mcp/src/server.ts             registrazione tool, trasporto stdio
-mcp/src/cli.ts                avvio, restore, diagnostica
+mcp/src/cli.ts                avvio, check, writer id, cartelle cloud
+mcp/src/bin.ts                entry point del comando pivella-mcp
+mcp/package.json              pacchetto npm pivella-mcp
 ```
 
 ## 13.5 Cose dichiarate chiuse
@@ -1038,13 +1040,13 @@ mcp/src/cli.ts                avvio, restore, diagnostica
 - Il numero fattura è il progressivo che l'app assegna già oggi, `max + 1` sul valore intero di `numero` tra le fatture dell'anno della data della fattura **[V]**, con due cifre minime. In un anno nuovo riparte da 1. Nessun altro formato.
 - Cartelle cloud non supportate, con controllo all'avvio del server (13.2).
 - Scrittura atomica con `.part` e `move()` con feature detection e fallback verificato (13.3), per backup e per file di sync.
-- Il nome del pacchetto npm è rimandato e non blocca nulla: nel frattempo il server si avvia dal repo con `npm run mcp`.
+- Il pacchetto npm si chiama `pivella-mcp` (deciso da Davide il 14/9/2026): `npx -y pivella-mcp --dir <cartella>`; `mcp/package.json` con `bin`, bundle esbuild in `mcp/dist/cli.js`, `@modelcontextprotocol/sdk` e `zod` come dipendenze. Dal repo: `npm run mcp`.
 - `ForfettarioDB` resta a versione 3. Tombstone, meta, writer id e log conflitti stanno in `PivellaSyncMeta` (13.8).
 - La dedup del backup richiede che il file citato in `latest.json` esista con lo stesso hash (13.3).
 
 ## 13.6 Cosa resta davvero da decidere
 
-1. **Nome del pacchetto npm**: rimandato per decisione di Davide, non bloccante. Nient'altro.
+Niente: anche il nome del pacchetto npm è chiuso (`pivella-mcp`, 13.5).
 
 ## 13.7 Giornate e fatture: verifica e decisione
 

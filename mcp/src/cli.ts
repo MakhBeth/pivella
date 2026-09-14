@@ -1,16 +1,17 @@
 /**
- * Avvio del server MCP locale da terminale (13.4, `cli.ts`).
+ * Avvio del server MCP locale da terminale (13.4, `cli.ts`). L'entry point
+ * eseguibile è `bin.ts`, pubblicato come comando `pivella-mcp`.
  *
- *   npm run mcp -- --dir <cartella di sync>        avvia il server su stdio
- *   npm run mcp -- check --dir <cartella di sync>  diagnostica, senza server
+ *   npx -y pivella-mcp --dir <cartella di sync>        avvia il server su stdio
+ *   npx -y pivella-mcp check --dir <cartella di sync>  diagnostica, senza server
  *
- * La cartella può arrivare anche da `PIVELLA_SYNC_DIR`. Stdout è riservato
- * al protocollo: ogni messaggio umano va su stderr.
+ * Dal repo: `npm run mcp -- ...`. La cartella può arrivare anche da
+ * `PIVELLA_SYNC_DIR`. Stdout è riservato al protocollo: ogni messaggio umano
+ * va su stderr.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
@@ -76,16 +77,7 @@ export async function loadWriterId(home: string = homedir()): Promise<string> {
   return id;
 }
 
-async function packageVersion(): Promise<string> {
-  try {
-    const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')) as { version?: string };
-    return pkg.version ?? '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
-}
-
-const log = (message: string) => process.stderr.write(`[${SERVER_NAME}] ${message}\n`);
+export const log = (message: string) => process.stderr.write(`[${SERVER_NAME}] ${message}\n`);
 
 export async function check(dir: string, writerId: string, version: string): Promise<void> {
   const fs = nodeFileSystem(dir);
@@ -103,13 +95,13 @@ export async function check(dir: string, writerId: string, version: string): Pro
   log(`writer id: ${writerId}`);
 }
 
-export async function main(argv: string[] = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Promise<void> {
+export async function main(argv: string[], env: NodeJS.ProcessEnv, version: string): Promise<void> {
   const args = parseArgs(argv, env);
   const dir = resolve(args.dir);
   if (isCloudFolder(dir)) {
     throw new Error(`La cartella ${dir} sta in una cartella cloud (Dropbox, iCloud, Google Drive, OneDrive): non supportata. Usa una cartella locale.`);
   }
-  const [writerId, version] = await Promise.all([loadWriterId(), packageVersion()]);
+  const writerId = await loadWriterId();
   if (args.command === 'check') {
     await check(dir, writerId, version);
     return;
@@ -118,12 +110,4 @@ export async function main(argv: string[] = process.argv.slice(2), env: NodeJS.P
   const server = createServer(ds, { writerId, version });
   await server.connect(new StdioServerTransport());
   log(`in ascolto su stdio, cartella ${dir}, writer ${writerId}`);
-}
-
-const invokedDirectly = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (invokedDirectly) {
-  main().catch((err: unknown) => {
-    log(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  });
 }

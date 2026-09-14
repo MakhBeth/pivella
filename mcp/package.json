@@ -1,0 +1,22 @@
+{
+  "name": "pivella-mcp",
+  "version": "0.1.0",
+  "description": "Server MCP locale per Pivella: legge il file di sync e propone modifiche da confermare nell'app",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "pivella-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": ["mcp", "pivella", "forfettario", "fatture"],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.6.5"
+  }
+}
