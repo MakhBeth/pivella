@@ -4,11 +4,11 @@ Per un agente che non ha visto il lavoro precedente. Leggi questo file, poi solo
 
 ## 1. Stato del branch
 
-Branch `feat/sync-v2-merge-backup`, 21 commit oltre `main`, working tree pulito, **mai pushato**. Passi 1 e 2 chiusi il 13/9/2026, passi 3 e 4 il 14/9/2026.
+Branch `feat/sync-v2-merge-backup`, 24 commit oltre `main`, working tree pulito, **mai pushato**. Passi 1 e 2 chiusi il 13/9/2026, passi 3, 4 e 5 il 14/9/2026.
 
 | Verifica | Esito |
 |---|---|
-| `npm test` (node:test via tsx) | 168 verdi, 0 falliti |
+| `npm test` (node:test via tsx) | 174 verdi, 0 falliti |
 | `npm run lint` (`tsc --noEmit`) | pulito |
 | `npm run build` | ok |
 
@@ -34,12 +34,14 @@ Passo 3, fatto e testato in Node sul file system in memoria, non ancora usato da
 - `src/lib/sync/syncFile.ts`: `readSyncSnapshot` (v1 e v2, con fallback su `forfettino-sync.json`, riporta `source`, `upgradedFromV1` e i byte letti); `writeSyncSnapshot` timbra la busta, pota, serializza e chiama `writeSyncFile`. Se il file letto era v1 il backup ha kind `v1`; se stava sotto il vecchio nome, i suoi byte vengono prima copiati su `pivella-sync.json` così il backup li conserva, e il vecchio file resta dov'è.
 - `src/lib/utils/fileSystemSync.ts`: `getSyncFileLastModified`, `readSyncSnapshotFromFolder` (con `lastModified`), `writeSyncSnapshotToFolder` (lock, ricontrollo opzionale `stillCurrent`, scrittura, rilascio; esito `written` o `stale`). Le vecchie `readSyncFile` e `writeSyncFile` v1 restano marcate deprecated finché `useFolderSync` non passa al nuovo ciclo.
 
-Passo 4, fatto: l'app usa la sync v2 (non ancora provata a mano su una copia di cartella).
+Passo 4, fatto e **provato a mano in Chrome il 14/9/2026** su `~/pivella-prova-sync` (cartelle usa e getta con dati finti): migrazione v1 con backup `v1` identico e file forfettino intatto, modifiche scritte con backup `.app.json`, nessun backup in più su ricarica, lock e `.part` puliti. Un cambio cartella durante una scrittura lascia un `.part` e non tocca il file: da disabilitare "Cambia Cartella" e "Rimuovi" mentre `isSyncing` (passo 6).
 
 - `src/lib/sync/syncCycle.ts`: `runSyncCycle` (13.2): leggi e `lastModified`; se il file ha `restoredAt` maggiore di `lastRestoreAck` rimpiazzo totale con `restoreFromSnapshot` e stop; altrimenti `exportSnapshot`, `mergeSnapshots`, `mergeIntoDb`; riscrivi solo se diverso, oppure sempre se il file era v1 o sotto il vecchio nome; lock, ricontrollo di `lastModified`, in caso di cambio rilegge (3 tentativi, poi `stale`). Esiti: `created`, `restored`, `unchanged`, `written`, `stale`, ognuno con `localChanged`. Testato con file system in memoria e fake-indexeddb.
 - `IndexedDBManager`: `restoreFromSnapshot` (`importAll`, tombstone svuotati, `lastRestoreAck` e `lastRestoreFrom`), `getLastRestoreAck`. `PivellaSyncMeta.meta` ha anche la chiave `lastRestoreFrom`: senza, a parità di `restoredAt` il merge azzerava `restoredFrom` e riscriveva il file a ogni giro.
 - `src/hooks/useFolderSync.ts`: ogni trigger è un giro completo. Avvio, focus, cambiamenti con debounce 500 ms (`syncToFolder`), pulsante senza debounce (`syncNow`). Un giro alla volta. `syncError` con il motivo (backup, lock, permesso). Niente polling.
-- `src/context/AppContext.tsx`: `onSynced` ricarica **tutti** gli store dal DB quando il giro ha cambiato IndexedDB (temporaneo, sparisce al passo 5); `prepareRemote` fa la vecchia migrazione dei file senza profili.
+- `src/context/AppContext.tsx`: `prepareRemote` fa la vecchia migrazione dei file senza profili.
+
+Passo 5, fatto: `src/lib/sync/applyChanges.ts` (`applyStoreChanges`, pura e testata) e `handleSynced` in AppContext aggiornano lo stato React per differenze del merge, filtrate per utente corrente; la config si aggiorna solo se il suo id è tra gli upserted. La ricarica totale dal DB resta solo dopo un ripristino.
 - `src/lib/utils/fileSystemSync.ts`: `folderSyncSource(handle)`, `getSyncFileLastModified`. Le funzioni v1 sono rimosse.
 
 ## 2. Specifica: cosa leggere davvero
@@ -76,7 +78,7 @@ Ordine obbligato. Stime per una persona.
 | 2 (fatto) | `src/lib/db/IndexedDBManager.ts` | apre anche `PivellaSyncMeta` e recupera il writer id; `put` timbra; `delete` scrive **prima** il tombstone con `tombstoneTimestamp` e poi cancella; `mergeIntoDb(result)`: archivia i `droppedRecord` con `appendConflicts`, poi applica `changes` per store; riconciliazione all'avvio; `IDBFactory` iniettabile per i test. `importAll` e `onupgradeneeded` invariati | 2 gg | sì |
 | 3 (fatto) | `src/lib/utils/fileSystemSync.ts` | lettura con `parseSyncFile` (v1 e v2), scrittura con `writeSyncFile` su `fsaFileSystem`, `pruneSnapshot` prima di serializzare, `lastModified` dall'handle, lock advisory `pivella-sync.lock` (13.3), backup kind `v1` al primo file legacy (già garantito da `writeSyncFile`) | 1,5 gg | sì |
 | 4 (fatto, senza polling) | `src/hooks/useFolderSync.ts` | ciclo leggi, fondi, applica, riscrivi solo se diverso; polling `lastModified` ogni 3 s a tab visibile; stato errore backup con banner e Riprova; gestione permesso da rinnovare | 1,5 gg | sì |
-| 5 | `src/context/AppContext.tsx` | `handleDataLoaded` aggiorna lo stato React per differenze del merge invece di sostituirlo | 1 gg | indiretto |
+| 5 (fatto) | `src/context/AppContext.tsx` | `handleDataLoaded` aggiorna lo stato React per differenze del merge invece di sostituirlo | 1 gg | indiretto |
 | 6 | `src/components/pages/Impostazioni.tsx` | conteggio conflitti e archivio, stato backup, cronologia con ripristino (`pre-restore`, rimpiazzo totale, `restoredAt`), testo su cartelle cloud non supportate | 1,5 gg | sì |
 
 Totale 7,5 giornate. Dopo: server MCP in `mcp/` con i 17 tool (13.1, 13.4) e UI delle proposte, circa 5,5 giornate, fuori da questo handoff.
