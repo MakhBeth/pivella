@@ -38,6 +38,8 @@ export interface WriteSnapshotOptions {
   writer: Writer;
   /** Esito della lettura che ha preceduto questa scrittura, o null alla prima sync. */
   previous: SyncFileRead | null;
+  /** Kind del backup del file corrente; se assente, `v1` per un file letto come v1, altrimenti `app`. */
+  kind?: BackupKind;
 }
 
 /**
@@ -56,6 +58,6 @@ export async function writeSyncSnapshot(fs: SyncFileSystem, snapshot: SyncSnapsh
   if (previous?.source === 'legacy' && (await fs.read(SYNC_FILENAME)) === null) {
     await atomicWrite(fs, SYNC_FILENAME, previous.bytes);
   }
-  const kind: BackupKind = previous?.upgradedFromV1 ? 'v1' : 'app';
+  const kind: BackupKind = options.kind ?? (previous?.upgradedFromV1 ? 'v1' : 'app');
   return writeSyncFile(fs, bytes, { kind, now: options.now });
 }

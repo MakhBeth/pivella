@@ -242,3 +242,16 @@ test('restoreFromSnapshot replaces every store, clears local tombstones and ackn
   assert.equal(exported.restoredAt, T1);
   assert.equal(exported.restoredFrom, snapshot.restoredFrom, 'a parità di restoredAt il merge confronta restoredFrom: va ricordato');
 });
+
+test('getSyncStatus reports conflicts and archived records after a merge', async () => {
+  const { db } = manager();
+  await db.init();
+  assert.deepEqual(await db.getSyncStatus(), { conflicts: 0, archived: 0 });
+  await db.put('clienti', cliente('c1', 'Locale', { updatedAt: T0, updatedBy: 'app-a' }));
+  const local = createEmptySnapshot({ now: T0, writer: { id: 'app-a', kind: 'app' } });
+  local.clienti.push(cliente('c1', 'Locale', { updatedAt: T0, updatedBy: 'app-a' }) as any);
+  const remote = createEmptySnapshot({ now: T1, writer: { id: 'mcp-1', kind: 'mcp' } });
+  remote.clienti.push(cliente('c1', 'Remoto', { updatedAt: T1, updatedBy: 'mcp-1' }) as any);
+  await db.mergeIntoDb(mergeAgainstLocal(local, remote));
+  assert.deepEqual(await db.getSyncStatus(), { conflicts: 1, archived: 1 });
+});

@@ -149,6 +149,13 @@ export class IndexedDBManager {
     return snapshot;
   }
 
+  /** Conteggi per Impostazioni: conflitti nel log limitato e record archiviati per intero. */
+  async getSyncStatus(): Promise<{ conflicts: number; archived: number }> {
+    const meta = await this.ensureSyncMeta();
+    const [conflicts, archive] = await Promise.all([meta.getConflicts(), meta.getArchive()]);
+    return { conflicts: conflicts.length, archived: archive.length };
+  }
+
   async getLastRestoreAck(): Promise<string | null> {
     const meta = await this.ensureSyncMeta();
     return (await meta.getMeta<string>('lastRestoreAck')) ?? null;
