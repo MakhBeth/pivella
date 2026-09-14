@@ -691,7 +691,7 @@ Convenzioni comuni a tutto il documento:
 | `INTERNAL` | tutto il resto, con `details.ref` per i log |
 
 - Liste: parametri opzionali `limit` (default 500, massimo 2000) e `offset` (default 0); risposta con `total` e `hasMore`. Nel locale è ridondante, nel web no, e il contratto non cambia.
-- Gli oggetti restituiti sono i tipi di `src/types/index.ts` **[V]** con queste eccezioni fisse: `Config` esce senza `courtesyInvoice.logoBase64` e `logoMimeType`; ogni `Fattura` e `WorkLog` esce con in più `clienteNome` risolto; i clienti speciali `__vacation__` e `__misc__` **[V]** escono con `nome` rispettivamente `Ferie` e `Varie` e `speciale: true`.
+- Gli oggetti restituiti sono i tipi di `src/types/index.ts` **[V]** con queste eccezioni fisse: `Config` esce senza `courtesyInvoice.logoBase64` e `logoMimeType`; ogni `Fattura` e `WorkLog` esce con in più `clienteNome` risolto, e ogni `Fattura` anche con `incassata: boolean` e `dataIncassoEffettiva` (`dataIncasso || data` se incassata, altrimenti `null`), perché nel record grezzo `incassato` assente vale incassata e `dataIncasso` assente vale la data di emissione, e un lettore che non lo sa conclude "incasso non registrato"; i clienti speciali `__vacation__` e `__misc__` **[V]** escono con `nome` rispettivamente `Ferie` e `Varie` e `speciale: true`.
 - Nessun tool di proposta restituisce mai un record creato. Restituisce la proposta con `status: "pending"` e il campo `messaggio` fisso: `In attesa di conferma nell'app Pivella.`
 
 ### Tool di lettura

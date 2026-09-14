@@ -154,6 +154,17 @@ test('list_fatture filters by issue date and exposes emesso, incassato and daInc
   assert.equal((await fails(ctx, 'list_fatture', { userId: 'u1', da: '2026-03-10', a: '2026-03-09' })).code, 'VALIDATION');
 });
 
+test('fatture expose incassata and dataIncassoEffettiva with the app semantics', async () => {
+  const { ctx } = await setup();
+  const senzaData = (await ok(ctx, 'get_fattura', { userId: 'u2', fatturaId: 'f9' })).fattura as Record<string, unknown>;
+  assert.equal(senzaData.incassata, true, 'dataIncasso assente vale incassata alla data di emissione');
+  assert.equal(senzaData.dataIncassoEffettiva, '2026-02-01');
+  const list = await ok(ctx, 'list_fatture', { userId: 'u1' });
+  const byId = new Map((list.fatture as Array<Record<string, unknown>>).map((f) => [f.id, f]));
+  assert.deepEqual([byId.get('f1')?.incassata, byId.get('f1')?.dataIncassoEffettiva], [true, '2026-01-20']);
+  assert.deepEqual([byId.get('f2')?.incassata, byId.get('f2')?.dataIncassoEffettiva], [false, null]);
+});
+
 test('get_fattura resolves clienteNome and fails with NOT_FOUND across profiles', async () => {
   const { ctx } = await setup();
   const out = await ok(ctx, 'get_fattura', { userId: 'u1', fatturaId: 'f2' });

@@ -127,6 +127,18 @@ export function isIncassata(f: Fattura): boolean {
   return f.incassato !== false;
 }
 
+export type FatturaOut = Fattura & { clienteNome: string; incassata: boolean; dataIncassoEffettiva: string | null };
+
+/**
+ * Fattura come esce dai tool: nome cliente risolto e semantica di incasso
+ * esplicita, perché il record grezzo la nasconde. `dataIncasso` assente su
+ * una fattura incassata vale la data di emissione, come nella Dashboard.
+ */
+export function decorateFattura(f: Fattura, resolve: (id: string) => string): FatturaOut {
+  const incassata = isIncassata(f);
+  return { ...f, clienteNome: resolve(f.clienteId), incassata, dataIncassoEffettiva: incassata ? f.dataIncasso || f.data : null };
+}
+
 export function anno(date: string): number {
   return Number(date.slice(0, 4));
 }
