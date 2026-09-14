@@ -124,14 +124,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } = useUsers(dbManager, dbReady);
 
   // Data hooks with user filtering
-  const { config, setConfig, updateConfig } = useConfig(dbManager, dbReady, currentUserId);
+  const { config, setConfig, updateConfig, applyPersistedConfig } = useConfig(dbManager, dbReady, currentUserId);
   const { clienti, setClienti, addCliente, updateCliente, removeCliente } = useClienti(dbManager, dbReady, currentUserId);
   const { fatture, setFatture, addFattura, updateFattura, removeFattura } = useFatture(dbManager, dbReady, currentUserId);
   const { workLogs, setWorkLogs, addWorkLog, updateWorkLog, removeWorkLog } = useWorkLogs(dbManager, dbReady, currentUserId);
   const { scadenze, setScadenze, addScadenza, updateScadenza, removeScadenza, removeScadenzeByYear, bulkSaveScadenze, getScadenzeByYear, getPaidAccontiForYear } = useScadenze(dbManager, dbReady, currentUserId);
 
   // Refs to hold setters for folder sync callback
-  const setConfigRef = useRef(setConfig);
+  // Le config che arrivano dalla sync sono già nel database: non vanno risalvate.
+  const setConfigRef = useRef(applyPersistedConfig);
   const setClientiRef = useRef(setClienti);
   const setFattureRef = useRef(setFatture);
   const setWorkLogsRef = useRef(setWorkLogs);
@@ -144,13 +145,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [users]);
 
   useEffect(() => {
-    setConfigRef.current = setConfig;
+    setConfigRef.current = applyPersistedConfig;
     setClientiRef.current = setClienti;
     setFattureRef.current = setFatture;
     setWorkLogsRef.current = setWorkLogs;
     setScadenzeRef.current = setScadenze;
     setUsersRef.current = setUsers;
-  }, [setConfig, setClienti, setFatture, setWorkLogs, setScadenze, setUsers]);
+  }, [applyPersistedConfig, setClienti, setFatture, setWorkLogs, setScadenze, setUsers]);
 
   const currentUserIdRef = useRef(currentUserId);
   useEffect(() => {

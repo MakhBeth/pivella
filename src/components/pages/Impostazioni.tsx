@@ -911,7 +911,6 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
               <button
                 className="btn btn-ghost"
                 onClick={() => void toggleHistory()}
-                disabled={isSyncing}
               >
                 <FileArchive size={18} aria-hidden="true" /> {showHistory ? 'Nascondi cronologia' : 'Cronologia sincronizzazione'}
               </button>

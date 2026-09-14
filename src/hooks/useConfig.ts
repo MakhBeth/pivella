@@ -11,6 +11,8 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
     userId: currentUserId || ''
   });
 
+  const persistedRef = useRef<{ json: string; updatedAt?: string } | null>(null);
+
   // Load config from DB when user changes
   useEffect(() => {
     if (!dbReady || !currentUserId) return;
@@ -20,15 +22,7 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
         const configId = `config_${currentUserId}`;
         const savedConfig = await dbManager.get('config', configId);
         if (savedConfig) {
-          const loaded: Config = {
-            ...DEFAULT_CONFIG,
-            ...savedConfig,
-            id: configId,
-            userId: currentUserId,
-          };
-          // La versione normalizzata vale come già persistita: non va riscritta.
-          persistedRef.current = { json: canonicalJson(loaded), updatedAt: loaded.updatedAt };
-          setConfig(loaded);
+          applyPersistedConfig(savedConfig);
         } else {
           // Create default config for this user
           const newConfig: Config = {
@@ -46,12 +40,22 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
     loadConfig();
   }, [dbManager, dbReady, currentUserId]);
 
+  /**
+   * Config già presente nel database (caricamento, merge, ripristino): viene
+   * normalizzata con i default e messa in stato senza essere risalvata, così
+   * non riceve un timbro nuovo e non genera un conflitto fasullo con il file.
+   */
+  const applyPersistedConfig = useCallback((saved: Config) => {
+    const loaded: Config = { ...DEFAULT_CONFIG, ...saved, id: saved.id, userId: saved.userId };
+    persistedRef.current = { json: canonicalJson(loaded), updatedAt: loaded.updatedAt };
+    setConfig(loaded);
+  }, []);
+
   // Salva solo ciò che è cambiato rispetto all'ultima versione caricata o
   // salvata. Il caricamento normalizza la config con i default: riscriverla
   // con il vecchio timbro produrrebbe un conflitto fasullo a ogni avvio
   // contro il file di sync. Una modifica arrivata senza timbro nuovo (setConfig
   // diretto) viene timbrata qui.
-  const persistedRef = useRef<{ json: string; updatedAt?: string } | null>(null);
   useEffect(() => {
     if (!dbReady || !currentUserId) return;
     if (config.userId !== currentUserId) return;
@@ -79,5 +83,5 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
     setConfig(prev => dbManager.stamp({ ...prev, ...updates }));
   }, [dbManager]);
 
-  return { config, setConfig, updateConfig };
+  return { config, setConfig, updateConfig, applyPersistedConfig };
 }
