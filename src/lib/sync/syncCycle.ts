@@ -13,7 +13,7 @@ import type { SyncFileSystem } from './fileSystem';
 import { acquireLock } from './lock';
 import { mergeSnapshots, type MergeResult, type StoreChanges } from './merge';
 import { compareInstants, snapshotsEquivalent, type SyncSnapshot, type Writer } from './schema';
-import { readSyncSnapshot, writeSyncSnapshot } from './syncFile';
+import { readSyncSnapshot, writeSyncSnapshot, type SyncFileRead } from './syncFile';
 import { STORES } from '../constants/fiscali';
 import type { StoreName } from '../../types';
 
@@ -42,6 +42,14 @@ export interface SyncCycleOptions {
    * poi il backup o il lock falliscono, o se il giro rilegge e rifonde.
    */
   onApplied?: (applied: AppliedChanges, merge: MergeResult) => Promise<void> | void;
+  /**
+   * Eseguito sotto lock, dopo il merge e il ricontrollo di `lastModified`.
+   * Può scrivere in IndexedDB e restituire lo snapshot da scrivere nel file
+   * al posto di quello fuso (scrittura forzata), oppure null per lasciare il
+   * comportamento normale. Serve a decidere una proposta: record nel
+   * database e stato della proposta nel file sotto lo stesso lock.
+   */
+  inLock?: (merged: SyncSnapshot, read: SyncFileRead) => Promise<SyncSnapshot | null>;
 }
 
 export type AppliedChanges = Record<StoreName, StoreChanges>;
@@ -104,13 +112,16 @@ export async function runSyncCycle(options: SyncCycleOptions): Promise<SyncCycle
     }
 
     const mustWrite = read.upgradedFromV1 || read.source === 'legacy' || !snapshotsEquivalent(merge.snapshot, read.snapshot);
-    if (!mustWrite) return { status: 'unchanged', localChanged, merge };
+    if (!mustWrite && !options.inLock) return { status: 'unchanged', localChanged, merge };
 
     const lock = await acquireLock(source.fs, { writerId: writer.id, kind: writer.kind });
     try {
       if ((await source.lastModified()) !== seenModified) continue;
-      const write = await writeSyncSnapshot(source.fs, merge.snapshot, { now: nowDate, writer, previous: read });
-      return { status: 'written', localChanged, merge, write };
+      const forced = options.inLock ? await options.inLock(merge.snapshot, read) : null;
+      if (!forced && !mustWrite) return { status: 'unchanged', localChanged, merge };
+      const toWrite = forced ?? merge.snapshot;
+      const write = await writeSyncSnapshot(source.fs, toWrite, { now: nowDate, writer, previous: read });
+      return { status: 'written', localChanged, merge: forced ? { ...merge, snapshot: toWrite } : merge, write };
     } finally {
       await lock.release();
     }

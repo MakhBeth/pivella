@@ -12,7 +12,10 @@ import type { MergeResult } from '../lib/sync/merge';
 import { listBackups, readBackup, restoreBackupSafely, type BackupEntry, type BackupPreview } from '../lib/sync/restore';
 import { BackupError } from '../lib/sync/backup';
 import { SyncLockedError } from '../lib/sync/lock';
-import type { SyncSnapshot } from '../lib/sync/schema';
+import type { Proposal, SyncSnapshot } from '../lib/sync/schema';
+import { decideProposal as runDecideProposal, type Decision } from '../lib/sync/proposalFlow';
+import { ProposalValidationError } from '../lib/sync/validate';
+import { ProposalNotPendingError } from '../lib/sync/proposals';
 
 interface UseFolderSyncOptions {
   dbManager: IndexedDBManager;
@@ -44,12 +47,18 @@ interface UseFolderSyncReturn {
   previewBackup: (name: string) => Promise<BackupPreview>;
   /** Rimpiazzo totale da un backup (13.3). Lancia se il backup pre-restore fallisce. */
   restoreBackup: (name: string) => Promise<void>;
+  /** Proposte lette dal file all'ultimo giro, di tutti i profili e in ogni stato. */
+  proposals: Proposal[];
+  /** Conferma (applica) o rifiuta una proposta: record nel database e stato nel file sotto lo stesso lock. */
+  decideProposal: (proposalId: string, decision: Decision) => Promise<Proposal>;
   setSyncFolderHandle: (handle: FileSystemDirectoryHandle | null) => void;
   setSyncFolderName: (name: string | null) => void;
   setLastSyncTime: (time: Date | null) => void;
 }
 
 function describeSyncError(err: unknown): string {
+  if (err instanceof ProposalValidationError) return `Proposta non più valida: ${err.message}`;
+  if (err instanceof ProposalNotPendingError) return 'La proposta non è più in attesa: forse è stata ritirata o è scaduta';
   if (err instanceof BackupError) return `Sincronizzazione sospesa: impossibile creare il backup (${err.reason})`;
   if (err instanceof SyncLockedError) return 'Sincronizzazione rimandata: il file è in uso da un altro programma';
   if (err instanceof Error) return `Errore di sincronizzazione: ${err.message}`;
@@ -77,6 +86,7 @@ export function useFolderSync({
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{ conflicts: number; archived: number } | null>(null);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
 
   // Un solo giro alla volta; un trigger arrivato durante il giro ne chiede un altro alla fine.
   const runningRef = useRef(false);
@@ -125,6 +135,9 @@ export function useFolderSync({
       });
       console.log('[useFolderSync] Giro completato:', outcome.status, 'locale cambiato:', outcome.localChanged);
       if (outcome.status === 'restored') await onRestoredRef.current?.();
+      if (outcome.status === 'created') setProposals([]);
+      else if (outcome.status === 'restored') setProposals(outcome.snapshot.proposals);
+      else if (outcome.status !== 'stale') setProposals(outcome.merge.snapshot.proposals);
       if (outcome.status === 'stale') {
         setSyncError('Il file di sincronizzazione continua a cambiare: nuovo tentativo al prossimo giro');
       } else {
@@ -253,6 +266,39 @@ export function useFolderSync({
     }
   }, [dbManager]);
 
+  const decideProposal = useCallback(async (proposalId: string, decision: Decision): Promise<Proposal> => {
+    const handle = syncFolderHandleRef.current;
+    if (!handle) throw new Error('Nessuna cartella di sincronizzazione');
+    if (!dbManager.writerId) throw new Error('Database non pronto');
+    if (runningRef.current) throw new Error('Sincronizzazione in corso, riprova tra un attimo');
+    runningRef.current = true;
+    setIsSyncing(true);
+    try {
+      if (!(await verifyPermission(handle))) throw new Error('Permesso sulla cartella di sincronizzazione da rinnovare');
+      const outcome = await runDecideProposal({
+        db: dbManager,
+        source: folderSyncSource(handle),
+        writer: { id: dbManager.writerId, kind: 'app' },
+        proposalId,
+        decision,
+        prepareRemote: prepareRemoteRef.current,
+        onApplied: (applied, merge) => onAppliedRef.current?.(applied, merge),
+      });
+      if (outcome.cycle.status === 'written' || outcome.cycle.status === 'unchanged') setProposals(outcome.cycle.merge.snapshot.proposals);
+      setSyncError(null);
+      setLastSyncTime(new Date());
+      setSyncStatus(await dbManager.getSyncStatus());
+      return outcome.proposal;
+    } catch (err) {
+      // Un rifiuto per validazione non è un errore di sync: lo mostra chi ha chiesto la decisione.
+      if (!(err instanceof ProposalValidationError) && !(err instanceof ProposalNotPendingError)) setSyncError(describeSyncError(err));
+      throw err;
+    } finally {
+      runningRef.current = false;
+      setIsSyncing(false);
+    }
+  }, [dbManager]);
+
   return {
     syncFolderHandle,
     syncFolderName,
@@ -266,6 +312,8 @@ export function useFolderSync({
     listBackups: listBackupsInFolder,
     previewBackup,
     restoreBackup,
+    proposals,
+    decideProposal,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime

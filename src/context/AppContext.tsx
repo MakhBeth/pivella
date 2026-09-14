@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, ReactNode, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useCallback, useMemo, ReactNode, useEffect, useRef } from 'react';
 import type { Config, Cliente, Fattura, WorkLog, Toast, Scadenza, StoreName, User } from '../types';
 import { useDatabase } from '../hooks/useDatabase';
 import { useToast } from '../hooks/useToast';
@@ -9,7 +9,8 @@ import { useFatture } from '../hooks/useFatture';
 import { useWorkLogs } from '../hooks/useWorkLogs';
 import { useScadenze } from '../hooks/useScadenze';
 import { useFolderSync } from '../hooks/useFolderSync';
-import type { SyncSnapshot } from '../lib/sync/schema';
+import type { Proposal, SyncSnapshot } from '../lib/sync/schema';
+import { withExpiry } from '../lib/sync/proposals';
 import type { AppliedChanges } from '../lib/sync/syncCycle';
 import type { MergeResult } from '../lib/sync/merge';
 import { applyStoreChanges, tombstonesFor } from '../lib/sync/applyChanges';
@@ -97,6 +98,10 @@ interface AppContextValue {
   listBackups: () => Promise<BackupEntry[]>;
   previewBackup: (name: string) => Promise<BackupPreview>;
   restoreBackup: (name: string) => Promise<void>;
+  /** Proposte dell'assistente per il profilo attivo, ancora in attesa. */
+  pendingProposals: Proposal[];
+  confirmProposal: (proposalId: string) => Promise<Proposal>;
+  rejectProposal: (proposalId: string, reason?: string) => Promise<Proposal>;
   setSyncFolderHandle: (handle: FileSystemDirectoryHandle | null) => void;
   setSyncFolderName: (name: string | null) => void;
   setLastSyncTime: (time: Date | null) => void;
@@ -252,6 +257,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     listBackups,
     previewBackup,
     restoreBackup,
+    proposals,
+    decideProposal,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime
@@ -263,6 +270,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     onRestored: reloadStateFromDb,
     prepareRemote
   });
+
+  const pendingProposals = useMemo(
+    () => (currentUserId ? withExpiry(proposals, new Date().toISOString()).filter((p) => p.userId === currentUserId && p.status === 'pending') : []),
+    [proposals, currentUserId],
+  );
+  const confirmProposal = useCallback((proposalId: string) => decideProposal(proposalId, { kind: 'apply' }), [decideProposal]);
+  const rejectProposal = useCallback((proposalId: string, reason?: string) => decideProposal(proposalId, { kind: 'reject', reason }), [decideProposal]);
 
   // Track previous values to detect changes
   const prevDataRef = useRef<string>('');
@@ -482,6 +496,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     listBackups,
     previewBackup,
     restoreBackup,
+    pendingProposals,
+    confirmProposal,
+    rejectProposal,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime

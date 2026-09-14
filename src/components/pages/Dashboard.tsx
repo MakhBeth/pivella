@@ -5,6 +5,7 @@ import { LIMITE_FATTURATO, MAX_HISTORICAL_YEARS } from '../../lib/constants/fisc
 import { calcolaFiscale } from '../../lib/utils/calculations';
 import { calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, getRegimeThresholdStatus } from '../../lib/utils/forfettario';
 import { Currency } from '../ui/Currency';
+import { ProposteBanner } from '../shared/ProposteInbox';
 
 // Accessible patterns for colorblind users
 const PATTERNS = [
@@ -349,6 +350,8 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
           </button>
         </div>
       </div>
+
+      <ProposteBanner />
 
       {annoSelezionato < annoCorrente && (
         <div style={{

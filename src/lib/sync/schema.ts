@@ -178,9 +178,56 @@ export function parseSyncFile(text: string, stamp: Stamp): ParsedSyncFile {
   snapshot.writer = isWriter(obj.writer) ? obj.writer : { ...stamp.writer };
   snapshot.restoredAt = typeof obj.restoredAt === 'string' ? obj.restoredAt : null;
   snapshot.restoredFrom = typeof obj.restoredFrom === 'string' ? obj.restoredFrom : null;
-  snapshot.tombstones = asArray(obj.tombstones) as Tombstone[];
-  snapshot.proposals = asArray(obj.proposals) as Proposal[];
+  snapshot.tombstones = asArray(obj.tombstones).map(validateTombstone);
+  snapshot.proposals = asArray(obj.proposals).map(validateProposal);
   return { snapshot, upgradedFromV1: false };
+}
+
+const PROPOSAL_KINDS: ReadonlySet<string> = new Set<ProposalKind>(['workLog', 'fattura', 'cliente', 'incasso', 'scadenzaPagata']);
+const PROPOSAL_STATUSES: ReadonlySet<string> = new Set<ProposalStatus>(['pending', 'applied', 'rejected', 'withdrawn', 'expired']);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+const isString = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+
+/**
+ * Una proposta nel file non è mai fidata (13.2): la forma viene controllata
+ * alla lettura, come per gli store. Un file con una proposta malformata non
+ * viene fuso né usato dal server.
+ */
+export function validateProposal(value: unknown): Proposal {
+  const id = isRecord(value) && typeof value.id === 'string' ? value.id : '?';
+  const fail = (reason: string) =>
+    new SyncSchemaError('SOURCE_UNAVAILABLE', `Proposta ${id} non valida: ${reason}`, { proposal: id, reason });
+  if (!isRecord(value)) throw fail('non è un oggetto');
+  if (!isString(value.id)) throw fail('id mancante');
+  if (!isString(value.userId)) throw fail('userId mancante');
+  if (!isString(value.kind) || !PROPOSAL_KINDS.has(value.kind)) throw fail('kind sconosciuto');
+  if (!isRecord(value.payload)) throw fail('payload mancante');
+  if (!isString(value.status) || !PROPOSAL_STATUSES.has(value.status)) throw fail('status sconosciuto');
+  for (const key of ['createdAt', 'updatedAt', 'expiresAt'] as const) {
+    if (!isString(value[key])) throw fail(`${key} mancante`);
+  }
+  if (value.motivazione !== undefined && typeof value.motivazione !== 'string') throw fail('motivazione non stringa');
+  if (!isRecord(value.createdBy) || !isString(value.createdBy.writerId)) throw fail('createdBy.writerId mancante');
+  if (value.createdBy.client !== undefined && typeof value.createdBy.client !== 'string') throw fail('createdBy.client non stringa');
+  const result = value.result ?? null;
+  if (result !== null && !(isRecord(result) && isString(result.recordId))) throw fail('result non valido');
+  const rejectReason = value.rejectReason ?? null;
+  if (rejectReason !== null && typeof rejectReason !== 'string') throw fail('rejectReason non valido');
+  return { ...value, result, rejectReason } as Proposal;
+}
+
+export function validateTombstone(value: unknown): Tombstone {
+  const key = isRecord(value) ? `${String(value.store)}/${String(value.id)}` : '?';
+  const fail = (reason: string) =>
+    new SyncSchemaError('SOURCE_UNAVAILABLE', `Tombstone ${key} non valido: ${reason}`, { tombstone: key, reason });
+  if (!isRecord(value)) throw fail('non è un oggetto');
+  if (!isString(value.store) || !(STORES as readonly string[]).includes(value.store)) throw fail('store sconosciuto');
+  if (!isString(value.id)) throw fail('id mancante');
+  if (!isString(value.deletedAt)) throw fail('deletedAt mancante');
+  if (!isString(value.deletedBy)) throw fail('deletedBy mancante');
+  return value as unknown as Tombstone;
 }
 
 function isWriter(value: unknown): value is Writer {

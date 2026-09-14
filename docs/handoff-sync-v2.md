@@ -149,3 +149,13 @@ Review in chat (4 scambi, verdetto finale APPROVED), poi una verifica indipenden
 
 1. `nodeFileSystem.ts`: la realpath della root era calcolata una volta; se la cartella veniva sostituita da un symlink dopo l'avvio, la scrittura finiva fuori. Ora `realpath(root)` è ricalcolata a ogni chiamata e rifiutata se diversa da quella iniziale.
 2. `nodeFileSystem.ts`: split solo su `/`; con semantica Windows `missing\..\x` restava un componente unico. Ora ogni percorso con backslash è rifiutato.
+
+## 9. Server MCP e proposte (14/9/2026, branch `feat/mcp-locale`)
+
+Fatto dopo il merge della PR 25, in un branch da `origin/main`:
+
+- `mcp/`: server MCP su stdio con i 17 tool di 13.1 sopra `DataSource` (13.4), `FileDataSource` con lock, backup kind `mcp`, scrittura atomica. Pubblicato su npm come `pivella-mcp` (0.1.2). Avvio e configurazione dei client in `mcp/README.md`.
+- `src/lib/sync/validate.ts`, `proposals.ts`, `applyProposal.ts`, `proposalFlow.ts`: regole condivise, ciclo di vita, applicazione lato app sotto lock (gancio `inLock` di `runSyncCycle`).
+- UI: `ProposteInbox` in Impostazioni e `ProposteBanner` in Dashboard.
+- Decisioni chiuse quel giorno: `get_riepilogo_anno` per cassa con `criterio: "cassa"`; `list_fatture` per emissione con `totali.daIncassare`; `incassato` assente vale incassata; numero fattura per anno della fattura; cartelle cloud in beta con avviso; pacchetto `pivella-mcp`.
+- Non fatto: comando `restore` da terminale (13.3), profilo predefinito `--user` per il server (proposto, non deciso).

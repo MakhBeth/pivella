@@ -19,6 +19,7 @@ import {
 
 const NOW = '2026-09-12T10:00:00.000Z';
 const WRITER: Writer = { id: 'app-test', kind: 'app', version: '0.0.0' };
+const STAMP = { now: NOW, writer: WRITER };
 
 const V1_FILE = {
   users: [{ id: 'user_1', nome: 'Utente', createdAt: '2026-01-01T00:00:00.000Z' }],
@@ -189,4 +190,33 @@ test('parseSyncFile rejects a v2 file with a null or missing store', () => {
     () => parseSyncFile(JSON.stringify(missing), { now: NOW, writer: WRITER }),
     (err: unknown) => err instanceof SyncSchemaError && err.details?.store === 'fatture'
   );
+});
+
+test('parseSyncFile rejects a v2 file whose proposals are malformed', () => {
+  const snapshot = createEmptySnapshot(STAMP);
+  const file = { ...snapshot, proposals: [{ id: 'p1', kind: 'workLog' }] };
+  assert.throws(() => parseSyncFile(JSON.stringify(file), STAMP), (err: unknown) => {
+    return err instanceof SyncSchemaError && err.code === 'SOURCE_UNAVAILABLE' && err.details?.proposal === 'p1';
+  });
+});
+
+test('parseSyncFile rejects a v2 file whose tombstones are malformed', () => {
+  const snapshot = createEmptySnapshot(STAMP);
+  const file = { ...snapshot, tombstones: [{ store: 'clienti', id: 'c1' }] };
+  assert.throws(() => parseSyncFile(JSON.stringify(file), STAMP), (err: unknown) => {
+    return err instanceof SyncSchemaError && err.code === 'SOURCE_UNAVAILABLE' && err.details?.tombstone === 'clienti/c1';
+  });
+});
+
+test('parseSyncFile keeps well formed proposals and tombstones', () => {
+  const snapshot = createEmptySnapshot(STAMP);
+  const proposal = {
+    id: 'p1', userId: 'u1', kind: 'workLog', payload: { clienteId: 'c1' }, status: 'pending',
+    createdAt: NOW, updatedAt: NOW, expiresAt: NOW, createdBy: { writerId: 'mcp-1' }, result: null, rejectReason: null,
+  };
+  const tombstone = { store: 'clienti', id: 'c1', deletedAt: NOW, deletedBy: 'app-1' };
+  const file = { ...snapshot, proposals: [proposal], tombstones: [tombstone] };
+  const parsed = parseSyncFile(JSON.stringify(file), STAMP).snapshot;
+  assert.deepEqual(parsed.proposals, [proposal]);
+  assert.deepEqual(parsed.tombstones, [tombstone]);
 });
