@@ -703,7 +703,7 @@ Errori: `SOURCE_UNAVAILABLE`.
 
 **2. `get_config`**
 Parametri: `userId: string`.
-Ritorna: `{ config: Config senza logo, emittenteConfigurato: boolean, valute: ValutaConfig[] }`. `emittenteConfigurato` è vero se `config.emittente.codiceFiscale` e `config.partitaIva` sono valorizzati, che è la stessa condizione del modale **[V]** `NuovaFatturaModal.tsx` riga 184.
+Ritorna: `{ config: Config senza logo, emittenteConfigurato: boolean, valute: ValutaConfig[] }`. `emittenteConfigurato` è vero se `config.emittente.codiceFiscale` e `config.partitaIva` sono valorizzati, che è la stessa condizione del modale **[V]** `NuovaFatturaModal.tsx` riga 184. `valute` è `config.valute`, oppure `[{ codice: "EUR", simbolo: "€" }]` se assente o vuoto, come fa il modale **[V]** riga 19. La config di un profilo è il record con id `config_<userId>` **[V]** `useConfig.ts`.
 Errori: `USER_NOT_FOUND`.
 
 **3. `list_clienti`**
@@ -712,7 +712,8 @@ Ritorna: `{ clienti: Cliente[], total, hasMore }`.
 
 **4. `list_fatture`**
 Parametri: `userId`, `anno?: number`, `incassata?: boolean`, `clienteId?: string`, `da?: date`, `a?: date`, `limit?`, `offset?`.
-Ritorna: `{ fatture: Array<Fattura & { clienteNome }>, total, hasMore, totali: { importo: number, incassato: number } }`. I totali sono sull'intero filtro, non sulla pagina. `anno` filtra su `data`; `da`/`a` sono inclusivi.
+Ritorna: `{ fatture: Array<Fattura & { clienteNome }>, total, hasMore, totali: { importo: number, incassato: number, daIncassare: number } }`. I totali sono sull'intero filtro, non sulla pagina. `anno`, `da` e `a` filtrano sulla **data di emissione** `data`; `da`/`a` sono inclusivi. `totali.importo` è l'emesso, `totali.incassato` la parte già incassata, `totali.daIncassare` la differenza, restituita come dato e mai lasciata da dedurre a chi chiama. Semantica di `incassato` **[V]** `Dashboard.tsx` riga 274: una fattura è incassata quando `incassato` è `true` **o assente**; solo `incassato === false` vuol dire da incassare. Il filtro `incassata: true` seleziona `incassato !== false`, `incassata: false` seleziona `incassato === false`. Questo tool risponde a "quanto ho emesso e quanto manca all'appello"; "quanto ho incassato" lo dice `get_riepilogo_anno`, per cassa.
+Errori: `VALIDATION` se `a < da`.
 
 **5. `get_fattura`**
 Parametri: `userId`, `fatturaId`.
@@ -733,7 +734,7 @@ Parametri: `userId`, `anno: number`.
 Ritorna:
 ```
 {
-  anno, fatturato, incassato, numeroFatture,
+  anno, criterio: "cassa", fatturato, numeroFatture,
   redditoImponibile, impostaSostitutiva, contributiPrevidenziali, totaleStimato,
   aliquotaApplicata, coefficienteRedditivita,
   soglia: { limite, percentuale, rimanente, stato },
@@ -741,7 +742,8 @@ Ritorna:
   nota: string
 }
 ```
-Calcolato con `calcolaFiscale` e le funzioni di `forfettario.ts` **[V]** pure; `soglia.stato` viene da `getRegimeThresholdStatus` **[V]**. `nota` è fissa: `Stima indicativa basata sui dati inseriti, non sostituisce il commercialista.`
+**Principio di cassa**, come la Dashboard **[V]** `Dashboard.tsx` righe 273-277: entrano le fatture con `incassato !== false` il cui anno di `dataIncasso || data` è `anno`. `fatturato` è quindi l'incassato dell'anno; `criterio` vale sempre `"cassa"` così chi legge non deve indovinarlo. Calcolato con `calcolaFiscale`, `getAliquotaImpostaSostitutiva` con `annoImposta = anno`, `calcolaCoefficienteMedioAteco`, `calcolaContributiPrevidenziali`, `calcolaAccontiForfettario` **[V]** pure; `soglia.stato` viene da `getRegimeThresholdStatus` **[V]**. `nota` è fissa: `Stima indicativa basata sui dati inseriti, calcolata per cassa, non sostituisce il commercialista.`
+Errori: `VALIDATION` se `anno` non è un intero.
 
 **9. `get_giornate_per_cliente`**
 Parametri: `userId`, `da: date`, `a: date`, `clienteId?`.
@@ -751,7 +753,7 @@ Errori: `VALIDATION` se `a < da` o intervallo superiore a 400 giorni.
 
 **10. `list_proposals`**
 Parametri: `userId`, `status?: ProposalStatus`, `limit?`, `offset?`.
-Ritorna: `{ proposals: Proposal[], total, hasMore }`.
+Ritorna: `{ proposals: Proposal[], total, hasMore }`. Le proposte `pending` con `expiresAt` passato escono con `status: "expired"`, calcolato in memoria: il server non riscrive il file per questo, ci pensa il merge dell'app (`mergeProposals`).
 
 **11. `get_proposal`**
 Parametri: `proposalId`.
@@ -768,7 +770,7 @@ Validazione: cliente esistente per il profilo; `quantita` massimo 24 se `ore`, m
 
 **13. `propose_fattura`**
 Parametri: `userId`, `clienteId?: string` oppure `nuovoCliente?: { denominazione, partitaIva?, nazione?, indirizzo?, numeroCivico?, cap?, comune?, provincia? }` (esattamente uno dei due), `data: date`, `righe: Array<{ descrizione, quantita > 0, prezzoUnitario > 0 }>` (almeno una), `valuta?: string` (default EUR), `tassoCambio?: number`, `dataCambio?: date`, `dataIncasso?: date`.
-Validazione: le stesse regole del modale **[V]** righe 182-245: emittente configurato, cliente valido, righe valide, cambio positivo se valuta diversa da EUR e la valuta è tra quelle in `config.valute`. Il **numero non è un parametro**: lo assegna l'app alla conferma con la logica attuale `max + 1` **[V]**. La risposta include `anteprima: { totaleImponibile, totaleEUR, righe }` calcolata dal server per farla vedere all'utente in chat.
+Validazione: le stesse regole del modale **[V]** righe 182-315: emittente configurato, cliente valido, righe valide, cambio positivo se valuta diversa da EUR e la valuta è tra quelle in `config.valute`. Il **numero non è un parametro**: lo assegna l'app alla conferma, progressivo `max + 1` tra le fatture dell'**anno della data della fattura** (non dell'anno di sistema): se la data cade in un anno nuovo la numerazione riparte da 1 (decisione di Davide, 14/9/2026). Il modale oggi conta sull'anno corrente **[V]** `NuovaFatturaModal.tsx` riga 67; l'applicazione della proposta segue la regola per anno della fattura. Il modale non richiede `quantita > 0` **[V]** riga 207; il contratto sì, ed è voluto. La risposta include `anteprima: { totaleImponibile, totaleEUR, righe }` calcolata dal server per farla vedere all'utente in chat.
 
 **14. `propose_cliente`**
 Parametri: `userId`, `nome`, `piva?`, `email?`, `billingUnit?: "ore" | "giornata"`, `rate?: number`, `billingStartDate?: date`, `indirizzo?`, `numeroCivico?`, `cap?`, `comune?`, `provincia?`, `nazione?` (default `IT`).
@@ -776,16 +778,16 @@ Validazione: `nome` non vuoto e non già presente (confronto senza maiuscole e s
 
 **15. `propose_incasso`**
 Parametri: `userId`, `fatturaId`, `dataIncasso: date`.
-Validazione: fattura esistente, non già `incassato: true`, `dataIncasso >= data` della fattura.
+Validazione: fattura esistente (`NOT_FOUND`), da incassare cioè `incassato === false` (una fattura con `incassato` assente è già incassata, vedi `list_fatture`; altrimenti `VALIDATION`), `dataIncasso >= data` della fattura.
 
 **16. `propose_scadenza_pagata`**
 Parametri: `userId`, `scadenzaId`, `dataPagamento: date`.
-Validazione: scadenza esistente, `pagato: false`.
+Validazione: scadenza esistente (`NOT_FOUND`), `pagato: false` (altrimenti `VALIDATION`).
 
 **17. `withdraw_proposal`**
 Parametri: `proposalId`.
 Ritorna: `{ proposal }` con `status: "withdrawn"`.
-Errori: `NOT_FOUND`, `PROPOSAL_NOT_PENDING`.
+Errori: `NOT_FOUND`, `PROPOSAL_NOT_PENDING` (anche per una proposta `pending` già oltre `expiresAt`).
 
 ### Perché regge identico nel web
 
@@ -844,7 +846,8 @@ Nessun parametro dipende dal trasporto; l'identità del chiamante entra come `Pr
 
 - `kind`: `workLog`, `fattura`, `cliente`, `incasso`, `scadenzaPagata`. `payload` è esattamente il set di parametri del tool corrispondente, meno `userId` e `motivazione`.
 - `status`: `pending`, `applied`, `rejected`, `withdrawn`, `expired`. Transizioni ammesse solo da `pending` a uno degli altri quattro. Gli stati terminali non cambiano più.
-- `expiresAt` = `createdAt` + 14 giorni. L'app marca `expired` alla lettura; il server MCP alla lettura per `list_proposals`.
+- `expiresAt` = `createdAt` + 14 giorni. L'app marca `expired` nel merge (`mergeProposals` **[V]** `merge.ts`) e lo scrive nel file; il server MCP lo calcola solo in memoria nelle risposte, senza scrivere.
+- Il lettore valida la forma di ogni proposta e di ogni tombstone: campi obbligatori assenti o di tipo sbagliato rendono il file non valido (`SOURCE_UNAVAILABLE`), come per gli store.
 - `result`: `{ recordId: string, numero?: string }` quando `applied`.
 - Le proposte `applied`, `rejected`, `withdrawn` ed `expired` vengono rimosse dal file dopo 30 giorni dall'`updatedAt`.
 - L'app **rivalida** il payload all'applicazione con le stesse regole del tool: una proposta nel file non è mai fidata.
@@ -890,7 +893,7 @@ Trigger: avvio, focus, polling ogni 3 secondi a tab visibile, e ogni cambiamento
 
 ### Protocollo di scrittura del server MCP
 
-Il server non ha uno stato proprio: ogni tool di proposta fa lock, lettura, modifica in memoria, backup, scrittura, rilascio. La modifica è sempre e solo su `proposals`; il server non tocca mai gli store né i tombstone, quindi non può produrre conflitti sui record. Se dopo la lettura il file risulta v1, il server esegue l'upgrade a v2 come farebbe l'app (con backup kind `v1`).
+Il server non ha uno stato proprio: ogni tool di proposta fa lock, lettura, modifica in memoria, backup, scrittura, rilascio. La modifica è sempre e solo su `proposals`; il server non tocca mai gli store né i tombstone, quindi non può produrre conflitti sui record. Se dopo la lettura il file risulta v1, il server esegue l'upgrade a v2 come farebbe l'app (con backup kind `v1`). Attenzione: `writeSyncSnapshot` **[V]** usa kind `app` di default e `v1` se il file letto era v1; il server passa `kind: "mcp"` esplicito solo quando il file non era v1, altrimenti sovrascriverebbe il kind protetto.
 
 ## 13.3 Politica di backup
 
@@ -978,6 +981,14 @@ interface UserSnapshot {
 
 interface ProposalFilter { userId: string; status?: ProposalStatus; limit?: number; offset?: number }
 
+interface NewProposal {
+  userId: string;
+  kind: ProposalKind;
+  payload: Record<string, unknown>; // già validato dal tool
+  motivazione?: string;
+  client?: string;                  // clientInfo.name dell'handshake MCP
+}
+
 interface DataSource {
   listUsers(p: Principal): Promise<User[]>;
   getSnapshot(p: Principal, userId: string): Promise<UserSnapshot>;
@@ -995,7 +1006,7 @@ Regole:
 - `getSnapshot` restituisce sempre l'intero profilo. Filtri, totali, riepiloghi e paginazione sono calcolati nei tool con il modulo condiviso `src/lib/sync` e i calcoli esistenti **[V]**. È questa scelta che tiene l'interfaccia a sei metodi e la rende implementabile su file, su HTTP e su Postgres senza cambiare i tool.
 - `addProposal` è l'unico metodo che scrive. Riceve un `NewProposal` già validato dal tool; l'implementazione assegna `id`, `createdAt`, `expiresAt`, `createdBy` e persiste. Nel locale include lock, backup e scrittura (13.2, 13.3); nel web è una `INSERT`.
 - `Principal` di kind `local` vede tutti i profili del file; di kind `account` solo quelli dell'account. Il controllo sta nell'implementazione, non nei tool.
-- Il server MCP locale espone un solo principal `local` con il proprio `writerId`. Nel web il principal viene dal token OAuth. I tool non cambiano.
+- Il server MCP locale espone un solo principal `local` con il proprio `writerId`, letto o creato in `~/.pivella-mcp/writer-id` con prefisso `mcp-` (l'app usa `app-`, **[V]** `syncMetaDb.ts`). Nel web il principal viene dal token OAuth. I tool non cambiano.
 - Implementazioni previste: `FileDataSource` (ora), `HttpDataSource` e `PostgresDataSource` (dopo). Il modulo condiviso contiene anche `applyProposal` per l'app, che non è parte di `DataSource` perché solo l'app applica.
 
 Struttura dei sorgenti congelata:
@@ -1023,8 +1034,8 @@ mcp/src/cli.ts                avvio, restore, diagnostica
 - I backup stanno nella cartella di sync, sottocartella `pivella-backups`.
 - Il merge è a record intero, mai a campo.
 - L'app continua a usare `Date.now()` per i propri id.
-- Polling a 3 secondi, proposte valide 14 giorni, tombstone potati a 90 giorni, 30 backup più uno al giorno per 90 giorni.
-- Il numero fattura è il progressivo che l'app assegna già oggi, `max + 1` sul valore intero di `numero` **[V]**. Nessun altro formato.
+- Prima release senza polling (solo avvio, focus e modifiche; il polling a 3 secondi è rimandato, vedi `docs/handoff-sync-v2.md`); proposte valide 14 giorni, tombstone potati a 90 giorni, 30 backup più uno al giorno per 90 giorni.
+- Il numero fattura è il progressivo che l'app assegna già oggi, `max + 1` sul valore intero di `numero` tra le fatture dell'anno della data della fattura **[V]**, con due cifre minime. In un anno nuovo riparte da 1. Nessun altro formato.
 - Cartelle cloud non supportate, con controllo all'avvio del server (13.2).
 - Scrittura atomica con `.part` e `move()` con feature detection e fallback verificato (13.3), per backup e per file di sync.
 - Il nome del pacchetto npm è rimandato e non blocca nulla: nel frattempo il server si avvia dal repo con `npm run mcp`.
