@@ -6,7 +6,7 @@ Regole fisse:
 
 - scrive solo dentro `proposals`; gli store e i tombstone non vengono mai toccati;
 - ogni scrittura è preceduta da un backup verificato in `pivella-backups/` con kind `mcp`; se il backup fallisce la scrittura non parte;
-- nessun tool applica proposte: la conferma avviene solo nell'app;
+- nessun tool applica proposte: la conferma avviene solo nell'app, in Impostazioni, sezione sincronizzazione (la Dashboard avvisa quando ce ne sono);
 - il numero fattura non è un parametro, lo assegna l'app alla conferma;
 - nessun collegamento tra giornate e fatture: le giornate escono solo come quantità.
 

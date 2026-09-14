@@ -1006,6 +1006,7 @@ Regole:
 - `getSnapshot` restituisce sempre l'intero profilo. Filtri, totali, riepiloghi e paginazione sono calcolati nei tool con il modulo condiviso `src/lib/sync` e i calcoli esistenti **[V]**. È questa scelta che tiene l'interfaccia a sei metodi e la rende implementabile su file, su HTTP e su Postgres senza cambiare i tool.
 - `addProposal` è l'unico metodo che scrive. Riceve un `NewProposal` già validato dal tool; l'implementazione assegna `id`, `createdAt`, `expiresAt`, `createdBy` e persiste. Nel locale include lock, backup e scrittura (13.2, 13.3); nel web è una `INSERT`.
 - `Principal` di kind `local` vede tutti i profili del file; di kind `account` solo quelli dell'account. Il controllo sta nell'implementazione, non nei tool.
+- **Conferma nell'app (fatto il 14/9/2026):** `decideProposal` gira nel gancio `inLock` di `runSyncCycle`: sotto lo stesso lock rilegge la proposta dal file fuso, la rivalida con `validateProposalPayload`, scrive i record in `ForfettarioDB` con `db.stamp`, poi marca la proposta `applied` (con `result`) o `rejected` e scrive il file. Se la rivalidazione fallisce non succede nulla e la proposta resta in attesa. La UI è `ProposteInbox` in Impostazioni (sezione sync) e `ProposteBanner` in Dashboard; le proposte visibili sono quelle del profilo attivo, `pending` e non scadute.
 - Il server MCP locale espone un solo principal `local` con il proprio `writerId`, letto o creato in `~/.pivella-mcp/writer-id` con prefisso `mcp-` (l'app usa `app-`, **[V]** `syncMetaDb.ts`). Nel web il principal viene dal token OAuth. I tool non cambiano.
 - Implementazioni previste: `FileDataSource` (ora), `HttpDataSource` e `PostgresDataSource` (dopo). Il modulo condiviso contiene anche `applyProposal` per l'app, che non è parte di `DataSource` perché solo l'app applica.
 
@@ -1015,7 +1016,9 @@ Struttura dei sorgenti congelata:
 src/lib/sync/schema.ts        tipi busta, tombstone, proposal, versioni
 src/lib/sync/merge.ts         merge puro e log conflitti
 src/lib/sync/validate.ts      regole di validazione delle proposte, condivise con i modali
-src/lib/sync/proposals.ts     ciclo di vita, scadenze, applyProposal (lato app)
+src/lib/sync/proposals.ts     ciclo di vita, scadenze, ritiro
+src/lib/sync/applyProposal.ts rivalidazione e piano dei record (lato app), numero fattura per anno
+src/lib/sync/proposalFlow.ts  conferma o rifiuto dentro il giro di sync, sotto lock (gancio inLock)
 src/lib/sync/backup.ts        algoritmo di backup e rotazione astratto su una piccola interfaccia di file system
 src/lib/sync/*.test.ts        node:test
 src/lib/db/syncMetaDb.ts      database separato PivellaSyncMeta: tombstone, meta, writer id, log conflitti
