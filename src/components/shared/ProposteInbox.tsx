@@ -120,23 +120,29 @@ export function ProposteInbox() {
   );
 }
 
-/** Avviso compatto per la Dashboard: quante proposte aspettano, con il salto a Impostazioni. */
-export function ProposteBanner() {
+/**
+ * Infobox in cima all'app, su ogni pagina: quante proposte aspettano, con il
+ * salto a Impostazioni dove si confermano. Sparisce quando non ce ne sono.
+ */
+export function ProposteBanner({ showLink = true }: { showLink?: boolean }) {
   const { pendingProposals } = useApp();
   if (pendingProposals.length === 0) return null;
   const n = pendingProposals.length;
   return (
     <div
       role="status"
-      style={{ padding: '12px 16px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.35)', borderRadius: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+      style={{ padding: '12px 16px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.35)', borderRadius: 12, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
     >
       <Sparkles size={18} aria-hidden="true" />
       <span style={{ flex: 1, minWidth: 200 }}>
         {n === 1 ? "L'assistente ha una proposta in attesa di conferma." : `L'assistente ha ${n} proposte in attesa di conferma.`}
+        {showLink ? '' : ' Le trovi qui sotto, nella sezione di sincronizzazione.'}
       </span>
-      <button className="btn btn-secondary btn-sm" onClick={() => { window.location.hash = '#/impostazioni'; }}>
-        Vedi le proposte
-      </button>
+      {showLink && (
+        <button className="btn btn-secondary btn-sm" onClick={() => { window.location.hash = '#/impostazioni'; }}>
+          Vedi le proposte
+        </button>
+      )}
     </div>
   );
 }
