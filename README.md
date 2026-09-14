@@ -83,6 +83,16 @@ pivella/
 └── package.json            # Project dependencies and scripts
 ```
 
+## 🤖 AI assistant (MCP server)
+
+Pivella ships a local MCP server so that Claude, Codex, Cursor or any MCP client can read your data and propose changes, all on your computer. The assistant only proposes; you confirm in the app.
+
+```sh
+claude mcp add pivella -- npx -y pivella-mcp --dir /path/to/sync-folder
+```
+
+Setup for every client, how it works and how to publish the package: [mcp/README.md](mcp/README.md). Package on npm: [pivella-mcp](https://www.npmjs.com/package/pivella-mcp).
+
 ## 🛠️ Technologies
 
 - **React** 18.2.0 - UI library

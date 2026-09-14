@@ -1,23 +1,22 @@
-# Server MCP locale di Pivella
+# Pivella MCP server
 
-Server MCP su stdio che legge e scrive il file di sync `pivella-sync.json` (formato v2). Espone 17 tool: 11 di lettura e 6 di proposta. Contratto in `docs/fattibilita-mcp.md`, sezioni 13.1 e 13.4.
+Let your AI assistant read your Pivella data and propose changes, without your data leaving your computer. The server runs on your machine and talks to the sync folder that Pivella already uses. It can answer questions such as "how much did I invoice this year", "how many days did I work for Acme in September", "which tax deadlines are still unpaid", and it can propose a new invoice, a work day, a client, a cash-in or a paid deadline.
 
-Regole fisse:
+Fixed rules:
 
-- scrive solo dentro `proposals`; gli store e i tombstone non vengono mai toccati;
-- ogni scrittura è preceduta da un backup verificato in `pivella-backups/` con kind `mcp`; se il backup fallisce la scrittura non parte;
-- nessun tool applica proposte: la conferma avviene solo nell'app, in Impostazioni, sezione sincronizzazione (la Dashboard avvisa quando ce ne sono);
-- il numero fattura non è un parametro, lo assegna l'app alla conferma;
-- nessun collegamento tra giornate e fatture: le giornate escono solo come quantità.
+- the assistant never writes data directly: it creates proposals, and every proposal becomes data only when you confirm it in the Pivella app (Settings, sync section; the app shows a notice at the top when proposals are waiting);
+- the invoice number is never chosen by the assistant: the app assigns it on confirmation;
+- every write to the sync file is preceded by a verified backup in `pivella-backups/`; if the backup fails, nothing is written;
+- no link between work days and invoices: work days come out as quantities only, amounts come only from invoices.
 
-## Per chi usa Pivella
+## Setup
 
-Serve solo Node (20 o più recente). Il pacchetto npm si chiama `pivella-mcp` e lo avvia il client MCP, non l'utente: non c'è un servizio da tenere acceso né una porta aperta. L'app Pivella può restare chiusa: le proposte finiscono nel file di sync e compaiono nell'app alla sync successiva.
+You only need Node (20 or newer). The npm package is `pivella-mcp` and the MCP client starts it, not you: there is no service to keep running and no open port. The Pivella app can stay closed: proposals land in the sync file and show up in the app at the next sync.
 
 Claude Code:
 
 ```sh
-claude mcp add pivella -- npx -y pivella-mcp --dir /percorso/cartella-di-sync
+claude mcp add pivella -- npx -y pivella-mcp --dir /path/to/sync-folder
 ```
 
 Claude Desktop (`claude_desktop_config.json`):
@@ -27,7 +26,7 @@ Claude Desktop (`claude_desktop_config.json`):
   "mcpServers": {
     "pivella": {
       "command": "npx",
-      "args": ["-y", "pivella-mcp", "--dir", "/percorso/cartella-di-sync"]
+      "args": ["-y", "pivella-mcp", "--dir", "/path/to/sync-folder"]
     }
   }
 }
@@ -36,78 +35,78 @@ Claude Desktop (`claude_desktop_config.json`):
 Codex CLI:
 
 ```sh
-codex mcp add pivella -- npx -y pivella-mcp --dir /percorso/cartella-di-sync
+codex mcp add pivella -- npx -y pivella-mcp --dir /path/to/sync-folder
 ```
 
-oppure in `~/.codex/config.toml`:
+or in `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.pivella]
 command = "npx"
-args = ["-y", "pivella-mcp", "--dir", "/percorso/cartella-di-sync"]
+args = ["-y", "pivella-mcp", "--dir", "/path/to/sync-folder"]
 ```
 
-Cursor: lo stesso JSON di Claude Desktop in `.cursor/mcp.json` del progetto o in `~/.cursor/mcp.json`. Gemini CLI: lo stesso JSON dentro `~/.gemini/settings.json`, chiave `mcpServers`. Qualunque altro client MCP: server di tipo stdio, comando `npx`, argomenti `-y pivella-mcp --dir /percorso/cartella-di-sync`. Niente porta, niente token, niente URL.
+Cursor: the same JSON as Claude Desktop in the project's `.cursor/mcp.json` or in `~/.cursor/mcp.json`. Gemini CLI: the same JSON inside `~/.gemini/settings.json`, key `mcpServers`. Any other MCP client: a stdio server, command `npx`, arguments `-y pivella-mcp --dir /path/to/sync-folder`. No port, no token, no URL.
 
-Da sapere:
+The folder is the one chosen in Pivella Settings for file sync. It can also come from the `PIVELLA_SYNC_DIR` environment variable; the flag, when present, wins.
 
-- le app grafiche come Claude Desktop non ereditano il `PATH` del terminale: se `npx` non viene trovato, usa il percorso completo che ottieni con `which npx`;
-- ogni client avvia la propria copia del server; possono girare insieme e insieme all'app, perché si coordinano con il lock e ognuno fa il backup prima di scrivere;
-- con più profili nel file, il modello chiede quale sei: `list_users` li elenca e ogni tool riceve `userId`.
+Good to know:
 
-Cambiare cartella: la cartella è l'argomento `--dir` della registrazione, quindi si rifà la registrazione con il nuovo percorso e si riavvia il client (in Claude Code basta `/mcp` per riconnettere). Per esempio:
+- desktop apps such as Claude Desktop do not inherit the terminal `PATH`: if `npx` is not found, use the full path from `which npx`;
+- every client starts its own copy of the server; they can run together and alongside the app, because they coordinate through a lock file and each one backs up before writing;
+- with more than one profile in the file, the assistant asks which one you are;
+- cloud folders (Dropbox, iCloud, Google Drive, OneDrive) are in beta: the server starts and warns; with rare writes it works, but if two devices write close in time the provider can create a conflicted copy that the sync ignores;
+- the server keeps its own id in `~/.pivella-mcp/writer-id`.
+
+Changing the folder: register again with the new path and restart the client (in Claude Code, `/mcp` reconnects). For example:
 
 ```sh
 claude mcp remove pivella -s local
-claude mcp add pivella -s local -- npx -y pivella-mcp --dir /nuovo/percorso
+claude mcp add pivella -s local -- npx -y pivella-mcp --dir /new/path
 ```
 
-Negli altri client si modifica il valore dopo `--dir` nel loro file di configurazione. In alternativa si toglie `--dir` e si imposta `PIVELLA_SYNC_DIR` nell'ambiente del server (campo `env` della registrazione): il flag, se presente, vince sulla variabile. Attenzione: sulla cartella vera della sync il server scrive davvero le proposte, con backup prima; per le prove meglio una copia.
+In other clients, edit the value after `--dir` in their configuration file. Careful: on the real sync folder the server really writes proposals, with a backup first. To try things out, copy the sync folder somewhere else and pass that copy.
 
-Diagnostica senza avviare il server:
+Diagnostics without starting the server:
 
 ```sh
-npx -y pivella-mcp check --dir /percorso/cartella-di-sync
+npx -y pivella-mcp check --dir /path/to/sync-folder
 ```
 
-La cartella è quella scelta in Impostazioni per la sync su file e può arrivare anche da `PIVELLA_SYNC_DIR`. Le cartelle cloud (Dropbox, iCloud, Google Drive, OneDrive) sono in beta: il server parte e avvisa su stderr; con scritture rare funziona, ma se due dispositivi scrivono vicini nel tempo il provider può creare una copia in conflitto che la sync ignora. Il writer id sta in `~/.pivella-mcp/writer-id`. Il server locale vede tutti i profili del file, come chi ha accesso al Mac.
-
-## Dal repo, senza pacchetto
+## From the repo, without the package
 
 ```sh
-npm run mcp -- check --dir /percorso/cartella-di-sync   # diagnostica
-npm run mcp -- --dir /percorso/cartella-di-sync         # server su stdio (tsx sui sorgenti)
-npm run mcp:build                                       # bundle in mcp/dist/cli.js
+npm run mcp -- check --dir /path/to/sync-folder   # diagnostics
+npm run mcp -- --dir /path/to/sync-folder         # stdio server (tsx on the sources)
+npm run mcp:build                                 # bundle into mcp/dist/cli.js
 ```
 
-Per usare i sorgenti al posto del pacchetto, in qualunque client, il comando è `npx tsx /percorso/repo/mcp/src/bin.ts --dir /percorso/cartella-di-sync`. Per Claude Code: `claude mcp add pivella -- npx tsx /percorso/repo/mcp/src/bin.ts --dir /percorso/cartella-di-sync`.
+To use the sources instead of the package, in any client, the command is `npx tsx /path/to/repo/mcp/src/bin.ts --dir /path/to/sync-folder`.
 
-Per provare senza toccare i dati veri: copia la cartella di sync in una cartella usa e getta e passa quella.
+## Publishing
 
-## Pubblicazione
-
-`mcp/package.json` è il pacchetto: `bin` punta a `dist/cli.js`, dipendenze `@modelcontextprotocol/sdk` e `zod`, il resto (moduli di `src/lib/sync` compresi) è nel bundle. Dalla radice del repo:
+`mcp/package.json` is the package: `bin` points to `dist/cli.js`, dependencies are `@modelcontextprotocol/sdk` and `zod`, everything else (the `src/lib/sync` modules included) is in the bundle. From the repo root:
 
 ```sh
 cd mcp && npm publish
 ```
 
-`prepublishOnly` esegue il bundle da solo. Per vedere cosa finisce nel pacchetto senza pubblicare: `npm publish --dry-run`. Alza la versione in `mcp/package.json` a ogni pubblicazione.
+`prepublishOnly` runs the bundle on its own. To see what goes into the package without publishing: `npm publish --dry-run`. Bump the version in `mcp/package.json` on every publish.
 
-## Struttura
+## Layout
 
 ```
-mcp/src/datasource.ts       interfaccia DataSource, DataSourceError, paginazione
-mcp/src/fileDataSource.ts   implementazione su file: lock, backup, scrittura atomica
-mcp/src/tools/shared.ts     definizione dei tool, esecuzione, mappatura errori
-mcp/src/tools/<tool>.ts     un file per tool
-mcp/src/tools/propose.ts    fabbrica dei tool di proposta
-mcp/src/server.ts           registrazione dei tool sul Server MCP
-mcp/src/cli.ts              avvio, check, writer id, controllo cartelle cloud
-mcp/src/bin.ts              entry point del comando pivella-mcp
-mcp/package.json            pacchetto npm pivella-mcp
+mcp/src/datasource.ts       DataSource interface, DataSourceError, pagination
+mcp/src/fileDataSource.ts   file implementation: lock, backup, atomic write
+mcp/src/tools/shared.ts     tool definition, execution, error mapping
+mcp/src/tools/<tool>.ts     one file per tool
+mcp/src/tools/propose.ts    factory of the proposal tools
+mcp/src/server.ts           tool registration on the MCP Server
+mcp/src/cli.ts              startup, check, writer id, cloud folder warning
+mcp/src/bin.ts              entry point of the pivella-mcp command
+mcp/package.json            the pivella-mcp npm package
 ```
 
-I moduli condivisi con l'app stanno in `src/lib/sync`: `validate.ts` (regole delle proposte), `proposals.ts` (ciclo di vita), `schema.ts`, `syncFile.ts`, `backup.ts`, `lock.ts`.
+The modules shared with the app live in `src/lib/sync`: `validate.ts` (proposal rules), `proposals.ts` (lifecycle), `applyProposal.ts` and `proposalFlow.ts` (confirmation in the app), `schema.ts`, `syncFile.ts`, `backup.ts`, `lock.ts`. The full tool contract is in `docs/fattibilita-mcp.md` (Italian).
 
-Test: `npm test` (node:test via tsx).
+Tests: `npm test` (node:test via tsx).
