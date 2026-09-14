@@ -51,6 +51,12 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
     setConfig(loaded);
   }, []);
 
+  /** Config di default per un utente che non ne ha più una (dopo un ripristino): viene salvata. */
+  const resetConfig = useCallback((userId: string) => {
+    persistedRef.current = null;
+    setConfig({ ...DEFAULT_CONFIG, id: `config_${userId}`, userId });
+  }, []);
+
   // Salva solo ciò che è cambiato rispetto all'ultima versione caricata o
   // salvata. Il caricamento normalizza la config con i default: riscriverla
   // con il vecchio timbro produrrebbe un conflitto fasullo a ogni avvio
@@ -83,5 +89,5 @@ export function useConfig(dbManager: IndexedDBManager, dbReady: boolean, current
     setConfig(prev => dbManager.stamp({ ...prev, ...updates }));
   }, [dbManager]);
 
-  return { config, setConfig, updateConfig, applyPersistedConfig };
+  return { config, setConfig, updateConfig, applyPersistedConfig, resetConfig };
 }

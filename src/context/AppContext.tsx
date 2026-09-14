@@ -10,7 +10,8 @@ import { useWorkLogs } from '../hooks/useWorkLogs';
 import { useScadenze } from '../hooks/useScadenze';
 import { useFolderSync } from '../hooks/useFolderSync';
 import type { SyncSnapshot } from '../lib/sync/schema';
-import type { SyncCycleOutcome } from '../lib/sync/syncCycle';
+import type { AppliedChanges } from '../lib/sync/syncCycle';
+import type { MergeResult } from '../lib/sync/merge';
 import { applyStoreChanges } from '../lib/sync/applyChanges';
 import type { BackupEntry, BackupPreview } from '../lib/sync/restore';
 
@@ -113,7 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Users hook - must be initialized before other data hooks
   const {
     users,
-    setUsers,
+    replaceUsers,
     currentUserId,
     currentUser,
     isInitialized: isUsersInitialized,
@@ -124,7 +125,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } = useUsers(dbManager, dbReady);
 
   // Data hooks with user filtering
-  const { config, setConfig, updateConfig, applyPersistedConfig } = useConfig(dbManager, dbReady, currentUserId);
+  const { config, setConfig, updateConfig, applyPersistedConfig, resetConfig } = useConfig(dbManager, dbReady, currentUserId);
   const { clienti, setClienti, addCliente, updateCliente, removeCliente } = useClienti(dbManager, dbReady, currentUserId);
   const { fatture, setFatture, addFattura, updateFattura, removeFattura } = useFatture(dbManager, dbReady, currentUserId);
   const { workLogs, setWorkLogs, addWorkLog, updateWorkLog, removeWorkLog } = useWorkLogs(dbManager, dbReady, currentUserId);
@@ -137,7 +138,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setFattureRef = useRef(setFatture);
   const setWorkLogsRef = useRef(setWorkLogs);
   const setScadenzeRef = useRef(setScadenze);
-  const setUsersRef = useRef(setUsers);
+  const setUsersRef = useRef(replaceUsers);
+  const resetConfigRef = useRef(resetConfig);
   const usersRef = useRef(users);
 
   useEffect(() => {
@@ -150,8 +152,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFattureRef.current = setFatture;
     setWorkLogsRef.current = setWorkLogs;
     setScadenzeRef.current = setScadenze;
-    setUsersRef.current = setUsers;
-  }, [applyPersistedConfig, setClienti, setFatture, setWorkLogs, setScadenze, setUsers]);
+    setUsersRef.current = replaceUsers;
+    resetConfigRef.current = resetConfig;
+  }, [applyPersistedConfig, setClienti, setFatture, setWorkLogs, setScadenze, replaceUsers, resetConfig]);
 
   const currentUserIdRef = useRef(currentUserId);
   useEffect(() => {
@@ -181,9 +184,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  /** Ricarica per intero lo stato dal database: solo dopo un ripristino, che è un rimpiazzo totale. */
+  /**
+   * Ricarica per intero lo stato dal database: solo dopo un ripristino, che è
+   * un rimpiazzo totale. Se il profilo attivo non esiste più nei dati
+   * ripristinati si passa al primo; un profilo senza config ne riceve una di
+   * default, salvata.
+   */
   const reloadStateFromDb = useCallback(async (): Promise<void> => {
-    const userId = currentUserIdRef.current;
     const [allUsers, allConfig, allClienti, allFatture, allWorkLogs, allScadenze] = await Promise.all([
       dbManager.getAll('users'),
       dbManager.getAll('config'),
@@ -193,9 +200,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dbManager.getAll('scadenze'),
     ]);
     setUsersRef.current(allUsers);
+    const previous = currentUserIdRef.current;
+    const userId = previous && allUsers.some((u: User) => u.id === previous) ? previous : allUsers[0]?.id ?? null;
     if (!userId) return;
+    currentUserIdRef.current = userId;
     const userConfig = allConfig.find((c: Config) => c.userId === userId);
     if (userConfig) setConfigRef.current(userConfig);
+    else resetConfigRef.current(userId);
     setClientiRef.current(allClienti.filter((c: Cliente) => c.userId === userId));
     setFattureRef.current(allFatture.filter((f: Fattura) => f.userId === userId));
     setWorkLogsRef.current(allWorkLogs.filter((w: WorkLog) => w.userId === userId));
@@ -203,26 +214,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [dbManager]);
 
   /**
-   * Dopo un giro di sync che ha cambiato IndexedDB, lo stato React viene
-   * aggiornato per differenze del merge: solo i record inseriti, aggiornati o
-   * cancellati, presi dallo snapshot fuso. Una modifica fatta nel frattempo
-   * su un altro record resta com'è.
+   * Dopo ogni applicazione a IndexedDB, lo stato React viene aggiornato per
+   * differenze: solo i record applicati davvero, presi dallo snapshot fuso.
+   * Una modifica fatta nel frattempo su un record resta com'è (controllo su
+   * updatedAt in applyStoreChanges). Se il merge ha tolto il profilo attivo,
+   * si ricarica tutto e si passa a un altro profilo.
    */
-  const handleSynced = useCallback(async (outcome: SyncCycleOutcome): Promise<void> => {
-    console.log('[AppContext] Aggiorno lo stato dopo la sync:', outcome.status);
-    if (outcome.status === 'restored') {
+  const handleApplied = useCallback(async (applied: AppliedChanges, merge: MergeResult): Promise<void> => {
+    const { snapshot } = merge;
+    const userId = currentUserIdRef.current ?? undefined;
+    if (userId && applied.users.deleted.includes(userId)) {
       await reloadStateFromDb();
       return;
     }
-    if (outcome.status !== 'unchanged' && outcome.status !== 'written') return;
-    const { changes, snapshot } = outcome.merge;
-    const userId = currentUserIdRef.current ?? undefined;
-    setUsersRef.current((prev) => applyStoreChanges(prev, changes.users, snapshot.users));
-    setClientiRef.current((prev) => applyStoreChanges(prev, changes.clienti, snapshot.clienti, userId));
-    setFattureRef.current((prev) => applyStoreChanges(prev, changes.fatture, snapshot.fatture, userId));
-    setWorkLogsRef.current((prev) => applyStoreChanges(prev, changes.workLogs, snapshot.workLogs, userId));
-    setScadenzeRef.current((prev) => applyStoreChanges(prev, changes.scadenze, snapshot.scadenze, userId));
-    if (userId && changes.config.upserted.includes(`config_${userId}`)) {
+    const tombstones = snapshot.tombstones;
+    setUsersRef.current(applyStoreChanges(usersRef.current, applied.users, snapshot.users, undefined, tombstones));
+    setClientiRef.current((prev) => applyStoreChanges(prev, applied.clienti, snapshot.clienti, userId, tombstones));
+    setFattureRef.current((prev) => applyStoreChanges(prev, applied.fatture, snapshot.fatture, userId, tombstones));
+    setWorkLogsRef.current((prev) => applyStoreChanges(prev, applied.workLogs, snapshot.workLogs, userId, tombstones));
+    setScadenzeRef.current((prev) => applyStoreChanges(prev, applied.scadenze, snapshot.scadenze, userId, tombstones));
+    if (userId && applied.config.upserted.includes(`config_${userId}`)) {
       const userConfig = snapshot.config.find((c) => c.id === `config_${userId}`);
       if (userConfig) setConfigRef.current(userConfig);
     }
@@ -248,7 +259,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dbManager,
     dbReady,
     isUsersInitialized,
-    onSynced: handleSynced,
+    onApplied: handleApplied,
+    onRestored: reloadStateFromDb,
     prepareRemote
   });
 

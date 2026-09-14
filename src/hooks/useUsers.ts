@@ -56,6 +56,21 @@ export function useUsers(dbManager: IndexedDBManager, dbReady: boolean) {
 
   const currentUser = users.find(u => u.id === currentUserId) || null;
 
+  /**
+   * Lista utenti arrivata dalla sync (merge o ripristino). Se il profilo
+   * attivo non c'è più, passa al primo disponibile, così le liste filtrate e
+   * i nuovi record non restano legati a un id inesistente.
+   */
+  const replaceUsers = useCallback((next: User[]) => {
+    setUsers(next);
+    setCurrentUserId((current) => {
+      if (current && next.some((u) => u.id === current)) return current;
+      const fallback = next[0]?.id ?? null;
+      if (fallback) localStorage.setItem(CURRENT_USER_KEY, fallback);
+      return fallback;
+    });
+  }, []);
+
   const switchUser = useCallback((userId: string) => {
     const user = users.find(u => u.id === userId);
     if (user) {
@@ -152,6 +167,7 @@ export function useUsers(dbManager: IndexedDBManager, dbReady: boolean) {
   return {
     users,
     setUsers,
+    replaceUsers,
     currentUserId,
     currentUser,
     isInitialized,

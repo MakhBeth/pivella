@@ -14,6 +14,7 @@ import type { SyncFileSystem } from './fileSystem';
 import { acquireLock } from './lock';
 import type { StoreName, User } from '../../types';
 import { parseSyncFile, type Stamp, type SyncSnapshot, type Writer } from './schema';
+import { runSyncCycle, type SyncCycleOptions, type SyncSource } from './syncCycle';
 import { writeSyncSnapshot } from './syncFile';
 
 export interface BackupEntry {
@@ -60,6 +61,10 @@ export async function readBackup(fs: SyncFileSystem, name: string, stamp: Stamp)
 
 export interface RestoreOptions {
   now?: () => Date;
+  /** Stessa preparazione del ciclo di sync (es. profili per un backup v1 senza utenti). */
+  prepare?: (snapshot: SyncSnapshot) => SyncSnapshot;
+  /** Solo per `restoreBackupSafely`: pubblicazione delle applicazioni del giro preliminare. */
+  onApplied?: SyncCycleOptions['onApplied'];
 }
 
 export interface RestoreOutcome {
@@ -72,7 +77,8 @@ export async function restoreFromBackup(fs: SyncFileSystem, db: IndexedDBManager
   const nowIso = nowDate.toISOString();
   const writer: Writer = { id: db.writerId ?? 'app-unknown', kind: 'restore' };
   const preview = await readBackup(fs, name, { now: nowIso, writer });
-  const snapshot: SyncSnapshot = { ...preview.snapshot, restoredAt: nowIso, restoredFrom: name, tombstones: [] };
+  const prepared = options.prepare ? options.prepare(preview.snapshot) : preview.snapshot;
+  const snapshot: SyncSnapshot = { ...prepared, restoredAt: nowIso, restoredFrom: name, tombstones: [] };
 
   const lock = await acquireLock(fs, { writerId: writer.id, kind: writer.kind });
   try {
@@ -84,4 +90,18 @@ export async function restoreFromBackup(fs: SyncFileSystem, db: IndexedDBManager
   } finally {
     await lock.release();
   }
+}
+
+/**
+ * Ripristino dall'app. Prima un giro di sync completo, così ogni modifica
+ * locale non ancora nel file (debounce, backup fallito in precedenza) finisce
+ * nel file e quindi nel backup `pre-restore`. Se quel giro non riesce a
+ * scrivere, il ripristino non parte e nulla viene toccato.
+ */
+export async function restoreBackupSafely(source: SyncSource, db: IndexedDBManager, name: string, options: RestoreOptions = {}): Promise<RestoreOutcome> {
+  const writer: Writer = { id: db.writerId ?? 'app-unknown', kind: 'app' };
+  const outcome = await runSyncCycle({ db, source, writer, now: options.now, prepareRemote: options.prepare, onApplied: options.onApplied });
+  if (outcome.status === 'stale') throw new Error('Il file di sincronizzazione continua a cambiare: ripristino annullato');
+  if (outcome.status === 'restored') throw new Error('Il file conteneva già un ripristino più recente, applicato ora: ricontrolla e riprova');
+  return restoreFromBackup(source.fs, db, name, options);
 }

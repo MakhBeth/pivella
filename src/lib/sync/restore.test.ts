@@ -6,7 +6,7 @@ import { IndexedDBManager } from '../db/IndexedDBManager';
 import { openSyncMetaDb } from '../db/syncMetaDb';
 import { BACKUP_DIR, BackupError, SYNC_FILENAME } from './backup';
 import { LOCK_FILE } from './lock';
-import { listBackups, readBackup, restoreFromBackup } from './restore';
+import { listBackups, readBackup, restoreBackupSafely, restoreFromBackup } from './restore';
 import { createEmptySnapshot, type Writer } from './schema';
 import { fromBytes, memoryFileSystem, text } from './testing/memoryFileSystem';
 
@@ -119,4 +119,51 @@ test('restoreFromBackup does nothing when the pre-restore backup fails', async (
   assert.deepEqual((await db.getAll('clienti')).map((c) => c.id), ['c-now']);
   assert.equal(await db.getLastRestoreAck(), null);
   assert.equal(await fs.read(LOCK_FILE), null);
+});
+
+// --- F19, F21: ripristino sicuro ---------------------------------------------
+
+test('restoreFromBackup applies the prepare hook, so a v1 backup without profiles gets one', async () => {
+  const { db, fs } = await setup();
+  const v1NoUsers = JSON.stringify({ users: [], config: [], clienti: [{ id: 'c-old', nome: 'Senza profilo' }], fatture: [], workLogs: [], scadenze: [] });
+  const name = 'pivella-sync.2026-08-01T00-00-00-000Z.v1.json';
+  await fs.write(`${BACKUP_DIR}/${name}`, text(v1NoUsers));
+  await restoreFromBackup(fs, db, name, {
+    now: () => new Date(NOW),
+    prepare: (s) => ({ ...s, users: [{ id: 'u1', nome: 'Utente', createdAt: T0 } as any], clienti: s.clienti.map((c) => ({ ...c, userId: 'u1' })) }),
+  });
+  assert.equal((await db.get('clienti', 'c-old')).userId, 'u1');
+  assert.deepEqual((await db.getAll('users')).map((u) => u.id), ['u1']);
+  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).clienti[0].userId, 'u1');
+});
+
+test('restoreBackupSafely first syncs unsynced local edits into the file, so the pre-restore backup keeps them', async () => {
+  const { db, fs } = await setup();
+  // Modifica locale non ancora nel file di sync.
+  await db.put('clienti', { id: 'c-unsynced', userId: 'u1', nome: 'Mai scritto nel file', updatedAt: NOW, updatedBy: 'app-1' });
+  // lastModified cresce solo quando il file di sync viene scritto, come su disco.
+  let version = 0;
+  const write = fs.write.bind(fs);
+  fs.write = async (path, bytes) => { if (path === SYNC_FILENAME) version++; return write(path, bytes); };
+  const move = fs.move!.bind(fs);
+  fs.move = async (from, to) => { if (to === SYNC_FILENAME) version++; return move(from, to); };
+  const source = { fs, lastModified: async () => ((await fs.read(SYNC_FILENAME)) ? version : null) };
+  const outcome = await restoreBackupSafely(source, db, APP_NAME, { now: () => new Date(NOW) });
+  const preRestore = JSON.parse(fromBytes(await fs.read(outcome.write.backup.file!))!);
+  assert.ok(preRestore.clienti.some((c: any) => c.id === 'c-unsynced'), 'il pre-restore contiene la modifica locale');
+  assert.deepEqual((await db.getAll('clienti')).map((c) => c.id).sort(), ['c-app', 'c-app-2']);
+});
+
+test('restoreBackupSafely aborts before touching anything when the preliminary sync cannot write', async () => {
+  const { db, fs } = await setup();
+  await db.put('clienti', { id: 'c-unsynced', userId: 'u1', nome: 'Mai scritto', updatedAt: NOW, updatedBy: 'app-1' });
+  const write = fs.write.bind(fs);
+  fs.write = async (path, bytes) => {
+    if (path.startsWith(`${BACKUP_DIR}/`)) throw new Error('ENOSPC');
+    return write(path, bytes);
+  };
+  const source = { fs, lastModified: async () => 1 };
+  await assert.rejects(restoreBackupSafely(source, db, APP_NAME, { now: () => new Date(NOW) }), BackupError);
+  assert.ok((await db.getAll('clienti')).some((c) => c.id === 'c-unsynced'));
+  assert.equal(await db.getLastRestoreAck(), null);
 });

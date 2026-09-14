@@ -203,3 +203,40 @@ test('prepareRemote can fix up the file before the merge and the fix is written 
   assert.equal((await db.get('clienti', 'c1')).userId, 'u1');
   assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).clienti[0].userId, 'u1');
 });
+
+// --- F16, F17: lettura coerente e pubblicazione di ogni applicazione ---------
+
+test('when the file changes while it is being read, the cycle rereads before merging', async () => {
+  const { db, fs, run } = await setup();
+  await fs.write(SYNC_FILENAME, text(remoteWith((s) => s.clienti.push(cliente('c1', 'Prima versione', T0, 'mcp-1') as any))));
+  const read = fs.read.bind(fs);
+  let swapped = false;
+  fs.read = async (path) => {
+    const bytes = await read(path);
+    if (path === SYNC_FILENAME && !swapped) {
+      // Un altro writer riscrive il file subito dopo che i byte sono stati letti.
+      swapped = true;
+      await fs.write(SYNC_FILENAME, text(remoteWith((s) => s.clienti.push(cliente('c1', 'Seconda versione', T1, 'mcp-1') as any))));
+    }
+    return bytes;
+  };
+  const outcome = await run();
+  assert.equal(outcome.status, 'unchanged');
+  assert.equal((await db.get('clienti', 'c1')).nome, 'Seconda versione');
+  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).clienti[0].nome, 'Seconda versione');
+});
+
+test('onApplied is called for every merge committed to IndexedDB, even when the write then fails', async () => {
+  const { db, source, run } = await setup();
+  const fs = source.fs as MemoryFileSystem;
+  await db.put('clienti', cliente('c1', 'Locale', T1));
+  await fs.write(SYNC_FILENAME, text(remoteWith((s) => s.clienti.push(cliente('c2', 'Dal file', T0, 'mcp-1') as any))));
+  const write = fs.write.bind(fs);
+  fs.write = async (path, bytes) => {
+    if (path.startsWith(`${BACKUP_DIR}/`)) throw new Error('ENOSPC');
+    return write(path, bytes);
+  };
+  const seen: string[][] = [];
+  await assert.rejects(run({ onApplied: async (applied: any) => { seen.push(applied.clienti.upserted); } }), BackupError);
+  assert.deepEqual(seen, [['c2']], 'il record importato viene pubblicato anche se poi il backup fallisce');
+});

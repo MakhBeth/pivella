@@ -7,8 +7,9 @@ import {
   getFolderName
 } from '../lib/utils/fileSystemSync';
 import type { IndexedDBManager } from '../lib/db/IndexedDBManager';
-import { runSyncCycle, type SyncCycleOutcome } from '../lib/sync/syncCycle';
-import { listBackups, readBackup, restoreFromBackup, type BackupEntry, type BackupPreview } from '../lib/sync/restore';
+import { runSyncCycle, type AppliedChanges } from '../lib/sync/syncCycle';
+import type { MergeResult } from '../lib/sync/merge';
+import { listBackups, readBackup, restoreBackupSafely, type BackupEntry, type BackupPreview } from '../lib/sync/restore';
 import { BackupError } from '../lib/sync/backup';
 import { SyncLockedError } from '../lib/sync/lock';
 import type { SyncSnapshot } from '../lib/sync/schema';
@@ -17,8 +18,10 @@ interface UseFolderSyncOptions {
   dbManager: IndexedDBManager;
   dbReady: boolean;
   isUsersInitialized: boolean;
-  /** Chiamato dopo ogni giro che ha cambiato IndexedDB: chi ascolta ricarica lo stato React. */
-  onSynced?: (outcome: SyncCycleOutcome) => Promise<void> | void;
+  /** Chiamato a ogni applicazione a IndexedDB, prima della scrittura del file: chi ascolta aggiorna lo stato React per differenze. */
+  onApplied?: (applied: AppliedChanges, merge: MergeResult) => Promise<void> | void;
+  /** Chiamato dopo un rimpiazzo totale (ripristino): chi ascolta ricarica tutto dal database. */
+  onRestored?: () => Promise<void> | void;
   /** Aggiusta lo snapshot letto dal file prima del merge (es. record senza userId). */
   prepareRemote?: (snapshot: SyncSnapshot) => SyncSnapshot;
 }
@@ -63,7 +66,8 @@ export function useFolderSync({
   dbManager,
   dbReady,
   isUsersInitialized,
-  onSynced,
+  onApplied,
+  onRestored,
   prepareRemote
 }: UseFolderSyncOptions): UseFolderSyncReturn {
   const [syncFolderHandle, setSyncFolderHandleState] = useState<FileSystemDirectoryHandle | null>(null);
@@ -80,7 +84,8 @@ export function useFolderSync({
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncFolderHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
   // Callback in ref: cambiano a ogni render e non devono far ripartire l'avvio.
-  const onSyncedRef = useRef(onSynced);
+  const onAppliedRef = useRef(onApplied);
+  const onRestoredRef = useRef(onRestored);
   const prepareRemoteRef = useRef(prepareRemote);
 
   // Il ref va aggiornato subito, non in un effect: chi seleziona una cartella
@@ -91,9 +96,10 @@ export function useFolderSync({
   }, []);
 
   useEffect(() => {
-    onSyncedRef.current = onSynced;
+    onAppliedRef.current = onApplied;
+    onRestoredRef.current = onRestored;
     prepareRemoteRef.current = prepareRemote;
-  }, [onSynced, prepareRemote]);
+  }, [onApplied, onRestored, prepareRemote]);
 
   const runCycle = useCallback(async (handle?: FileSystemDirectoryHandle | null): Promise<void> => {
     const folderHandle = handle ?? syncFolderHandleRef.current;
@@ -115,16 +121,15 @@ export function useFolderSync({
         source: folderSyncSource(folderHandle),
         writer: { id: dbManager.writerId, kind: 'app' },
         prepareRemote: prepareRemoteRef.current,
+        onApplied: (applied, merge) => onAppliedRef.current?.(applied, merge),
       });
       console.log('[useFolderSync] Giro completato:', outcome.status, 'locale cambiato:', outcome.localChanged);
+      if (outcome.status === 'restored') await onRestoredRef.current?.();
       if (outcome.status === 'stale') {
         setSyncError('Il file di sincronizzazione continua a cambiare: nuovo tentativo al prossimo giro');
       } else {
         setSyncError(null);
         setLastSyncTime(new Date());
-      }
-      if (outcome.localChanged) {
-        await onSyncedRef.current?.(outcome);
       }
       setSyncStatus(await dbManager.getSyncStatus());
     } catch (err: any) {
@@ -228,8 +233,13 @@ export function useFolderSync({
     setIsSyncing(true);
     try {
       if (!(await verifyPermission(handle))) throw new Error('Permesso sulla cartella di sincronizzazione da rinnovare');
-      const outcome = await restoreFromBackup(folderSyncSource(handle).fs, dbManager, name);
-      await onSyncedRef.current?.({ status: 'restored', localChanged: true, snapshot: outcome.snapshot });
+      // Prima un giro di sync (le modifiche locali finiscono nel file e quindi
+      // nel backup pre-restore), poi il rimpiazzo. Se il giro non scrive, niente.
+      await restoreBackupSafely(folderSyncSource(handle), dbManager, name, {
+        prepare: prepareRemoteRef.current,
+        onApplied: (applied, merge) => onAppliedRef.current?.(applied, merge),
+      });
+      await onRestoredRef.current?.();
       setSyncError(null);
       setLastSyncTime(new Date());
       setSyncStatus(await dbManager.getSyncStatus());

@@ -45,6 +45,13 @@ export interface SyncMetaDb {
   getTombstones(): Promise<Tombstone[]>;
   removeTombstones(keys: TombstoneKey[]): Promise<void>;
   replaceTombstones(tombstones: Tombstone[]): Promise<void>;
+  /**
+   * Applica l'esito di un merge calcolato su `base`: i tombstone fusi entrano
+   * (vince il più recente), quelli di `base` che il merge ha fatto decadere
+   * escono solo se nel frattempo non sono cambiati. Un tombstone scritto da
+   * `delete` dopo lo snapshot sopravvive sempre.
+   */
+  mergeTombstones(merged: Tombstone[], base: Tombstone[]): Promise<void>;
   getMeta<T = unknown>(key: MetaKey): Promise<T | undefined>;
   setMeta(key: MetaKey, value: unknown): Promise<void>;
   getWriterId(): Promise<string>;
@@ -136,6 +143,22 @@ function wrap(db: IDBDatabase): SyncMetaDb {
       const store = tx.objectStore(TOMBSTONES);
       store.clear();
       for (const tombstone of tombstones) store.put(tombstone);
+      await complete(tx);
+    },
+
+    async mergeTombstones(merged, base) {
+      const tx = db.transaction(TOMBSTONES, 'readwrite');
+      const store = tx.objectStore(TOMBSTONES);
+      const mergedKeys = new Set(merged.map((t) => `${t.store}/${t.id}`));
+      for (const t of merged) {
+        const existing = (await request(store.get([t.store, t.id]))) as Tombstone | undefined;
+        if (!existing || pickTombstone(existing, t) === t) store.put(t);
+      }
+      for (const t of base) {
+        if (mergedKeys.has(`${t.store}/${t.id}`)) continue;
+        const existing = (await request(store.get([t.store, t.id]))) as Tombstone | undefined;
+        if (existing && existing.deletedAt === t.deletedAt && existing.deletedBy === t.deletedBy) store.delete([t.store, t.id]);
+      }
       await complete(tx);
     },
 

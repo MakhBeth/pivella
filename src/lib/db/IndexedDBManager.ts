@@ -1,7 +1,7 @@
 import type { StoreName, User } from '../../types';
 import { DB_NAME, DB_VERSION, STORES } from '../constants/fiscali';
-import type { MergeResult } from '../sync/merge';
-import { compareInstants, createEmptySnapshot, tombstoneTimestamp, type SyncRecord, type SyncSnapshot } from '../sync/schema';
+import type { MergeResult, StoreChanges } from '../sync/merge';
+import { canonicalJson, compareInstants, createEmptySnapshot, tombstoneTimestamp, type SyncRecord, type SyncSnapshot } from '../sync/schema';
 import { openSyncMetaDb, type SyncMetaDb } from './syncMetaDb';
 
 export interface IndexedDBManagerOptions {
@@ -183,37 +183,63 @@ export class IndexedDBManager {
   }
 
   /**
-   * Applica a ForfettarioDB l'esito di `mergeSnapshots`. Ordine obbligato:
-   * prima l'archivio dei record locali perdenti (la loro unica copia), poi i
-   * tombstone fusi, poi le differenze per store in una sola transazione, così
-   * un crash a metà non lascia nulla di mezzo applicato.
+   * Applica a ForfettarioDB l'esito di `mergeSnapshots(base, remoto)`.
+   * Ordine obbligato: prima l'archivio dei record locali perdenti (la loro
+   * unica copia), poi i tombstone, poi le differenze per store in una sola
+   * transazione, così un crash a metà non lascia nulla di mezzo applicato.
+   *
+   * Tra `exportSnapshot` e questa chiamata l'utente può aver modificato o
+   * cancellato record: un record che oggi non è più uguale alla sua versione
+   * in `base` viene saltato, perché il merge non lo ha visto. Il giro
+   * successivo lo rifonde con la versione giusta. Restituisce ciò che è
+   * stato applicato davvero, per aggiornare lo stato React.
    */
-  async mergeIntoDb(result: MergeResult): Promise<void> {
+  async mergeIntoDb(result: MergeResult, base?: SyncSnapshot): Promise<Record<StoreName, StoreChanges>> {
     if (!this.db) throw new Error('Database not initialized');
     const meta = await this.ensureSyncMeta();
     await meta.appendConflicts(result.conflicts, this.now());
-    await meta.replaceTombstones(result.snapshot.tombstones);
+    if (base) await meta.mergeTombstones(result.snapshot.tombstones, base.tombstones);
+    else await meta.replaceTombstones(result.snapshot.tombstones);
     if (result.orphans.length > 0) await meta.setMeta('orphans', result.orphans);
 
+    const applied = {} as Record<StoreName, StoreChanges>;
+    for (const s of STORES) applied[s] = { upserted: [], deleted: [] };
     const touched = STORES.filter((s) => result.changes[s].upserted.length > 0 || result.changes[s].deleted.length > 0);
-    if (touched.length === 0) return;
+    if (touched.length === 0) return applied;
+
     const tx = this.db.transaction(touched, 'readwrite');
     try {
       for (const storeName of touched) {
         const store = tx.objectStore(storeName);
         const byId = new Map((result.snapshot[storeName] as SyncRecord[]).map((r) => [r.id, r]));
+        const baseById = base ? new Map((base[storeName] as SyncRecord[]).map((r) => [r.id, r])) : null;
+        const unchangedSinceBase = async (id: string): Promise<boolean> => {
+          if (!baseById) return true;
+          const current = (await request(store.get(id))) as SyncRecord | undefined;
+          const expected = baseById.get(id);
+          if (!current && !expected) return true;
+          if (!current || !expected) return false;
+          return canonicalJson(current) === canonicalJson(expected);
+        };
         for (const id of result.changes[storeName].upserted) {
           const record = byId.get(id);
           if (!record) throw new Error(`Record ${storeName}/${id} assente dallo snapshot fuso`);
+          if (!(await unchangedSinceBase(id))) continue;
           store.put(record);
+          applied[storeName].upserted.push(id);
         }
-        for (const id of result.changes[storeName].deleted) store.delete(id);
+        for (const id of result.changes[storeName].deleted) {
+          if (!(await unchangedSinceBase(id))) continue;
+          store.delete(id);
+          applied[storeName].deleted.push(id);
+        }
       }
     } catch (e) {
       tx.abort();
       throw e;
     }
     await complete(tx);
+    return applied;
   }
 
   private async doInit(): Promise<IDBDatabase> {

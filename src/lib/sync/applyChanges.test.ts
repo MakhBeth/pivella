@@ -41,3 +41,23 @@ test('an upserted id missing from the snapshot is ignored', () => {
   const next = applyStoreChanges(prev, { upserted: ['ghost'], deleted: [] }, [r('a', 'A')], 'u1');
   assert.deepEqual(next.map((x) => x.id), ['a']);
 });
+
+// --- F18: modifiche locali arrivate dopo il merge ----------------------------
+
+const stamped = (id: string, nome: string, updatedAt: string, userId = 'u1') => ({ id, userId, nome, updatedAt });
+
+test('an upsert does not overwrite a record the user edited after the merge', () => {
+  const prev = [stamped('a', 'Modifica più nuova', '2026-09-14T10:00:05.000Z')];
+  const merged = [stamped('a', 'Dal merge', '2026-09-14T10:00:00.000Z')];
+  const next = applyStoreChanges(prev, { upserted: ['a'], deleted: [] }, merged, 'u1');
+  assert.equal(next[0].nome, 'Modifica più nuova');
+});
+
+test('a delete is skipped when the record was edited after the tombstone', () => {
+  const prev = [stamped('a', 'Ricreato', '2026-09-14T10:00:05.000Z')];
+  const tombstones = [{ store: 'clienti' as const, id: 'a', deletedAt: '2026-09-14T10:00:00.000Z', deletedBy: 'mcp-1' }];
+  const next = applyStoreChanges(prev, { upserted: [], deleted: ['a'] }, [], 'u1', tombstones);
+  assert.equal(next.length, 1);
+  const older = [stamped('a', 'Vecchio', '2026-09-14T09:00:00.000Z')];
+  assert.equal(applyStoreChanges(older, { upserted: [], deleted: ['a'] }, [], 'u1', tombstones).length, 0);
+});

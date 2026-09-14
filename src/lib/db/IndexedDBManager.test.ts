@@ -255,3 +255,62 @@ test('getSyncStatus reports conflicts and archived records after a merge', async
   await db.mergeIntoDb(mergeAgainstLocal(local, remote));
   assert.deepEqual(await db.getSyncStatus(), { conflicts: 1, archived: 1 });
 });
+
+// --- F15: mutazioni locali tra exportSnapshot e mergeIntoDb ------------------
+
+test('mergeIntoDb skips a record edited locally after the snapshot was taken and reports what it applied', async () => {
+  const { db } = manager();
+  await db.init();
+  await db.put('clienti', cliente('c1', 'Locale', { updatedAt: T0, updatedBy: 'app-a' }));
+  await db.put('clienti', cliente('c2', 'Altro', { updatedAt: T0, updatedBy: 'app-a' }));
+  const local = await db.exportSnapshot();
+  const remote = createEmptySnapshot({ now: T1, writer: { id: 'mcp-1', kind: 'mcp' } });
+  remote.clienti.push(cliente('c1', 'Dal file', { updatedAt: T1, updatedBy: 'mcp-1' }) as any, cliente('c2', 'Altro dal file', { updatedAt: T1, updatedBy: 'mcp-1' }) as any);
+  const result = mergeAgainstLocal(local, remote);
+  // L'utente modifica c1 dopo lo snapshot e prima dell'applicazione.
+  await db.put('clienti', cliente('c1', 'Modifica in corsa', { updatedAt: NOW, updatedBy: 'app-a' }));
+
+  const applied = await db.mergeIntoDb(result, local);
+  assert.equal((await db.get('clienti', 'c1')).nome, 'Modifica in corsa', 'la modifica in corsa non viene sovrascritta');
+  assert.equal((await db.get('clienti', 'c2')).nome, 'Altro dal file');
+  assert.deepEqual(applied.clienti, { upserted: ['c2'], deleted: [] });
+});
+
+test('mergeIntoDb keeps a tombstone written locally after the snapshot was taken', async () => {
+  const { factory, db } = manager();
+  await db.init();
+  await db.put('fatture', { id: 'f1', userId: 'u1', updatedAt: T0, updatedBy: 'app-a' });
+  const local = await db.exportSnapshot();
+  const remote = createEmptySnapshot({ now: T1, writer: { id: 'mcp-1', kind: 'mcp' } });
+  remote.fatture.push({ id: 'f1', userId: 'u1', updatedAt: T0, updatedBy: 'app-a' } as any);
+  const result = mergeAgainstLocal(local, remote);
+  assert.equal(result.snapshot.tombstones.length, 0);
+  // L'utente cancella f1 nel frattempo: tombstone scritto, record rimosso.
+  await db.delete('fatture', 'f1');
+
+  await db.mergeIntoDb(result, local);
+  const meta = await openSyncMetaDb(factory);
+  const tombstones = await meta.getTombstones();
+  meta.close();
+  assert.deepEqual(tombstones.map((t) => t.id), ['f1'], 'il tombstone nuovo sopravvive al merge basato sullo snapshot vecchio');
+  assert.equal(await db.get('fatture', 'f1'), undefined);
+});
+
+test('mergeIntoDb drops a local tombstone only when the merge dropped it and it is unchanged', async () => {
+  const { factory, db } = manager();
+  await db.init();
+  await db.put('fatture', { id: 'f1', userId: 'u1', updatedAt: T0, updatedBy: 'app-a' });
+  await db.delete('fatture', 'f1');
+  const local = await db.exportSnapshot();
+  assert.equal(local.tombstones.length, 1);
+  // Il file ha ricreato f1 dopo la cancellazione: il tombstone decade.
+  const remote = createEmptySnapshot({ now: NOW, writer: { id: 'mcp-1', kind: 'mcp' } });
+  remote.fatture.push({ id: 'f1', userId: 'u1', updatedAt: '2026-09-11T00:00:00.000Z', updatedBy: 'mcp-1' } as any);
+  const result = mergeAgainstLocal(local, remote);
+  assert.equal(result.snapshot.tombstones.length, 0);
+  await db.mergeIntoDb(result, local);
+  const meta = await openSyncMetaDb(factory);
+  assert.deepEqual(await meta.getTombstones(), []);
+  meta.close();
+  assert.equal((await db.get('fatture', 'f1')).updatedBy, 'mcp-1');
+});
