@@ -11,6 +11,7 @@ import { useScadenze } from '../hooks/useScadenze';
 import { useFolderSync } from '../hooks/useFolderSync';
 import type { SyncSnapshot } from '../lib/sync/schema';
 import type { SyncCycleOutcome } from '../lib/sync/syncCycle';
+import { applyStoreChanges } from '../lib/sync/applyChanges';
 
 // Helper to adjust color brightness
 function adjustColorBrightness(hex: string, percent: number): string {
@@ -174,13 +175,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  /**
-   * Dopo un giro di sync che ha cambiato IndexedDB, lo stato React viene
-   * ricaricato per intero dal database. Temporaneo: il passo 5 aggiornerà
-   * lo stato per differenze del merge.
-   */
-  const handleSynced = useCallback(async (outcome: SyncCycleOutcome): Promise<void> => {
-    console.log('[AppContext] Ricarico lo stato dopo la sync:', outcome.status);
+  /** Ricarica per intero lo stato dal database: solo dopo un ripristino, che è un rimpiazzo totale. */
+  const reloadStateFromDb = useCallback(async (): Promise<void> => {
     const userId = currentUserIdRef.current;
     const [allUsers, allConfig, allClienti, allFatture, allWorkLogs, allScadenze] = await Promise.all([
       dbManager.getAll('users'),
@@ -199,6 +195,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setWorkLogsRef.current(allWorkLogs.filter((w: WorkLog) => w.userId === userId));
     setScadenzeRef.current(allScadenze.filter((s: Scadenza) => s.userId === userId));
   }, [dbManager]);
+
+  /**
+   * Dopo un giro di sync che ha cambiato IndexedDB, lo stato React viene
+   * aggiornato per differenze del merge: solo i record inseriti, aggiornati o
+   * cancellati, presi dallo snapshot fuso. Una modifica fatta nel frattempo
+   * su un altro record resta com'è.
+   */
+  const handleSynced = useCallback(async (outcome: SyncCycleOutcome): Promise<void> => {
+    console.log('[AppContext] Aggiorno lo stato dopo la sync:', outcome.status);
+    if (outcome.status === 'restored') {
+      await reloadStateFromDb();
+      return;
+    }
+    if (outcome.status !== 'unchanged' && outcome.status !== 'written') return;
+    const { changes, snapshot } = outcome.merge;
+    const userId = currentUserIdRef.current ?? undefined;
+    setUsersRef.current((prev) => applyStoreChanges(prev, changes.users, snapshot.users));
+    setClientiRef.current((prev) => applyStoreChanges(prev, changes.clienti, snapshot.clienti, userId));
+    setFattureRef.current((prev) => applyStoreChanges(prev, changes.fatture, snapshot.fatture, userId));
+    setWorkLogsRef.current((prev) => applyStoreChanges(prev, changes.workLogs, snapshot.workLogs, userId));
+    setScadenzeRef.current((prev) => applyStoreChanges(prev, changes.scadenze, snapshot.scadenze, userId));
+    if (userId && changes.config.upserted.includes(`config_${userId}`)) {
+      const userConfig = snapshot.config.find((c) => c.id === `config_${userId}`);
+      if (userConfig) setConfigRef.current(userConfig);
+    }
+  }, [reloadStateFromDb]);
 
   const {
     syncFolderHandle,
