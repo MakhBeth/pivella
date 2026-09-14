@@ -12,6 +12,7 @@ import { useFolderSync } from '../hooks/useFolderSync';
 import type { SyncSnapshot } from '../lib/sync/schema';
 import type { SyncCycleOutcome } from '../lib/sync/syncCycle';
 import { applyStoreChanges } from '../lib/sync/applyChanges';
+import type { BackupEntry, BackupPreview } from '../lib/sync/restore';
 
 // Helper to adjust color brightness
 function adjustColorBrightness(hex: string, percent: number): string {
@@ -91,6 +92,10 @@ interface AppContextValue {
   syncError: string | null;
   syncToFolder: () => Promise<void>;
   syncNow: () => Promise<void>;
+  syncStatus: { conflicts: number; archived: number } | null;
+  listBackups: () => Promise<BackupEntry[]>;
+  previewBackup: (name: string) => Promise<BackupPreview>;
+  restoreBackup: (name: string) => Promise<void>;
   setSyncFolderHandle: (handle: FileSystemDirectoryHandle | null) => void;
   setSyncFolderName: (name: string | null) => void;
   setLastSyncTime: (time: Date | null) => void;
@@ -231,6 +236,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     syncError,
     syncToFolder,
     syncNow,
+    syncStatus,
+    listBackups,
+    previewBackup,
+    restoreBackup,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime
@@ -456,6 +465,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     syncError,
     syncToFolder,
     syncNow,
+    syncStatus,
+    listBackups,
+    previewBackup,
+    restoreBackup,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime

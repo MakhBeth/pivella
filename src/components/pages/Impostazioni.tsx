@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Upload, Database, Plus, X, Edit, Trash2, Users, Palette, Building, FolderSync, RefreshCw, FolderOpen, AlertCircle, UserCircle, Coins, ChevronUp, ChevronDown, BookOpen } from '../shared/icons';
+import { Download, Upload, Database, Plus, X, Edit, Trash2, Users, Palette, Building, FolderSync, RefreshCw, FolderOpen, AlertCircle, AlertTriangle, FileArchive, UserCircle, Coins, ChevronUp, ChevronDown, BookOpen } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import type { Cliente, EmittenteConfig, User, ValutaConfig } from '../../types';
 import { calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva } from '../../lib/utils/forfettario';
@@ -14,6 +14,17 @@ import {
   clearStoredDirectoryHandle,
   getFolderName
 } from '../../lib/utils/fileSystemSync';
+import type { BackupKind } from '../../lib/sync/backup';
+import type { BackupEntry, BackupPreview } from '../../lib/sync/restore';
+
+const BACKUP_KIND_LABEL: Record<BackupKind, string> = {
+  app: 'Automatico',
+  mcp: 'Assistente',
+  v1: 'Formato precedente',
+  'pre-restore': 'Prima di un ripristino',
+};
+
+const formatSize = (bytes: number): string => (bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`);
 
 const getClientDisplayColor = (cliente: Cliente): string => {
   return cliente.color || getClientColor(cliente.id);
@@ -37,6 +48,14 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
     isSyncing,
     lastSyncTime,
     syncNow,
+    syncError,
+    syncStatus,
+    listBackups,
+    previewBackup,
+    restoreBackup,
+    fatture,
+    workLogs,
+    scadenze,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime,
@@ -51,6 +70,58 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [newUserName, setNewUserName] = useState('');
   const [newValuta, setNewValuta] = useState<ValutaConfig>({ codice: '', simbolo: '' });
+  const [showHistory, setShowHistory] = useState(false);
+  const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [pendingRestore, setPendingRestore] = useState<BackupPreview | null>(null);
+  const [restoring, setRestoring] = useState(false);
+
+  const loadBackups = async () => {
+    setLoadingBackups(true);
+    try {
+      setBackups(await listBackups());
+    } catch (err) {
+      console.error('[Impostazioni] Lettura backup fallita:', err);
+      showToast('Impossibile leggere i backup', 'error');
+    } finally {
+      setLoadingBackups(false);
+    }
+  };
+
+  const toggleHistory = async () => {
+    if (showHistory) {
+      setShowHistory(false);
+      setPendingRestore(null);
+      return;
+    }
+    setShowHistory(true);
+    await loadBackups();
+  };
+
+  const prepareRestore = async (name: string) => {
+    try {
+      setPendingRestore(await previewBackup(name));
+    } catch (err) {
+      console.error('[Impostazioni] Anteprima backup fallita:', err);
+      showToast('Impossibile leggere il backup', 'error');
+    }
+  };
+
+  const confirmRestore = async () => {
+    if (!pendingRestore) return;
+    setRestoring(true);
+    try {
+      await restoreBackup(pendingRestore.name);
+      showToast('Ripristino completato');
+      setPendingRestore(null);
+      await loadBackups();
+    } catch (err) {
+      console.error('[Impostazioni] Ripristino fallito:', err);
+      showToast(err instanceof Error ? err.message : 'Ripristino fallito', 'error');
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const handleSelectSyncFolder = async () => {
     if (!isFileSystemAccessSupported()) {
@@ -785,6 +856,17 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
           </div>
         )}
 
+        {syncError && (
+          <div className="backup-info" role="alert" style={{ marginTop: 0, marginBottom: 16, border: '1px solid var(--accent-orange)' }}>
+            <h2><AlertTriangle size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} /> Sincronizzazione sospesa</h2>
+            <p>{syncError}</p>
+            <p>I dati inseriti sono al sicuro in questo browser. Il file nella cartella resta indietro finché il problema non è risolto.</p>
+            <button className="btn btn-secondary btn-sm" onClick={() => void syncNow()} disabled={isSyncing} style={{ marginTop: 8 }}>
+              <RefreshCw size={16} className={isSyncing ? 'spinning' : ''} aria-hidden="true" /> Riprova
+            </button>
+          </div>
+        )}
+
         {syncFolderHandle && syncFolderName ? (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -794,6 +876,11 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
                 {lastSyncTime && (
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                     Ultimo sync: {lastSyncTime.toLocaleTimeString()}
+                  </div>
+                )}
+                {syncStatus && (
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    Conflitti risolti: {syncStatus.conflicts}. Record archiviati: {syncStatus.archived}.
                   </div>
                 )}
               </div>
@@ -810,21 +897,80 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
               <button
                 className="btn btn-secondary"
                 onClick={handleSelectSyncFolder}
+                disabled={isSyncing}
               >
                 <FolderOpen size={18} aria-hidden="true" /> Cambia Cartella
               </button>
               <button
                 className="btn btn-danger"
                 onClick={handleRemoveSyncFolder}
+                disabled={isSyncing}
               >
                 <X size={18} aria-hidden="true" /> Rimuovi
               </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => void toggleHistory()}
+                disabled={isSyncing}
+              >
+                <FileArchive size={18} aria-hidden="true" /> {showHistory ? 'Nascondi cronologia' : 'Cronologia sincronizzazione'}
+              </button>
             </div>
+
+            {showHistory && (
+              <div style={{ marginTop: 16 }}>
+                {loadingBackups ? (
+                  <p style={{ color: 'var(--text-muted)' }}>Lettura dei backup...</p>
+                ) : backups.length === 0 ? (
+                  <p style={{ color: 'var(--text-muted)' }}>Nessun backup nella cartella. Il primo viene creato alla prima modifica dopo il collegamento.</p>
+                ) : (
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr><th>Data</th><th>Tipo</th><th>Dimensione</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        {backups.map((b) => (
+                          <tr key={b.name}>
+                            <td>{b.timestamp.toLocaleString()}</td>
+                            <td>{BACKUP_KIND_LABEL[b.kind]}</td>
+                            <td>{formatSize(b.size)}</td>
+                            <td>
+                              <button className="btn btn-secondary btn-sm" onClick={() => void prepareRestore(b.name)} disabled={isSyncing || restoring}>
+                                Ripristina
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {pendingRestore && (
+                  <div className="backup-info" role="dialog" aria-label="Conferma ripristino" style={{ border: '1px solid var(--accent-orange)' }}>
+                    <h2><AlertTriangle size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} /> Confermi il ripristino?</h2>
+                    <p>
+                      Il backup del {backups.find((b) => b.name === pendingRestore.name)?.timestamp.toLocaleString()} contiene {pendingRestore.counts.clienti} clienti, {pendingRestore.counts.fatture} fatture, {pendingRestore.counts.workLogs} giornate e {pendingRestore.counts.scadenze} scadenze, per {pendingRestore.users.length === 0 ? 'nessun profilo' : pendingRestore.users.map((u) => u.nome).join(', ')}.
+                    </p>
+                    <p>
+                      Oggi il profilo corrente ha {clienti.length} clienti, {fatture.length} fatture, {workLogs.length} giornate e {scadenze.length} scadenze. Il ripristino sostituisce tutto, per tutti i profili. Lo stato attuale viene prima salvato come backup, così puoi tornare indietro.
+                    </p>
+                    <div className="backup-section" style={{ marginTop: 8 }}>
+                      <button className="btn btn-danger" onClick={() => void confirmRestore()} disabled={restoring}>
+                        {restoring ? 'Ripristino...' : 'Sì, ripristina'}
+                      </button>
+                      <button className="btn btn-secondary" onClick={() => setPendingRestore(null)} disabled={restoring}>Annulla</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <>
             <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>
-              Seleziona una cartella sincronizzata (Dropbox, iCloud Drive, Google Drive) per mantenere i dati aggiornati su tutti i dispositivi.
+              Seleziona una cartella su questo computer per tenere i dati in un file, con backup automatici a ogni modifica.
             </p>
             <button className="btn btn-primary" onClick={handleSelectSyncFolder}>
               <FolderOpen size={18} aria-hidden="true" /> Seleziona Cartella
@@ -834,7 +980,9 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
 
         <div className="backup-info" style={{ marginTop: 16 }}>
           <h2>ℹ️ Come funziona</h2>
-          <p>I dati vengono salvati in un file JSON nella cartella selezionata. Se la cartella è sincronizzata da un servizio cloud, i dati saranno disponibili su tutti i dispositivi che puntano alla stessa cartella.</p>
+          <p>I dati vengono salvati nel file <code>pivella-sync.json</code> dentro la cartella scelta. Prima di ogni scrittura il file precedente viene copiato in <code>pivella-backups</code>: si conservano gli ultimi 30 backup, poi uno al giorno per 90 giorni. Il file originale del formato precedente, se c'era, viene conservato per sempre.</p>
+          <p style={{ marginTop: 8 }}>Le cartelle sincronizzate da servizi cloud (Dropbox, iCloud Drive, Google Drive, OneDrive) non sono supportate: la sincronizzazione presuppone un solo computer e un solo orologio.</p>
+          <p style={{ marginTop: 8 }}>Copiare a mano un backup sopra <code>pivella-sync.json</code> non è un ripristino: usa la cronologia qui sopra, altrimenti le modifiche più recenti vincerebbero comunque.</p>
         </div>
       </div>
     </>

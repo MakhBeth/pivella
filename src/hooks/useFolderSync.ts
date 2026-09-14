@@ -8,6 +8,7 @@ import {
 } from '../lib/utils/fileSystemSync';
 import type { IndexedDBManager } from '../lib/db/IndexedDBManager';
 import { runSyncCycle, type SyncCycleOutcome } from '../lib/sync/syncCycle';
+import { listBackups, readBackup, restoreFromBackup, type BackupEntry, type BackupPreview } from '../lib/sync/restore';
 import { BackupError } from '../lib/sync/backup';
 import { SyncLockedError } from '../lib/sync/lock';
 import type { SyncSnapshot } from '../lib/sync/schema';
@@ -33,6 +34,13 @@ interface UseFolderSyncReturn {
   syncToFolder: () => Promise<void>;
   /** Giro immediato, senza debounce: per il pulsante Riprova e Sincronizza ora. */
   syncNow: () => Promise<void>;
+  /** Conflitti nel log e record archiviati, aggiornati dopo ogni giro. */
+  syncStatus: { conflicts: number; archived: number } | null;
+  /** Backup nella cartella, dal più recente. */
+  listBackups: () => Promise<BackupEntry[]>;
+  previewBackup: (name: string) => Promise<BackupPreview>;
+  /** Rimpiazzo totale da un backup (13.3). Lancia se il backup pre-restore fallisce. */
+  restoreBackup: (name: string) => Promise<void>;
   setSyncFolderHandle: (handle: FileSystemDirectoryHandle | null) => void;
   setSyncFolderName: (name: string | null) => void;
   setLastSyncTime: (time: Date | null) => void;
@@ -64,6 +72,7 @@ export function useFolderSync({
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<{ conflicts: number; archived: number } | null>(null);
 
   // Un solo giro alla volta; un trigger arrivato durante il giro ne chiede un altro alla fine.
   const runningRef = useRef(false);
@@ -114,6 +123,7 @@ export function useFolderSync({
       if (outcome.localChanged) {
         await onSyncedRef.current?.(outcome);
       }
+      setSyncStatus(await dbManager.getSyncStatus());
     } catch (err: any) {
       console.error('[useFolderSync] Errore di sync:', err);
       setSyncError(describeSyncError(err));
@@ -195,6 +205,40 @@ export function useFolderSync({
     await runCycle();
   }, [runCycle]);
 
+  const listBackupsInFolder = useCallback(async () => {
+    const handle = syncFolderHandleRef.current;
+    if (!handle) return [];
+    return listBackups(folderSyncSource(handle).fs);
+  }, []);
+
+  const previewBackup = useCallback(async (name: string) => {
+    const handle = syncFolderHandleRef.current;
+    if (!handle) throw new Error('Nessuna cartella di sincronizzazione');
+    return readBackup(folderSyncSource(handle).fs, name, { now: new Date().toISOString(), writer: { id: dbManager.writerId ?? 'app-unknown', kind: 'app' } });
+  }, [dbManager]);
+
+  const restoreBackup = useCallback(async (name: string) => {
+    const handle = syncFolderHandleRef.current;
+    if (!handle) throw new Error('Nessuna cartella di sincronizzazione');
+    if (runningRef.current) throw new Error('Sincronizzazione in corso, riprova tra un attimo');
+    runningRef.current = true;
+    setIsSyncing(true);
+    try {
+      if (!(await verifyPermission(handle))) throw new Error('Permesso sulla cartella di sincronizzazione da rinnovare');
+      const outcome = await restoreFromBackup(folderSyncSource(handle).fs, dbManager, name);
+      await onSyncedRef.current?.({ status: 'restored', localChanged: true, snapshot: outcome.snapshot });
+      setSyncError(null);
+      setLastSyncTime(new Date());
+      setSyncStatus(await dbManager.getSyncStatus());
+    } catch (err) {
+      setSyncError(describeSyncError(err));
+      throw err;
+    } finally {
+      runningRef.current = false;
+      setIsSyncing(false);
+    }
+  }, [dbManager]);
+
   return {
     syncFolderHandle,
     syncFolderName,
@@ -204,6 +248,10 @@ export function useFolderSync({
     syncError,
     syncToFolder,
     syncNow,
+    syncStatus,
+    listBackups: listBackupsInFolder,
+    previewBackup,
+    restoreBackup,
     setSyncFolderHandle,
     setSyncFolderName,
     setLastSyncTime
