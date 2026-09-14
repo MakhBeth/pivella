@@ -4,11 +4,11 @@ Per un agente che non ha visto il lavoro precedente. Leggi questo file, poi solo
 
 ## 1. Stato del branch
 
-Branch `feat/sync-v2-merge-backup`, 32 commit oltre `main`, working tree pulito, **mai pushato**. Passi 1 e 2 chiusi il 13/9/2026, passi da 3 a 6 il 14/9/2026. Ripristino dall'app provato in Chrome il 14/9/2026 (due volte, con verifica dei file): ok dopo due correzioni, il fallback di `move` su `NotAllowedError` e la config da merge o ripristino che non va ritimbrata (`applyPersistedConfig`).
+Branch `feat/sync-v2-merge-backup`, 36 commit oltre `main`, working tree pulito, **mai pushato**. Passi 1 e 2 chiusi il 13/9/2026, passi da 3 a 6 il 14/9/2026. Ripristino dall'app provato in Chrome il 14/9/2026 (due volte, con verifica dei file): ok dopo due correzioni, il fallback di `move` su `NotAllowedError` e la config da merge o ripristino che non va ritimbrata (`applyPersistedConfig`).
 
 | Verifica | Esito |
 |---|---|
-| `npm test` (node:test via tsx) | 183 verdi, 0 falliti |
+| `npm test` (node:test via tsx) | 199 verdi, 0 falliti |
 | `npm run lint` (`tsc --noEmit`) | pulito |
 | `npm run build` | ok |
 
@@ -131,6 +131,19 @@ Review in chat (4 scambi, verdetto finale APPROVED), poi una verifica indipenden
 | F12 | il log a 200 troncava i record locali perdenti prima di salvarli | store `archive` senza limite, stessa transazione del log |
 | F13 | tombstone nello stesso millisecondo dell'aggiornamento perdeva | `tombstoneTimestamp` strettamente maggiore |
 | F14 | asserzioni di ordine backup/scrittura deboli | ordine completo verificato sul log delle operazioni |
+
+**Seconda review Codex, passi 2-6 (14/9/2026, 4 scambi, verdetto APPROVED).** Otto rilievi F15-F22, tutti accettati e corretti con test:
+
+| ID | Rilievo | Risoluzione |
+|---|---|---|
+| F15 | modifiche o cancellazioni locali tra `exportSnapshot` e `mergeIntoDb` venivano sovrascritte o risorgevano | `mergeIntoDb(result, base)`: salta i record non più uguali alla versione in `base`, `mergeTombstones` invece di sostituzione, tombstone correnti bloccano l'upsert; restituisce ciò che ha applicato |
+| F16 | byte e `lastModified` letti in due momenti; file legacy non tracciato | versione letta prima e dopo i byte, token `nome:lastModified:size` anche per il file legacy |
+| F17 | applicazioni a IndexedDB non pubblicate a React su retry, backup fallito, ripristino preliminare | `onApplied` a ogni applicazione prima della scrittura; `onRestored` anche prima di un errore |
+| F18 | stato React sovrascritto da un merge più vecchio di una modifica in corso | `applyStoreChanges` confronta `updatedAt` e `deletedAt`; config protetta salvo `force` |
+| F19 | ripristino perdeva le modifiche locali non ancora nel file | giro di sync preliminare, archivio di ogni record cambiato o eliminato (reason `restore`), rimpiazzo in una transazione che rilegge e confronta, con retry |
+| F20 | profilo attivo o config non riconciliati dopo un ripristino | `replaceUsers`, `resetConfig`, config applicata con `force` |
+| F21 | ripristino di un backup v1 senza profili | stessa `prepareRemote` del ciclo |
+| F22 | tombstone di store diversi con lo stesso id | `tombstonesFor(store)` |
 
 **Verifica finale su F9** (sessione Codex separata, 13/9 00:30, verdetto "NON TIENE" con il bypass originale chiuso): due rilievi residui, entrambi corretti con test dedicati nel commit successivo a `0db8236`.
 
