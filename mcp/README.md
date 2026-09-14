@@ -55,6 +55,15 @@ Da sapere:
 - ogni client avvia la propria copia del server; possono girare insieme e insieme all'app, perché si coordinano con il lock e ognuno fa il backup prima di scrivere;
 - con più profili nel file, il modello chiede quale sei: `list_users` li elenca e ogni tool riceve `userId`.
 
+Cambiare cartella: la cartella è l'argomento `--dir` della registrazione, quindi si rifà la registrazione con il nuovo percorso e si riavvia il client (in Claude Code basta `/mcp` per riconnettere). Per esempio:
+
+```sh
+claude mcp remove pivella -s local
+claude mcp add pivella -s local -- npx -y pivella-mcp --dir /nuovo/percorso
+```
+
+Negli altri client si modifica il valore dopo `--dir` nel loro file di configurazione. In alternativa si toglie `--dir` e si imposta `PIVELLA_SYNC_DIR` nell'ambiente del server (campo `env` della registrazione): il flag, se presente, vince sulla variabile. Attenzione: sulla cartella vera della sync il server scrive davvero le proposte, con backup prima; per le prove meglio una copia.
+
 Diagnostica senza avviare il server:
 
 ```sh
