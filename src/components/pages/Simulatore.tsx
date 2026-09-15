@@ -1,4 +1,8 @@
-import { useState, useMemo } from "react";
+import '../shared/Previdenza.css';
+import { CassaHelp, CassaLink } from '../shared/CassaHelp';
+import { InpsControls } from '../shared/InpsControls';
+import type { Config, CassaOrdinisticaId, GestionePrevidenziale } from '../../types';
+import { useState, useMemo, useEffect } from "react";
 import {
   Calculator,
   TrendingUp,
@@ -8,6 +12,8 @@ import {
 } from '../shared/icons';
 import { useApp } from "../../context/AppContext";
 import {
+  CASSE_ORDINISTICHE,
+  GESTIONI_PREVIDENZIALI,
   LIMITE_FATTURATO,
   LIMITE_USCITA_IMMEDIATA,
 } from "../../lib/constants/fiscali";
@@ -19,6 +25,8 @@ import {
   getAliquotaImpostaSostitutiva,
   getInpsCalculationInput,
   getRegimeThresholdStatus,
+  getCassaAmounts,
+  getCassaWarning,
 } from "../../lib/utils/forfettario";
 import { parseCurrency, formatCurrency } from "../../lib/utils/formatting";
 import { Currency } from "../ui/Currency";
@@ -28,6 +36,13 @@ export function Simulatore() {
   const [fatturato, setFatturato] = useState<string>("");
 
   const annoCorrente = new Date().getFullYear();
+  const [previdenzaCustom, setPrevidenzaCustom] = useState<Partial<Pick<Config,
+    'gestionePrevidenziale' | 'cassaOrdinistica' | 'contributiCassePerAnno' | 'contributiInpsFissi' | 'riduzioneContributiva' | 'inpsAnte1996' | 'gestioneSeparataAltraCopertura'>>>({});
+  useEffect(() => { setPrevidenzaCustom({}); }, [config.userId]);
+  const simulationConfig = useMemo(() => ({ ...config, ...previdenzaCustom }), [config, previdenzaCustom]);
+  const cassaAmounts = getCassaAmounts(simulationConfig, annoCorrente);
+  const cassaIncomplete = getCassaWarning(simulationConfig, annoCorrente) !== null;
+
   const anniAttivita = annoCorrente - config.annoApertura;
   const aliquotaIrpefDefault = getAliquotaImpostaSostitutiva({
     annoApertura: config.annoApertura,
@@ -42,12 +57,8 @@ export function Simulatore() {
   // Stati per valori editabili con default dai calcoli
   const [coefficienteCustom, setCoefficienteCustom] = useState<string>("");
   const [aliquotaIrpefCustom, setAliquotaIrpefCustom] = useState<string>("");
-  const [inpsCustom, setInpsCustom] = useState<string>("");
-  const isGestioneSeparata = config.gestionePrevidenziale === "gestione_separata";
-  const inpsOverride = inpsCustom !== "" ? (parseFloat(inpsCustom) || 0) / 100 : null;
-  const inpsInput = isGestioneSeparata
-    ? inpsOverride ?? getInpsCalculationInput(config)
-    : getInpsCalculationInput(config);
+  const isGestioneSeparata = simulationConfig.gestionePrevidenziale === "gestione_separata";
+  const inpsInput = useMemo(() => getInpsCalculationInput(simulationConfig, annoCorrente), [simulationConfig, annoCorrente]);
 
   // Valori effettivi usati nei calcoli
   const coefficienteMedio = coefficienteCustom !== ""
@@ -67,7 +78,7 @@ export function Simulatore() {
     if (isGestioneSeparata) {
       const effectiveRate = typeof inpsInput === "number" ? inpsInput : null;
       return {
-        label: getGestionePrevidenzialeLabel(config.gestionePrevidenziale),
+        label: getGestionePrevidenzialeLabel(simulationConfig.gestionePrevidenziale),
         amount: calculations.inps,
         usesFixedAmount: false,
         includeInpsInScadenze: true,
@@ -77,8 +88,8 @@ export function Simulatore() {
       };
     }
 
-    return calcolaContributiPrevidenziali(calculations.imponibile, config);
-  }, [calculations.imponibile, calculations.inps, config, inpsInput, isGestioneSeparata]);
+    return calcolaContributiPrevidenziali(calculations.imponibile, simulationConfig, annoCorrente);
+  }, [calculations.imponibile, calculations.inps, simulationConfig, inpsInput, isGestioneSeparata, annoCorrente]);
 
   const thresholdStatus = getRegimeThresholdStatus(fatturatoNum);
   const isOverLimit = thresholdStatus !== "within_limit";
@@ -266,45 +277,69 @@ export function Simulatore() {
                 <span style={{ color: "var(--accent-green)", fontSize: "0.75rem" }}>(agevolata)</span>
               )}
             </div>
-            {isGestioneSeparata ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <label htmlFor="inps-input" style={{ color: "var(--text-muted)" }}>INPS:</label>
-                <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
-                  <input
-                    id="inps-input"
-                    type="text"
-                    inputMode="decimal"
-                    value={inpsCustom !== "" ? inpsCustom : ((previdenzialeInfo.effectiveRate ?? 0) * 100).toFixed(2)}
-                    onChange={(e) => setInpsCustom(e.target.value)}
-                    style={{
-                      width: "fit-content",
-                      minWidth: "5ch",
-                      fieldSizing: "content",
-                      padding: "6px 28px 6px 10px",
-                      fontSize: "1rem",
-                      fontWeight: 600,
-                      background: "var(--bg-card)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8,
-                      color: "var(--text-primary)",
-                      fontFamily: "Space Mono, monospace",
-                    } as React.CSSProperties}
-                  />
-                  <span style={{ position: "absolute", right: 10, color: "var(--text-muted)", fontSize: "1rem" }}>%</span>
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ color: "var(--text-muted)" }}>INPS:</span>
-                <span style={{ fontWeight: 600 }}><Currency amount={previdenzialeInfo.amount} /></span>
-                <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
-                  {previdenzialeInfo.label}
-                  {previdenzialeInfo.reductionApplied && " · riduzione 35%"}
-                </span>
-              </div>
-            )}
           </div>
         </div>
+      </div>
+
+      <div className="card previdenza-form" style={{ marginBottom: 24 }}>
+        <div className={`previdenza-grid${simulationConfig.gestionePrevidenziale === 'artigiani' || simulationConfig.gestionePrevidenziale === 'commercianti' ? ' previdenza-grid-four' : ''}`}>
+          <div className="previdenza-field">
+            <label htmlFor="sim-gestione" className="input-label">Previdenza</label>
+            <select id="sim-gestione" className="input-field" value={simulationConfig.gestionePrevidenziale}
+              onChange={e => setPrevidenzaCustom({ ...previdenzaCustom, gestionePrevidenziale: e.target.value as GestionePrevidenziale })}>
+              {GESTIONI_PREVIDENZIALI.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </div>
+          {simulationConfig.gestionePrevidenziale !== 'cassa_ordinistica' ? (
+            <InpsControls config={simulationConfig} anno={annoCorrente} imponibile={calculations.imponibile} id="sim-inps" compact
+              onChange={changes => setPrevidenzaCustom({ ...previdenzaCustom, ...changes })} />
+          ) : (
+            <div className="previdenza-field">
+              <label className="input-label" htmlFor="sim-cassa">Cassa professionale</label>
+              <select id="sim-cassa" className="input-field" value={simulationConfig.cassaOrdinistica ?? ''}
+                onChange={e => setPrevidenzaCustom({ ...previdenzaCustom, cassaOrdinistica: e.target.value as CassaOrdinisticaId })}>
+                <option value="" disabled>Seleziona la cassa</option>
+                {CASSE_ORDINISTICHE.map(cassa => <option key={cassa.value} value={cassa.value}>{cassa.label}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+        {simulationConfig.gestionePrevidenziale === 'cassa_ordinistica' && (
+          <>
+        <p style={{ margin: '12px 0', fontSize: '0.85rem' }}><CassaLink cassa={simulationConfig.cassaOrdinistica} /></p>
+        {simulationConfig.gestionePrevidenziale === 'cassa_ordinistica' && simulationConfig.cassaOrdinistica && (
+          <>
+            <div className="previdenza-grid" style={{ marginTop: 16 }}>
+              {([
+                ['annui', 'Contributi annui (€)'],
+                ['deducibili', 'Quota deducibile ipotizzata (€)'],
+              ] as const).map(([field, label]) => (
+                <div className="previdenza-field" key={field}>
+                  <label className="input-label" htmlFor={`sim-cassa-${field}`}>{label}</label>
+                  <input id={`sim-cassa-${field}`} className="input-field" type="number" min={0} step={0.01}
+                    placeholder="Inserisci importo" value={cassaAmounts?.[field] ?? ''}
+                    onChange={e => {
+                      const value = e.target.value === '' ? null : Number(e.target.value);
+                      if (value !== null && (!Number.isFinite(value) || value < 0)) return;
+                      const key = simulationConfig.cassaOrdinistica!;
+                      setPrevidenzaCustom({ ...previdenzaCustom, contributiCassePerAnno: {
+                        ...simulationConfig.contributiCassePerAnno,
+                        [key]: { ...simulationConfig.contributiCassePerAnno?.[key],
+                          [annoCorrente]: { annui: null, deducibili: null, ...cassaAmounts, [field]: value },
+                        },
+                      } });
+                    }} />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        <CassaHelp cassa={simulationConfig.cassaOrdinistica} anno={annoCorrente} simulazione showLink={false} />
+          </>
+        )}
+        {simulationConfig.gestionePrevidenziale !== 'cassa_ordinistica' && cassaIncomplete && (
+          <p role="status" style={{ color: 'var(--accent-orange)' }}>{getCassaWarning(simulationConfig, annoCorrente)}</p>
+        )}
       </div>
 
       <div className="grid-4">
@@ -333,9 +368,9 @@ export function Simulatore() {
             Imposta sostitutiva
           </h2>
           <div className="stat-value" style={{ color: "var(--accent-orange)" }}>
-            <Currency amount={calculations.irpef} />
+            {cassaIncomplete ? <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Da configurare</span> : <Currency amount={calculations.irpef} />}
           </div>
-            <div className="stat-label">{(aliquotaIrpef * 100).toFixed(0)}% di (imponibile − INPS)</div>
+            <div className="stat-label">{(aliquotaIrpef * 100).toFixed(0)}% di (imponibile − contributi deducibili)</div>
         </div>
 
         <div className="card">
@@ -345,10 +380,10 @@ export function Simulatore() {
               style={{ marginRight: 6, verticalAlign: "middle" }}
               aria-hidden="true"
             />
-            INPS
+            Contributi
           </h2>
           <div className="stat-value" style={{ color: "var(--accent-orange)" }}>
-            <Currency amount={calculations.inps} />
+            {cassaIncomplete ? <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Da configurare</span> : <Currency amount={calculations.inps} />}
           </div>
           <div className="stat-label">
             {previdenzialeInfo.usesFixedAmount
@@ -367,9 +402,9 @@ export function Simulatore() {
             Totale Tasse
           </h2>
           <div className="stat-value" style={{ color: "var(--accent-red)" }}>
-            <Currency amount={calculations.totaleTasse} />
+            {cassaIncomplete ? <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Da configurare</span> : <Currency amount={calculations.totaleTasse} />}
           </div>
-          <div className="stat-label">Imposta sostitutiva + INPS</div>
+          <div className="stat-label">Imposta sostitutiva + contributi</div>
         </div>
       </div>
 
@@ -386,7 +421,7 @@ export function Simulatore() {
             className="stat-value"
             style={{ fontSize: "2.4rem", color: "var(--accent-green)" }}
           >
-            <Currency amount={calculations.nettoStimato} />
+            {cassaIncomplete ? <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Da configurare</span> : <Currency amount={calculations.nettoStimato} />}
           </div>
           <div className="stat-label">Fatturato meno tasse</div>
         </div>
@@ -397,7 +432,7 @@ export function Simulatore() {
             className="stat-value"
             style={{ color: "var(--accent-primary)" }}
           >
-            {calculations.percentualeNetto.toFixed(1)}%
+            {cassaIncomplete ? '—' : `${calculations.percentualeNetto.toFixed(1)}%`}
           </div>
           <div className="stat-label">Netto su lordo</div>
         </div>
@@ -405,13 +440,13 @@ export function Simulatore() {
         <div className="card">
           <h2 className="card-title">Netto Mensile</h2>
           <div className="stat-value" style={{ color: "var(--text-primary)" }}>
-            <Currency amount={calculations.nettoStimato / 12} />
+            {cassaIncomplete ? <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Da configurare</span> : <Currency amount={calculations.nettoStimato / 12} />}
           </div>
           <div className="stat-label">Diviso 12 mesi</div>
         </div>
       </div>
 
-      {fatturatoNum > 0 && (
+      {fatturatoNum > 0 && !cassaIncomplete && (
         <div className="card">
           <h2 className="card-title">Riepilogo Calcolo</h2>
           <div className="table-wrapper">
@@ -469,7 +504,7 @@ export function Simulatore() {
                 </tr>
                 <tr>
                   <td style={{ color: "var(--accent-orange)" }}>
-                    - INPS {previdenzialeInfo.usesFixedAmount
+                    - Contributi {previdenzialeInfo.usesFixedAmount
                       ? `(${previdenzialeInfo.label}${previdenzialeInfo.reductionApplied ? " · -35%" : ""})`
                       : `(${((previdenzialeInfo.effectiveRate ?? 0) * 100).toFixed(2)}%)`}
                   </td>
@@ -507,7 +542,7 @@ export function Simulatore() {
                       color: "var(--accent-green)",
                     }}
                   >
-                    {calculations.percentualeNetto.toFixed(1)}%
+                    {cassaIncomplete ? '—' : `${calculations.percentualeNetto.toFixed(1)}%`}
                   </td>
                 </tr>
               </tbody>
@@ -516,7 +551,7 @@ export function Simulatore() {
         </div>
       )}
 
-      {fatturatoNum > 0 && (
+      {fatturatoNum > 0 && !cassaIncomplete && (
         <div className="card">
           <h2 className="card-title">Distanza dal Limite Forfettario</h2>
           <div style={{ marginBottom: 8 }}>

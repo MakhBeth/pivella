@@ -64,3 +64,14 @@ export const formatCurrencyParts = (amount: number): CurrencyPart[] => {
     isDigit: part.type === 'integer' || part.type === 'fraction',
   }));
 };
+
+/** Empty is absent, explicit zero is valid; reject malformed or negative amounts. */
+export function parseOptionalContribution(value: string): { amount: number | undefined; invalid: boolean } {
+  const text = value.trim();
+  if (!text) return { amount: undefined, invalid: false };
+  const valid = /^(?:\d+(?:[.,]\d{1,2})?|\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?)$/.test(text);
+  if (!valid) return { amount: undefined, invalid: true };
+  const normalized = /^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(text) ? text.replace(/\./g, '') : text;
+  const amount = Number(normalized.replace(',', '.'));
+  return Number.isFinite(amount) ? { amount, invalid: false } : { amount: undefined, invalid: true };
+}

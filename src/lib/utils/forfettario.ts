@@ -1,5 +1,8 @@
+import { INPS_AC_PARAMS } from '../constants/previdenza';
+import { calculateContribution } from './calculations';
 import {
   ALIQUOTA_RIDOTTA,
+  CASSE_ORDINISTICHE,
   ALIQUOTA_STANDARD,
   COEFFICIENTI_ATECO,
   INPS_GESTIONE_SEPARATA,
@@ -33,7 +36,7 @@ export interface AccontiForfettarioBreakdown {
   accontiInpsPagati: number;
 }
 
-type PrevidenzialeConfig = Pick<Config, 'gestionePrevidenziale' | 'contributiInpsFissi' | 'riduzioneContributiva'>;
+type PrevidenzialeConfig = Pick<Config, 'gestionePrevidenziale' | 'contributiInpsFissi' | 'riduzioneContributiva' | 'cassaOrdinistica' | 'contributiCassePerAnno' | 'inpsAnte1996' | 'gestioneSeparataAltraCopertura'>;
 
 export interface ContributiPrevidenzialiBreakdown {
   label: string;
@@ -56,18 +59,20 @@ const roundToTwoDecimals = (value: number): number => Math.round(value * 100) / 
 
 export const getGestionePrevidenzialeLabel = (gestionePrevidenziale: GestionePrevidenziale): string => {
   switch (gestionePrevidenziale) {
+    case 'cassa_ordinistica':
+      return 'Cassa professionale';
     case 'artigiani':
       return 'Gestione Artigiani';
     case 'commercianti':
       return 'Gestione Commercianti';
     case 'gestione_separata':
     default:
-      return 'Gestione Separata';
+      return 'Gestione Separata (INPS)';
   }
 };
 
 export const usesFixedContributiPrevidenziali = (gestionePrevidenziale: GestionePrevidenziale): boolean => {
-  return gestionePrevidenziale === 'artigiani' || gestionePrevidenziale === 'commercianti';
+  return gestionePrevidenziale === 'cassa_ordinistica' || gestionePrevidenziale === 'artigiani' || gestionePrevidenziale === 'commercianti';
 };
 
 export const includeInpsInScadenze = (gestionePrevidenziale: GestionePrevidenziale): boolean => {
@@ -78,27 +83,71 @@ export const getRiduzioneContributivaMultiplier = (riduzioneContributiva: boolea
   return riduzioneContributiva ? 1 - RIDUZIONE_CONTRIBUTIVA_FORFETTARIO : 1;
 };
 
-export const getInpsCalculationInput = (config: PrevidenzialeConfig): InpsCalculationInput => {
+const safeAmount = (value: number | null | undefined): number => Number.isFinite(value) ? roundToTwoDecimals(Math.max(0, value!)) : 0;
+
+export const getCassaAmounts = (config: PrevidenzialeConfig, anno: number) => {
+  const key = config.cassaOrdinistica;
+  if (!key || !CASSE_ORDINISTICHE.some(cassa => cassa.value === key)) return undefined;
+  return config.contributiCassePerAnno?.[key]?.[anno];
+};
+
+export const getCassaWarning = (config: PrevidenzialeConfig, anno: number): string | null => {
+  if (config.gestionePrevidenziale === 'artigiani' || config.gestionePrevidenziale === 'commercianti') {
+    return config.contributiInpsFissi == null && !INPS_AC_PARAMS[anno]
+      ? `Parametri INPS ${anno} non disponibili: inserisci un importo verificato nelle Impostazioni. La stima dei contributi è incompleta.` : null;
+  }
+  if (config.gestionePrevidenziale !== 'cassa_ordinistica') return null;
+  const amounts = getCassaAmounts(config, anno);
+  if (!amounts || ![amounts.annui, amounts.deducibili].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0)) {
+    return `Contributi della cassa non configurati per il ${anno}: completa cassa, importo annuo e quota deducibile in Impostazioni. Le stime sono incomplete; i valori mancanti sono conteggiati come zero.`;
+  }
+  return null;
+};
+
+export const getInpsCalculationInput = (config: PrevidenzialeConfig, anno = new Date().getFullYear()): InpsCalculationInput => {
+  if (config.gestionePrevidenziale === 'cassa_ordinistica') {
+    const amounts = getCassaAmounts(config, anno);
+    return { annualAmount: safeAmount(amounts?.annui), deductibleAmount: safeAmount(amounts?.deducibili) };
+  }
   if (usesFixedContributiPrevidenziali(config.gestionePrevidenziale)) {
+    const params = INPS_AC_PARAMS[anno];
+    if (config.contributiInpsFissi == null && params) {
+      return { annualAmount: 0, formula: {
+        minimo: params.minimo, soglia: params.soglia,
+        massimale: config.inpsAnte1996 ? params.massimaleAnte1996 : params.massimale,
+        aliquota: config.gestionePrevidenziale === 'artigiani' ? 0.24 : 0.2448,
+        riduzione: config.riduzioneContributiva,
+      } };
+    }
     const baseAmount = Math.max(0, config.contributiInpsFissi ?? 0);
     return {
-      annualAmount: roundToTwoDecimals(baseAmount * getRiduzioneContributivaMultiplier(config.riduzioneContributiva)),
+      annualAmount: roundToTwoDecimals((baseAmount - Math.min(7.44, baseAmount)) * getRiduzioneContributivaMultiplier(config.riduzioneContributiva) + Math.min(7.44, baseAmount)),
     };
   }
 
-  return INPS_GESTIONE_SEPARATA;
+  return config.gestioneSeparataAltraCopertura ? 0.24 : INPS_GESTIONE_SEPARATA;
 };
 
 export const calcolaContributiPrevidenziali = (
   imponibile: number,
   config: PrevidenzialeConfig,
+  anno = new Date().getFullYear(),
 ): ContributiPrevidenzialiBreakdown => {
   const usesFixedAmount = usesFixedContributiPrevidenziali(config.gestionePrevidenziale);
   const label = getGestionePrevidenzialeLabel(config.gestionePrevidenziale);
 
+  if (config.gestionePrevidenziale === 'cassa_ordinistica') {
+    const amount = safeAmount(getCassaAmounts(config, anno)?.annui);
+    return {
+      label: CASSE_ORDINISTICHE.find(cassa => cassa.value === config.cassaOrdinistica)?.label ?? label,
+      amount, usesFixedAmount: true, includeInpsInScadenze: false,
+      effectiveRate: null, baseFixedAmount: amount, reductionApplied: false,
+    };
+  }
   if (usesFixedAmount) {
+    const input = getInpsCalculationInput(config, anno);
     const baseFixedAmount = Math.max(0, config.contributiInpsFissi ?? 0);
-    const amount = roundToTwoDecimals(baseFixedAmount * getRiduzioneContributivaMultiplier(config.riduzioneContributiva));
+    const amount = roundToTwoDecimals(calculateContribution(imponibile, input));
 
     return {
       label,
@@ -113,10 +162,10 @@ export const calcolaContributiPrevidenziali = (
 
   return {
     label,
-    amount: roundToTwoDecimals(imponibile * INPS_GESTIONE_SEPARATA),
+    amount: roundToTwoDecimals(imponibile * (config.gestioneSeparataAltraCopertura ? 0.24 : INPS_GESTIONE_SEPARATA)),
     usesFixedAmount: false,
     includeInpsInScadenze: true,
-    effectiveRate: INPS_GESTIONE_SEPARATA,
+    effectiveRate: config.gestioneSeparataAltraCopertura ? 0.24 : INPS_GESTIONE_SEPARATA,
     baseFixedAmount: null,
     reductionApplied: false,
   };

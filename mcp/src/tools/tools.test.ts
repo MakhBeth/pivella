@@ -331,3 +331,30 @@ test('a missing sync file is SOURCE_UNAVAILABLE for every tool', async () => {
   assert.equal((await fails(ctx, 'list_users', {})).code, 'SOURCE_UNAVAILABLE');
   assert.equal((await fails(ctx, 'withdraw_proposal', { proposalId: 'a' })).code, 'SOURCE_UNAVAILABLE');
 });
+
+test('fund configuration survives sync and MCP reports yearly deductions and missing-year warnings', async () => {
+  const { ctx, fs } = await setup();
+  const snapshot = seed();
+  Object.assign(snapshot.config[0], {
+    gestionePrevidenziale: 'cassa_ordinistica', cassaOrdinistica: 'inarcassa',
+    contributiCassePerAnno: { inarcassa: {
+      2025: { annui: 20, deducibili: 10 },
+      2026: { annui: 200, deducibili: 100 },
+    } },
+  });
+  await fs.write(SYNC_FILENAME, text(JSON.stringify(snapshot)));
+  const current = await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2026 });
+  assert.equal(current.contributiPrevidenziali, 200);
+  assert.equal(current.contributiDeducibili, 100);
+  assert.equal(current.impostaSostitutiva, 85.5);
+  assert.match(current.entePrevidenziale as string, /Inarcassa/);
+  assert.deepEqual(current.avvisi, []);
+  assert.equal((current.acconti as { inps: number }).inps, 0);
+  const previous = await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2025 });
+  assert.equal(previous.contributiPrevidenziali, 20);
+  assert.equal(previous.contributiDeducibili, 10);
+  const missing = await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2027 });
+  assert.match((missing.avvisi as string[])[0], /2027/);
+  const config = await call(ctx, 'get_config', { userId: 'u1' });
+  assert.match(config.text, /Inarcassa/);
+});

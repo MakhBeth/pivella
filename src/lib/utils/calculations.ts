@@ -1,7 +1,21 @@
 import type { WorkLog } from '../../types';
 import { LIMITE_FATTURATO, INPS_GESTIONE_SEPARATA, COEFFICIENTI_ATECO } from '../constants/fiscali';
 
-export type InpsCalculationInput = number | { annualAmount: number };
+export type InpsCalculationInput = number | {
+  annualAmount: number;
+  deductibleAmount?: number;
+  formula?: { minimo: number; soglia: number; massimale: number; aliquota: number; riduzione: boolean };
+};
+
+export function calculateContribution(imponibile: number, input: InpsCalculationInput): number {
+  if (typeof input === 'number') return imponibile * input;
+  if (!input.formula) return input.annualAmount;
+  const { minimo, soglia, massimale, aliquota, riduzione } = input.formula;
+  const base = Math.min(massimale, Math.max(minimo, imponibile));
+  const ivs = Math.min(base, soglia) * aliquota + Math.max(0, base - soglia) * (aliquota + 0.01);
+  // Il contributo maternità rimane intero anche con riduzione del 35% (INPS messaggio 1947/2017).
+  return Math.round((ivs * (riduzione ? 0.65 : 1) + 7.44) * 100) / 100;
+}
 
 const roundToTwoDecimals = (value: number): number => Math.round(value * 100) / 100;
 
@@ -31,6 +45,7 @@ export const calcolaCoefficientiMedio = (codiciAteco: Record<string, number>): n
 
 export interface CalcoloFiscale {
   imponibile: number;
+  deduzioneContributi: number;
   inps: number;
   irpef: number;
   totaleTasse: number;
@@ -39,9 +54,9 @@ export interface CalcoloFiscale {
   percentualeLimite: number;
 }
 
-// Art. 1, c. 64, L. 190/2014: si deducono i contributi INPS effettivamente
-// versati nell'anno d'imposta. Se contributiVersati è omesso, si deduce
-// l'intero INPS dovuto (stima conservativa per simulazioni).
+// La deduzione esplicita dei contributi versati prevale anche quando vale zero.
+// In sua assenza si usa deductibleAmount, se configurato per la cassa;
+// per INPS si mantiene la stima basata sull’intero contributo dovuto.
 export const calcolaFiscale = (
   fatturato: number,
   coefficiente: number,
@@ -50,10 +65,8 @@ export const calcolaFiscale = (
   contributiVersati?: number,
 ): CalcoloFiscale => {
   const imponibile = fatturato * (coefficiente / 100);
-  const inps = typeof aliquotaInps === 'number'
-    ? imponibile * aliquotaInps
-    : aliquotaInps.annualAmount;
-  const deduzioneContributi = contributiVersati !== undefined ? contributiVersati : inps;
+  const inps = calculateContribution(imponibile, aliquotaInps);
+  const deduzioneContributi = contributiVersati !== undefined ? contributiVersati : (typeof aliquotaInps === 'number' ? inps : aliquotaInps.deductibleAmount ?? inps);
   const imponibileDopoContributi = Math.max(0, imponibile - deduzioneContributi);
   const irpef = imponibileDopoContributi * aliquotaIrpef;
   const totaleTasse = irpef + inps;
@@ -62,6 +75,7 @@ export const calcolaFiscale = (
   const percentualeLimite = (fatturato / LIMITE_FATTURATO) * 100;
   return {
     imponibile: roundToTwoDecimals(imponibile),
+    deduzioneContributi: roundToTwoDecimals(deduzioneContributi),
     inps: roundToTwoDecimals(inps),
     irpef: roundToTwoDecimals(irpef),
     totaleTasse: roundToTwoDecimals(totaleTasse),

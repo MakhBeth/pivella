@@ -1,3 +1,4 @@
+import { CassaWarning } from '../shared/CassaWarning';
 import { useState } from 'react';
 import { Users, Clock, AlertTriangle } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
@@ -285,9 +286,9 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
   const coefficienteMedio = calcolaCoefficienteMedioAteco(config.codiciAteco);
   const thresholdStatus = getRegimeThresholdStatus(totaleFatturato);
 
-  const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config));
+  const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config, annoSelezionato));
   const { imponibile: redditoImponibile, irpef: irpefDovuta, inps: inpsDovuta, totaleTasse } = fiscale;
-  const previdenzialeInfo = calcolaContributiPrevidenziali(redditoImponibile, config);
+  const previdenzialeInfo = calcolaContributiPrevidenziali(redditoImponibile, config, annoSelezionato);
 
   const fatturatoPerCliente = clienti.map(cliente => {
     const fattureCliente = fattureAnnoCorrente.filter(f => f.clienteId === cliente.id);
@@ -311,6 +312,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
 
   return (
     <>
+      <CassaWarning config={config} anno={annoSelezionato} />
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 className="page-title">Dashboard {annoSelezionato}</h1>
@@ -396,7 +398,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
         </div>
 
         <div className="card">
-          <h2 className="card-title">INPS da accantonare</h2>
+          <h2 className="card-title">Contributi da accantonare</h2>
           <div className="stat-value" style={{ color: 'var(--accent-orange)' }}><Currency amount={inpsDovuta} /></div>
           <div className="stat-label">
             {previdenzialeInfo.usesFixedAmount
@@ -423,7 +425,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
           <div>
             <h2 className="card-title">Totale da Accantonare</h2>
             <div className="stat-value" style={{ fontSize: '2.8rem' }}><Currency amount={totaleTasse} /></div>
-            <div className="stat-label">Reddito imponibile <Currency amount={redditoImponibile} /> (coeff. {coefficienteMedio}%) − INPS <Currency amount={inpsDovuta} /> = <Currency amount={redditoImponibile - inpsDovuta} /></div>
+            <div className="stat-label">Reddito imponibile <Currency amount={redditoImponibile} /> (coeff. {coefficienteMedio}%) − contributi deducibili <Currency amount={fiscale.deduzioneContributi} /> = <Currency amount={Math.max(0, redditoImponibile - fiscale.deduzioneContributi)} /></div>
           </div>
           <div style={{ textAlign: 'center' }}>
             {percentualeLimite > 90 && (

@@ -55,7 +55,7 @@ const PAGE_SECTIONS: PageSection[] = [
     icon: CalendarClock,
     color: "var(--accent-red)",
     title: "Scadenze",
-    text: "Le scadenze fiscali calcolate sui tuoi numeri: acconti, saldi, contributi INPS. Niente più \"quanto devo mettere da parte per giugno?\": lo vedi qui, con le date e gli importi stimati.",
+    text: "Le scadenze fiscali calcolate sui tuoi numeri: acconti e saldi dell’imposta sostitutiva e della Gestione Separata INPS. Le casse professionali sono incluse nelle stime con importi manuali per anno e seguono il calendario del proprio ente. Niente più \"quanto devo mettere da parte per giugno?\": lo vedi qui, con le date e gli importi stimati.",
   },
   {
     icon: Calculator,

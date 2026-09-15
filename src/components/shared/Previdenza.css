@@ -1,0 +1,65 @@
+.previdenza-form .previdenza-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  align-items: end;
+}
+
+.previdenza-form .inps-controls,
+.previdenza-form .inps-fields {
+  display: contents !important;
+}
+
+.previdenza-form .previdenza-field,
+.previdenza-form .inps-field {
+  grid-column: span 6;
+  min-width: 0;
+}
+
+.previdenza-form .previdenza-grid-four .previdenza-field,
+.previdenza-form .previdenza-grid-four .inps-field {
+  grid-column: span 3;
+}
+
+.previdenza-form .input-label {
+  display: block;
+  margin: 0 0 8px;
+}
+
+.previdenza-form .input-field {
+  width: 100%;
+  min-width: 0;
+  height: 46px;
+  box-sizing: border-box;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.previdenza-form .inps-note {
+  grid-column: 1 / -1;
+  margin: 0 !important;
+}
+
+@media (max-width: 1100px) {
+  .previdenza-form .previdenza-grid-four .previdenza-field,
+  .previdenza-form .previdenza-grid-four .inps-field {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 600px) {
+  .previdenza-form .previdenza-grid .previdenza-field,
+  .previdenza-form .previdenza-grid .inps-field {
+    grid-column: 1 / -1;
+  }
+}
+
+.previdenza-form .previdenza-grid-three .previdenza-field {
+  grid-column: span 4;
+}
+
+@media (max-width: 800px) {
+  .previdenza-form .previdenza-grid-three .previdenza-field {
+    grid-column: 1 / -1;
+  }
+}

@@ -73,7 +73,10 @@ export interface ValutaConfig {
   simbolo: string; // e.g. "€", "£", "$"
 }
 
-export type GestionePrevidenziale = 'gestione_separata' | 'artigiani' | 'commercianti';
+export type CassaOrdinisticaId = typeof import('../lib/constants/fiscali').CASSE_ORDINISTICHE[number]['value'];
+export interface ContributiCassa { annui: number | null; deducibili: number | null }
+
+export type GestionePrevidenziale = 'gestione_separata' | 'artigiani' | 'commercianti' | 'cassa_ordinistica';
 
 export interface Config extends SyncMeta {
   id: string;
@@ -88,6 +91,11 @@ export interface Config extends SyncMeta {
   codiciAteco: string[];
   gestionePrevidenziale: GestionePrevidenziale;
   contributiInpsFissi: number | null;
+  inpsAnte1996?: boolean;
+  gestioneSeparataAltraCopertura?: boolean;
+  cassaOrdinistica?: CassaOrdinisticaId;
+  contributiCassePerAnno?: Partial<Record<CassaOrdinisticaId, Record<number, ContributiCassa>>>;
+
   riduzioneContributiva: boolean;
   iban?: string;
   valute?: ValutaConfig[];

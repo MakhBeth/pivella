@@ -35,6 +35,7 @@ import {
   GithubIcon,
   InformationCircleIcon,
   Layers01Icon,
+  LinkSquare02Icon,
   Loading03Icon,
   Moon02Icon,
   MoreHorizontalIcon,
@@ -121,3 +122,5 @@ export const UserCircle = createIcon(UserCircleIcon, 'UserCircle');
 export const Users = createIcon(UserMultipleIcon, 'Users');
 export const Wallet = createIcon(Wallet01Icon, 'Wallet');
 export const X = createIcon(Cancel01Icon, 'X');
+
+export const ExternalLink = createIcon(LinkSquare02Icon, 'ExternalLink');

@@ -1,11 +1,12 @@
+import { CassaWarning } from '../shared/CassaWarning';
 import { useState, useMemo, useEffect } from 'react';
 import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { calcolaFiscale } from '../../lib/utils/calculations';
-import { calcolaAccontiForfettario, calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, includeInpsInScadenze, usesFixedContributiPrevidenziali } from '../../lib/utils/forfettario';
+import { getCassaWarning, calcolaAccontiForfettario, calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, includeInpsInScadenze, usesFixedContributiPrevidenziali } from '../../lib/utils/forfettario';
 import { generatePaymentSchedule, calculateScheduleTotals } from '../../lib/utils/paymentScheduler';
 import { parseDateLocal, formatDateLong } from '../../lib/utils/dateHelpers';
-import { parseCurrency, formatCurrency } from '../../lib/utils/formatting';
+import { parseOptionalContribution, parseCurrency, formatCurrency } from '../../lib/utils/formatting';
 import { Currency } from '../ui/Currency';
 import type { PaymentScheduleInput, PaymentScheduleItem, Scadenza, ScadenzaTipo } from '../../types';
 
@@ -26,6 +27,8 @@ export function Scadenze() {
   const [useManualAcconti, setUseManualAcconti] = useState(false);
   
   const [manualContributiVersati, setManualContributiVersati] = useState<string>('');
+
+  useEffect(() => { setManualContributiVersati(''); }, [annoRiferimento, config.gestionePrevidenziale, config.cassaOrdinistica]);
 
   const annoVersamento = annoRiferimento + 1;
   const savedScadenze = getScadenzeByYear(annoVersamento);
@@ -81,13 +84,13 @@ export function Scadenze() {
   
   const parsedAccontiIrpef = parseCurrency(manualAccontiIrpef);
   const parsedAccontiInps = parseCurrency(manualAccontiInps);
-  const parsedContributiVersati = parseCurrency(manualContributiVersati);
+  const contributiInput = parseOptionalContribution(manualContributiVersati);
 
-  const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config), parsedContributiVersati || undefined);
+  const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config, annoRiferimento), contributiInput.amount);
   const redditoImponibile = fiscale.imponibile;
   const irpefTotale = fiscale.irpef;
   const inpsTotale = fiscale.inps;
-  const previdenzialeInfo = calcolaContributiPrevidenziali(redditoImponibile, config);
+  const previdenzialeInfo = calcolaContributiPrevidenziali(redditoImponibile, config, annoRiferimento);
   const includeInpsSchedule = includeInpsInScadenze(config.gestionePrevidenziale);
   const usesFixedInps = usesFixedContributiPrevidenziali(config.gestionePrevidenziale);
 
@@ -263,6 +266,10 @@ export function Scadenze() {
   };
 
   const handleSaveScadenze = async () => {
+    if (contributiInput.invalid || getCassaWarning(config, annoRiferimento)) {
+      showToast(contributiInput.invalid ? 'Correggi l’importo dei contributi versati prima di salvare.' : 'Completa i contributi della cassa per l’anno selezionato in Impostazioni.', 'error');
+      return;
+    }
     try {
       const newScadenze = convertScheduleToScadenze(schedule, parsedAccontiIrpef, parsedAccontiInps);
       await removeScadenzeByYear(annoVersamento);
@@ -274,6 +281,10 @@ export function Scadenze() {
   };
 
   const handleRegenerateScadenze = async () => {
+    if (contributiInput.invalid || getCassaWarning(config, annoRiferimento)) {
+      showToast(contributiInput.invalid ? 'Correggi l’importo dei contributi versati prima di salvare.' : 'Completa i contributi della cassa per l’anno selezionato in Impostazioni.', 'error');
+      return;
+    }
     try {
       const newScadenze = convertScheduleToScadenze(schedule, parsedAccontiIrpef, parsedAccontiInps);
       const existingPaidStatus = new Map(
@@ -331,6 +342,7 @@ export function Scadenze() {
 
   return (
     <>
+      <CassaWarning config={config} anno={annoRiferimento} />
       <div className="page-header">
         <h1 className="page-title">Scadenze Fiscali</h1>
         <p className="page-subtitle">Piano dei pagamenti per tasse e contributi</p>
@@ -432,7 +444,7 @@ export function Scadenze() {
               <strong><Currency amount={irpefTotale} /></strong>
             </div>
             <div>
-              <span style={{ color: 'var(--text-muted)' }}>INPS dovuta: </span>
+              <span style={{ color: 'var(--text-muted)' }}>Contributi dovuti: </span>
               <strong><Currency amount={inpsTotale} /></strong>
               <span style={{ color: 'var(--text-muted)' }}> ({previdenzialeInfo.label}{previdenzialeInfo.reductionApplied ? ' · riduzione 35%' : ''})</span>
             </div>
@@ -442,7 +454,7 @@ export function Scadenze() {
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div style={{ flex: '1 1 250px' }}>
                 <label htmlFor="contributi-versati-input" style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  Contributi INPS versati nel {annoRiferimento}
+                  Contributi deducibili versati nel {annoRiferimento}
                 </label>
                 <div style={{ position: 'relative', maxWidth: 250 }}>
                   <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
@@ -452,6 +464,8 @@ export function Scadenze() {
                     inputMode="decimal"
                     className="input-field"
                     placeholder="0"
+                    aria-invalid={contributiInput.invalid}
+                    aria-describedby={contributiInput.invalid ? "contributi-versati-errore" : undefined}
                     value={manualContributiVersati}
                     onChange={(e) => setManualContributiVersati(e.target.value)}
                     style={{ paddingLeft: 32, fontFamily: 'Space Mono, monospace' }}
@@ -459,11 +473,12 @@ export function Scadenze() {
                 </div>
               </div>
               <div style={{ flex: '1 1 250px', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                Importo INPS effettivamente pagato durante l'anno {annoRiferimento} (per cassa).
+                Importo deducibile effettivamente pagato durante l'anno {annoRiferimento} (per cassa).
                 Viene dedotto dall'imponibile per calcolare l'imposta sostitutiva.
-                {!parsedContributiVersati && (
+                {contributiInput.invalid && <p id="contributi-versati-errore" role="alert">Inserisci un importo valido, per esempio 1.000,50. Finché non lo correggi, la stima usa la deduzione configurata.</p>}
+                {contributiInput.amount === undefined && (
                   <span style={{ display: 'block', marginTop: 4, color: 'var(--accent-orange)' }}>
-                    Se non specificato, si deduce l'intero INPS dovuto.
+                    Se non specificato, si usa la deduzione configurata (per INPS, il totale stimato).
                   </span>
                 )}
               </div>
@@ -478,7 +493,7 @@ export function Scadenze() {
           {paidAccontiFromDb.irpefPaid > 0 || paidAccontiFromDb.inpsPaid > 0 
             ? 'Acconti calcolati dalle scadenze marcate come pagate. Puoi sovrascrivere manualmente.'
             : usesFixedInps
-              ? 'Inserisci gli acconti di imposta sostitutiva e gli eventuali contributi INPS già versati per stimare il residuo annuo.'
+              ? 'Inserisci gli acconti di imposta sostitutiva e gli eventuali contributi previdenziali già versati per stimare il residuo annuo.'
               : 'Inserisci gli acconti di imposta sostitutiva e INPS già versati per calcolare il saldo netto.'
           }
         </p>
@@ -517,7 +532,7 @@ export function Scadenze() {
           </div>
           <div style={{ flex: '1 1 200px' }}>
             <label style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              {usesFixedInps ? 'Contributi INPS già pagati' : 'Acconti INPS già pagati'}
+              {usesFixedInps ? 'Contributi già pagati' : 'Acconti INPS già pagati'}
             </label>
             <div style={{ position: 'relative' }}>
               <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
@@ -546,7 +561,7 @@ export function Scadenze() {
               )}
               {taxAmounts.accontiInpsPagati > 0 && (
                 <div>
-                  <span style={{ color: 'var(--text-muted)' }}>Saldo INPS: </span>
+                  <span style={{ color: 'var(--text-muted)' }}>Saldo contributi: </span>
                   <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}><Currency amount={taxAmounts.inpsSaldoLordo} /></span>
                   <span style={{ color: 'var(--accent-green)', fontWeight: 600, marginLeft: 8 }}><Currency amount={taxAmounts.inpsSaldo} /></span>
                 </div>
@@ -558,9 +573,9 @@ export function Scadenze() {
 
       {!includeInpsSchedule && (
         <div className="card" style={{ marginBottom: 24, borderLeft: '4px solid var(--accent-primary)' }}>
-          <h2 className="card-title"><Info size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />INPS fuori piano scadenze</h2>
+          <h2 className="card-title"><Info size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Contributi fuori piano scadenze</h2>
           <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            Per {previdenzialeInfo.label} l'app usa l'importo INPS annuo fisso nelle stime fiscali, ma non lo inserisce nel piano di giugno/novembre perché questi contributi seguono scadenze trimestrali dedicate.
+            L’app usa i contributi stimati nelle stime fiscali. Ente: {previdenzialeInfo.label}. I versamenti restano fuori dal piano di giugno/novembre: consulta le scadenze previste dal tuo ente previdenziale.
           </p>
         </div>
       )}
@@ -748,7 +763,7 @@ export function Scadenze() {
             <strong>Secondo Acconto</strong>: da versare in unica soluzione entro il 30 novembre, senza possibilità di rateizzazione.
           </p>
           <p>
-            <strong>Nota</strong>: l'imposta sostitutiva usa due acconti del 50%. L'INPS viene rateizzato nel piano solo per la Gestione Separata (40% + 40% con metodo storico); per Artigiani e Commercianti resta fuori da questo calendario. Se il 30 giugno cade di sabato o domenica, la scadenza slitta al lunedì successivo. Le rate di agosto hanno scadenza il 20 invece del 16.
+            <strong>Nota</strong>: l'imposta sostitutiva usa due acconti del 50%. L'INPS viene rateizzato nel piano solo per la Gestione Separata (40% + 40% con metodo storico); per Artigiani, Commercianti e casse professionali resta fuori da questo calendario. Se il 30 giugno cade di sabato o domenica, la scadenza slitta al lunedì successivo. Le rate di agosto hanno scadenza il 20 invece del 16.
           </p>
         </div>
       </div>
