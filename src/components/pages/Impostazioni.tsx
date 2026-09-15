@@ -1,9 +1,12 @@
+import '../shared/Previdenza.css';
+import { CassaHelp, CassaLink } from '../shared/CassaHelp';
+import { InpsControls } from '../shared/InpsControls';
 import { useState } from 'react';
 import { Download, Upload, Database, Plus, X, Edit, Trash2, Users, Palette, Building, FolderSync, RefreshCw, FolderOpen, AlertCircle, AlertTriangle, FileArchive, UserCircle, Coins, ChevronUp, ChevronDown, BookOpen } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
-import type { Cliente, EmittenteConfig, User, ValutaConfig } from '../../types';
-import { calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva } from '../../lib/utils/forfettario';
-import { GESTIONI_PREVIDENZIALI } from '../../lib/constants/fiscali';
+import type { CassaOrdinisticaId, Cliente, EmittenteConfig, User, ValutaConfig } from '../../types';
+import { getCassaAmounts, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva } from '../../lib/utils/forfettario';
+import { CASSE_ORDINISTICHE, GESTIONI_PREVIDENZIALI } from '../../lib/constants/fiscali';
 import { ThemeSwitch } from '../shared/ThemeSwitch';
 import { ProposteInbox } from '../shared/ProposteInbox';
 import { DesignStyleSwitch } from '../shared/DesignStyleSwitch';
@@ -153,6 +156,7 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
   };
 
   const annoCorrente = new Date().getFullYear();
+  const [annoCassa, setAnnoCassa] = useState(annoCorrente);
   const anniAttivita = annoCorrente - config.annoApertura;
 
   const addAteco = () => {
@@ -439,9 +443,10 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
           </div>
         </div>
 
-        <div className="grid-2" style={{ marginTop: 16 }}>
-          <div className="input-group">
-            <label className="input-label" htmlFor="gestione-previdenziale">Gestione Contributi Previdenziali</label>
+        <div className="previdenza-form" style={{ marginTop: 16 }}>
+        <div className={`previdenza-grid${config.gestionePrevidenziale === 'artigiani' || config.gestionePrevidenziale === 'commercianti' ? ' previdenza-grid-four' : ''}`}>
+          <div className="previdenza-field">
+            <label className="input-label" htmlFor="gestione-previdenziale">Previdenza</label>
             <select
               id="gestione-previdenziale"
               className="input-field"
@@ -455,71 +460,59 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
-            <div style={{ marginTop: 8, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              {config.gestionePrevidenziale === 'gestione_separata'
-                ? 'Calcolo percentuale sul reddito imponibile.'
-                : 'Usa un importo INPS annuo fisso e opzionalmente applica la riduzione del 35%.'}
-            </div>
           </div>
 
-          {config.gestionePrevidenziale !== 'gestione_separata' ? (
-            <div className="input-group">
-              <label className="input-label" htmlFor="contributi-inps-fissi">Contributi INPS annui base</label>
-              <input
-                type="number"
-                id="contributi-inps-fissi"
-                className="input-field"
-                value={config.contributiInpsFissi ?? ''}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setConfig({
-                    ...config,
-                    contributiInpsFissi: value === '' ? null : parseFloat(value),
-                  });
-                }}
-                placeholder="Es. 4521.36"
-                min={0}
-                step={0.01}
-              />
-              <div style={{ marginTop: 8, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Inserisci l'importo annuo senza riduzione, come da tuo cassetto previdenziale INPS.
-              </div>
+          {config.gestionePrevidenziale === 'cassa_ordinistica' ? (
+            <div className="previdenza-field">
+              <label className="input-label" htmlFor="cassa-ordinistica">Cassa professionale</label>
+              <select id="cassa-ordinistica" className="input-field" value={config.cassaOrdinistica ?? ''}
+                onChange={(e) => setConfig({ ...config, cassaOrdinistica: e.target.value as CassaOrdinisticaId })}>
+                <option value="" disabled>Seleziona la tua cassa</option>
+                {CASSE_ORDINISTICHE.map(cassa => <option key={cassa.value} value={cassa.value}>{cassa.label}</option>)}
+              </select>
             </div>
           ) : (
-            <div className="input-group">
-              <label className="input-label" htmlFor="gestione-separata-note">Aliquota INPS</label>
-              <input
-                id="gestione-separata-note"
-                className="input-field"
-                value="26.07%"
-                disabled
-                readOnly
-              />
-              <div style={{ marginTop: 8, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Modello predefinito per professionisti senza cassa, dedotto automaticamente dal reddito imponibile.
-              </div>
-            </div>
+            <InpsControls config={config} anno={annoCorrente} id="settings-inps" compact onChange={changes => setConfig({ ...config, ...changes })} />
           )}
         </div>
 
-        {config.gestionePrevidenziale !== 'gestione_separata' && (
-          <div className="input-group" style={{ marginTop: 16 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={config.riduzioneContributiva}
-                onChange={(e) => setConfig({ ...config, riduzioneContributiva: e.target.checked })}
-                style={{ width: 18, height: 18 }}
-              />
-              <span>
-                Applica riduzione contributiva del 35%
-                <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
-                  Riduce l'importo INPS annuo usato nei calcoli e nell'accantonamento.
-                </span>
-              </span>
-            </label>
+        {config.gestionePrevidenziale === 'cassa_ordinistica' && <p style={{ margin: '12px 0', fontSize: '0.85rem' }}><CassaLink cassa={config.cassaOrdinistica} /></p>}
+        {config.gestionePrevidenziale === 'cassa_ordinistica' && config.cassaOrdinistica && (
+          <div className="previdenza-grid previdenza-grid-three" style={{ marginTop: 16 }}>
+            <div className="previdenza-field">
+            <label className="input-label" htmlFor="anno-cassa">Anno dei contributi</label>
+            <select id="anno-cassa" className="input-field" value={annoCassa} onChange={e => setAnnoCassa(Number(e.target.value))}>
+              {Array.from({ length: 11 }, (_, i) => annoCorrente + 1 - i).map(anno => <option key={anno} value={anno}>{anno}</option>)}
+            </select>
+            </div>
+              {([
+                ['annui', 'Contributi annui da accantonare (€)'],
+                ['deducibili', 'Contributi deducibili versati nell’anno (€)'],
+              ] as const).map(([field, label]) => (
+                <div className="previdenza-field" key={field}>
+                  <label className="input-label" htmlFor={`cassa-${field}`}>{label}</label>
+                  <input id={`cassa-${field}`} type="number" className="input-field" min={0} step={0.01}
+                    placeholder="Inserisci importo"
+                    value={getCassaAmounts(config, annoCassa)?.[field] ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value === '' ? null : Number(e.target.value);
+                      if (value !== null && (!Number.isFinite(value) || value < 0)) return;
+                      const key = config.cassaOrdinistica!;
+                      setConfig({ ...config, contributiCassePerAnno: {
+                        ...config.contributiCassePerAnno,
+                        [key]: { ...config.contributiCassePerAnno?.[key],
+                          [annoCassa]: { annui: null, deducibili: null, ...getCassaAmounts(config, annoCassa), [field]: value },
+                        },
+                      } });
+                    }} />
+                </div>
+              ))}
+
           </div>
         )}
+
+        {config.gestionePrevidenziale === 'cassa_ordinistica' && <CassaHelp cassa={config.cassaOrdinistica} anno={annoCassa} showLink={false} />}
+        </div>
 
         <div style={{ marginTop: 16 }}>
           <label className="input-label">Codici ATECO</label>

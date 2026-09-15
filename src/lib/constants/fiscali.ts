@@ -15,9 +15,10 @@ export const ALIQUOTA_STANDARD = 0.15;
 export const MAX_HISTORICAL_YEARS = 10;
 
 export const GESTIONI_PREVIDENZIALI: Array<{ value: GestionePrevidenziale; label: string }> = [
-  { value: 'gestione_separata', label: 'Gestione Separata' },
+  { value: 'gestione_separata', label: 'Gestione Separata (INPS)' },
   { value: 'artigiani', label: 'Gestione Artigiani' },
   { value: 'commercianti', label: 'Gestione Commercianti' },
+  { value: 'cassa_ordinistica', label: 'Cassa professionale / ordinistica' },
 ];
 
 // ATECO coefficients
@@ -60,3 +61,27 @@ export const DEFAULT_CONFIG: Config = {
     locale: 'it'
   }
 };
+
+// Fonte: Ministero del Lavoro, elenco enti previdenziali di diritto privato.
+// https://lavoro.gov.it/temi-e-priorita/previdenza/focus-on/vigilanza-enti-previdenza-privata/pagine/elenco-enti-previdenziali-di-diritto-privato
+export const CASSE_ORDINISTICHE = [
+  { value: 'forense', label: 'Cassa Forense — Avvocati' },
+  { value: 'geometri', label: 'Cassa Geometri' },
+  { value: 'notariato', label: 'Cassa del Notariato' },
+  { value: 'cnpadc', label: 'CNPADC — Dottori commercialisti' },
+  { value: 'cnpr', label: 'CNPR — Ragionieri e periti commerciali' },
+  { value: 'enpab', label: 'ENPAB — Biologi' },
+  { value: 'enpacl', label: 'ENPACL — Consulenti del lavoro' },
+  { value: 'enpaf', label: 'ENPAF — Farmacisti' },
+  { value: 'enpaia_agrotecnici', label: 'ENPAIA — Agrotecnici' },
+  { value: 'enpaia_periti_agrari', label: 'ENPAIA — Periti agrari' },
+  { value: 'enpam', label: 'ENPAM — Medici e odontoiatri' },
+  { value: 'enpap', label: 'ENPAP — Psicologi' },
+  { value: 'enpapi', label: 'ENPAPI — Infermieri' },
+  { value: 'enpav', label: 'ENPAV — Veterinari' },
+  { value: 'epap', label: 'EPAP — Attuari, chimici e fisici, agronomi e forestali, geologi' },
+  { value: 'eppi', label: 'EPPI — Periti industriali' },
+  { value: 'inarcassa', label: 'Inarcassa — Ingegneri e architetti' },
+  { value: 'inpgi', label: 'INPGI — Giornalisti autonomi' },
+  { value: 'altra', label: 'Altra cassa professionale' },
+] as const;

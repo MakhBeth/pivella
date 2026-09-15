@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { DEFAULT_CONFIG, LIMITE_FATTURATO } from '../../../src/lib/constants/fiscali';
 import { calcolaFiscale } from '../../../src/lib/utils/calculations';
-import { calcolaAccontiForfettario, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, getRegimeThresholdStatus } from '../../../src/lib/utils/forfettario';
+import { getCassaWarning, calcolaContributiPrevidenziali, calcolaAccontiForfettario, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, getRegimeThresholdStatus } from '../../../src/lib/utils/forfettario';
 import { anno as annoDi, defineTool, euro, isIncassata, round2, snapshotOf, userIdSchema } from './shared';
 
 export const NOTA_RIEPILOGO = 'Stima indicativa basata sui dati inseriti, calcolata per cassa, non sostituisce il commercialista.';
@@ -20,7 +20,7 @@ export const getRiepilogoAnno = defineTool({
     const fatturato = round2(incassate.reduce((sum, f) => sum + f.importo, 0));
     const coefficienteRedditivita = calcolaCoefficienteMedioAteco(config.codiciAteco ?? []);
     const aliquotaApplicata = getAliquotaImpostaSostitutiva({ annoApertura: config.annoApertura, annoImposta: anno, aliquotaOverride: config.aliquotaOverride });
-    const fiscale = calcolaFiscale(fatturato, coefficienteRedditivita, aliquotaApplicata, getInpsCalculationInput(config));
+    const fiscale = calcolaFiscale(fatturato, coefficienteRedditivita, aliquotaApplicata, getInpsCalculationInput(config, anno));
     const acconti = calcolaAccontiForfettario({ gestionePrevidenziale: config.gestionePrevidenziale, impostaSostitutiva: fiscale.irpef, inps: fiscale.inps });
     const structured = {
       anno,
@@ -30,6 +30,9 @@ export const getRiepilogoAnno = defineTool({
       redditoImponibile: fiscale.imponibile,
       impostaSostitutiva: fiscale.irpef,
       contributiPrevidenziali: fiscale.inps,
+      contributiDeducibili: fiscale.deduzioneContributi,
+      entePrevidenziale: calcolaContributiPrevidenziali(fiscale.imponibile, config, anno).label,
+      avvisi: [getCassaWarning(config, anno)].filter((warning): warning is string => warning !== null),
       totaleStimato: fiscale.totaleTasse,
       aliquotaApplicata,
       coefficienteRedditivita,
@@ -45,7 +48,7 @@ export const getRiepilogoAnno = defineTool({
       },
       nota: NOTA_RIEPILOGO,
     };
-    const text = `${anno}, per cassa: incassato ${euro(fatturato)} su ${incassate.length} fatture; imponibile ${euro(fiscale.imponibile)}, imposta ${euro(fiscale.irpef)}, contributi ${euro(fiscale.inps)}, totale stimato ${euro(fiscale.totaleTasse)}; soglia ${structured.soglia.percentuale}% (${structured.soglia.stato})`;
+    const text = `${anno}, per cassa: incassato ${euro(fatturato)} su ${incassate.length} fatture; imponibile ${euro(fiscale.imponibile)}, imposta ${euro(fiscale.irpef)}, contributi ${euro(fiscale.inps)}, totale stimato ${euro(fiscale.totaleTasse)}; deduzione contributi ${euro(fiscale.deduzioneContributi)}; ${structured.entePrevidenziale}; ${structured.avvisi.join(" ")}; soglia ${structured.soglia.percentuale}% (${structured.soglia.stato})`;
     return { structured, text };
   },
 });
