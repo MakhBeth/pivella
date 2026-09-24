@@ -42,6 +42,34 @@ export function ImportSummaryModal({ isOpen, onClose, summary }: ImportSummaryMo
           </div>
         </div>
 
+        {summary.enriched > 0 && (
+          <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 12, marginBottom: 20 }}>
+            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+              Righe aggiunte a fatture già presenti: {summary.enriched}
+            </div>
+          </div>
+        )}
+
+        {summary.righeNonImportate.length > 0 && (
+          <div style={{ padding: 16, background: 'rgba(234, 179, 8, 0.1)', borderRadius: 12, marginBottom: 20 }}>
+            <div style={{ fontWeight: 600, marginBottom: 12, color: 'var(--accent-orange)' }}>
+              <AlertTriangle size={16} style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle' }} />
+              Importate senza righe:
+            </div>
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              {summary.righeNonImportate.map((file, i) => (
+                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{file.filename}</div>
+                  <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>{file.motivo}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 12 }}>
+              Queste fatture hanno IVA, sconti o totali che il dettaglio righe di Pivella non rappresenta: XML e cortesia useranno una riga unica.
+            </div>
+          </div>
+        )}
+
         {summary.failedFiles.length > 0 && (
           <div style={{ padding: 16, background: 'rgba(239, 68, 68, 0.1)', borderRadius: 12, marginBottom: 20 }}>
             <div style={{ fontWeight: 600, marginBottom: 12, color: 'var(--accent-red)' }}>

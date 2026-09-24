@@ -115,8 +115,10 @@ export interface ImportSummary {
   total: number;
   imported: number;
   duplicates: number;
+  enriched: number;
   failed: number;
   failedFiles: Array<{ filename: string; error: string }>;
+  righeNonImportate: Array<{ filename: string; motivo: string }>;
 }
 
 // Courtesy Invoice Types
