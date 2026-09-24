@@ -14,6 +14,7 @@ import { BackupError } from '../lib/sync/backup';
 import { SyncLockedError } from '../lib/sync/lock';
 import type { Proposal, SyncSnapshot } from '../lib/sync/schema';
 import { decideProposal as runDecideProposal, type Decision } from '../lib/sync/proposalFlow';
+import type { ProposalPlan } from '../lib/sync/applyProposal';
 import { ProposalValidationError } from '../lib/sync/validate';
 import { ProposalNotPendingError } from '../lib/sync/proposals';
 
@@ -50,7 +51,7 @@ interface UseFolderSyncReturn {
   /** Proposte lette dal file all'ultimo giro, di tutti i profili e in ogni stato. */
   proposals: Proposal[];
   /** Conferma (applica) o rifiuta una proposta: record nel database e stato nel file sotto lo stesso lock. */
-  decideProposal: (proposalId: string, decision: Decision) => Promise<Proposal>;
+  decideProposal: (proposalId: string, decision: Decision) => Promise<{ proposal: Proposal; plan: ProposalPlan | null }>;
   setSyncFolderHandle: (handle: FileSystemDirectoryHandle | null) => void;
   setSyncFolderName: (name: string | null) => void;
   setLastSyncTime: (time: Date | null) => void;
@@ -266,7 +267,7 @@ export function useFolderSync({
     }
   }, [dbManager]);
 
-  const decideProposal = useCallback(async (proposalId: string, decision: Decision): Promise<Proposal> => {
+  const decideProposal = useCallback(async (proposalId: string, decision: Decision): Promise<{ proposal: Proposal; plan: ProposalPlan | null }> => {
     const handle = syncFolderHandleRef.current;
     if (!handle) throw new Error('Nessuna cartella di sincronizzazione');
     if (!dbManager.writerId) throw new Error('Database non pronto');
@@ -288,7 +289,7 @@ export function useFolderSync({
       setSyncError(null);
       setLastSyncTime(new Date());
       setSyncStatus(await dbManager.getSyncStatus());
-      return outcome.proposal;
+      return { proposal: outcome.proposal, plan: outcome.plan };
     } catch (err) {
       // Un rifiuto per validazione non è un errore di sync: lo mostra chi ha chiesto la decisione.
       if (!(err instanceof ProposalValidationError) && !(err instanceof ProposalNotPendingError)) setSyncError(describeSyncError(err));
