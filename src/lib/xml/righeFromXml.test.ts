@@ -57,3 +57,29 @@ test('mixed or partial VALUTA data is not representable', () => {
   assert.notEqual(senzaSeconda, xml);
   assert.equal(righeFromXml(parse(senzaSeconda)).ok, false);
 });
+
+test('a RiferimentoData with a timezone suffix keeps the valid date part', () => {
+  const data: FatturaXMLData = { ...base, righe: [{ descrizione: 'W', quantita: 1, prezzoUnitario: 100 }], valuta: 'GBP', tassoCambio: 0.84, dataCambio: '2026-03-09' };
+  const xml = generateFatturaXML(data).replace('<RiferimentoData>2026-03-09</RiferimentoData>', '<RiferimentoData>2026-03-09Z</RiferimentoData>');
+  const out = righeFromXml(parse(xml));
+  assert.equal(out.ok, true);
+  if (out.ok) assert.equal(out.dataCambio, '2026-03-09');
+});
+
+test('a garbage RiferimentoData is dropped, import still succeeds without dataCambio', () => {
+  const data: FatturaXMLData = { ...base, righe: [{ descrizione: 'W', quantita: 1, prezzoUnitario: 100 }], valuta: 'GBP', tassoCambio: 0.84, dataCambio: '2026-03-09' };
+  const xml = generateFatturaXML(data).replace('<RiferimentoData>2026-03-09</RiferimentoData>', '<RiferimentoData>non-una-data</RiferimentoData>');
+  const out = righeFromXml(parse(xml));
+  assert.equal(out.ok, true);
+  if (out.ok) assert.equal(out.dataCambio, undefined);
+});
+
+test('divergent RiferimentoData across VALUTA lines is not representable', () => {
+  const data: FatturaXMLData = { ...base, righe: [{ descrizione: 'A', quantita: 1, prezzoUnitario: 100 }, { descrizione: 'B', quantita: 1, prezzoUnitario: 50 }], valuta: 'GBP', tassoCambio: 0.84, dataCambio: '2026-03-09' };
+  const xml = generateFatturaXML(data);
+  let count = 0;
+  const changed = xml.replace(/<RiferimentoData>2026-03-09<\/RiferimentoData>/g, () => (++count === 2 ? '<RiferimentoData>2026-03-10</RiferimentoData>' : '<RiferimentoData>2026-03-09</RiferimentoData>'));
+  assert.equal(count, 2);
+  const out = righeFromXml(parse(changed));
+  assert.equal(out.ok, false);
+});

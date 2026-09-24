@@ -6,7 +6,7 @@
  * @xmldom/xmldom.
  */
 import type { FatturaRiga } from '../../types';
-import { validateFatturaRighe } from '../sync/validate';
+import { isIsoDate, validateFatturaRighe } from '../sync/validate';
 
 export type RigheFromXml =
   | { ok: true; righe: FatturaRiga[]; valuta: string; importoValuta?: number; tassoCambio?: number; dataCambio?: string }
@@ -22,6 +22,20 @@ const num = (el: Element | Document, tag: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 const fail = (motivo: string): RigheFromXml => ({ ok: false, motivo });
+
+/**
+ * RiferimentoData in xs:date ammette suffissi di timezone ("Z", "+01:00")
+ * che isIsoDate rifiuta: se i primi 10 caratteri sono una data valida la
+ * teniamo, altrimenti (data non riconoscibile) la fattura si importa senza
+ * dataCambio, mai con un valore che il validatore dello snapshot rifiuta.
+ */
+function normalizeDataCambio(raw: string | null): string | undefined {
+  if (!raw) return undefined;
+  if (isIsoDate(raw)) return raw;
+  const conSuffisso = /^(\d{4}-\d{2}-\d{2})(Z|[+-]\d{2}:\d{2})$/.exec(raw);
+  const dataParte = conSuffisso?.[1];
+  return dataParte !== undefined && isIsoDate(dataParte) ? dataParte : undefined;
+}
 
 export function righeFromXml(doc: Document): RigheFromXml {
   const linee = children(doc, 'DettaglioLinee');
@@ -65,6 +79,8 @@ export function righeFromXml(doc: Document): RigheFromXml {
   if (conValuta.length !== linee.length) return fail('valuta indicata solo su alcune righe');
   const codice = conValuta[0]!.codice;
   if (conValuta.some((v) => v!.codice !== codice)) return fail('righe in valute diverse');
+  const dateRiferimento = new Set(conValuta.map((v) => v!.data).filter((d): d is string => d !== null));
+  if (dateRiferimento.size > 1) return fail('data di cambio diversa tra le righe');
 
   const righe = righeEUR.map((r, i) => ({ ...r, prezzoUnitario: valutaPerRiga[i]!.importo / r.quantita }));
   const check = validateFatturaRighe(righe);
@@ -73,6 +89,6 @@ export function righeFromXml(doc: Document): RigheFromXml {
   const causale = children(doc, 'Causale').map((c) => c.textContent ?? '').join(' ');
   const tassoCausale = new RegExp(`1 EUR = ([0-9.]+) ${codice}`).exec(causale)?.[1];
   const tassoCambio = tassoCausale ? Number(tassoCausale) : Math.round((importoValuta / imponibile) * 1e6) / 1e6;
-  const dataCambio = conValuta[0]!.data ?? undefined;
+  const dataCambio = normalizeDataCambio(conValuta[0]!.data);
   return { ok: true, righe: check.righe, valuta: codice, importoValuta, tassoCambio, ...(dataCambio ? { dataCambio } : {}) };
 }

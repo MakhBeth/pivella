@@ -4,6 +4,7 @@ import { DOMParser } from '@xmldom/xmldom';
 
 import type { Fattura } from '../../types';
 import { generateFatturaXML, type FatturaXMLData } from '../xml/generator';
+import { createEmptySnapshot, parseSyncFile } from '../sync/schema';
 import { getDuplicateKey, processBatchXmlFiles } from './batchImport';
 
 const parseDocument = (xml: string) => new DOMParser().parseFromString(xml, 'text/xml') as unknown as Document;
@@ -78,4 +79,18 @@ test('a foreign invoice saves currency metadata; enrichment checks currency and 
   assert.equal(cambioDiverso.summary.righeNonImportate.length, 1);
   const valutaDiversa = await run(xml, [saved({ importo: 1190.48 })]);
   assert.equal(valutaDiversa.summary.enriched, 0);
+});
+
+test('an invalid RiferimentoData is dropped, and the imported fattura still passes the sync validator', async () => {
+  const gbp: FatturaXMLData = { ...base, righe: [{ descrizione: 'W', quantita: 1, prezzoUnitario: 1000 }], valuta: 'GBP', tassoCambio: 0.84, dataCambio: '2026-03-09' };
+  const xml = generateFatturaXML(gbp).replace('<RiferimentoData>2026-03-09</RiferimentoData>', '<RiferimentoData>non-una-data</RiferimentoData>');
+  const { newFatture, summary } = await run(xml);
+  assert.equal(summary.imported, 1);
+  assert.equal(newFatture[0].dataCambio, undefined);
+
+  const stamp = { now: '2026-01-01T00:00:00.000Z', writer: { id: 'app-1', kind: 'app' as const } };
+  const snapshot = createEmptySnapshot(stamp);
+  snapshot.fatture.push({ ...newFatture[0], userId: 'u1' } as Fattura);
+  const { snapshot: parsed } = parseSyncFile(JSON.stringify(snapshot), stamp);
+  assert.equal(parsed.fatture[0].dataCambio, undefined);
 });
