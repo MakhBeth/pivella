@@ -2,7 +2,7 @@
  * File scritti dai tool genera_*: nomi ripuliti, sempre dentro la cartella
  * scelta, creazione esclusiva. Non tocca mai il file di sync.
  */
-import { mkdir, open } from 'node:fs/promises';
+import { mkdir, open, unlink } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 
 const MAX_TENTATIVI = 100;
@@ -30,6 +30,8 @@ export async function writeExclusive(dir: string, baseName: string, ext: string,
       return target;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'EEXIST') continue;
+      // Clean up the file if it was created but the write/close failed
+      try { await unlink(target); } catch { /* ignore unlink errors */ }
       throw err;
     }
   }

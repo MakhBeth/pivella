@@ -38,3 +38,23 @@ test('writeExclusive creates missing folders and refuses names that escape them'
   assert.ok(p.startsWith(dir + sep));
   await assert.rejects(writeExclusive(dir, `..${sep}fuori`, 'xml', 'x'));
 });
+
+test('writeExclusive cleans up files when write fails and next write uses base name', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pivella-docs-'));
+  // Make write fail by passing invalid data type (number instead of string/Uint8Array)
+  await assert.rejects(writeExclusive(dir, 'x', 'txt', 123 as unknown as string));
+  // Verify no file was left behind
+  assert.equal((await readdir(dir)).length, 0);
+  // Verify next valid write lands on the base name, not -2
+  const p = await writeExclusive(dir, 'x', 'txt', 'valid');
+  assert.equal(p, join(dir, 'x.txt'));
+  assert.equal(await readFile(p, 'utf8'), 'valid');
+});
+
+test('writeExclusive propagates non-EEXIST errors after cleanup', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pivella-docs-'));
+  // Pass invalid data to trigger write error (not EEXIST)
+  await assert.rejects(writeExclusive(dir, 'fail', 'txt', 999 as unknown as string));
+  // Verify no files left behind
+  assert.equal((await readdir(dir)).length, 0);
+});
