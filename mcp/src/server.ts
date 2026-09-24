@@ -1,5 +1,5 @@
 /**
- * Server MCP locale (13.1, 13.4): registra i 17 tool sopra un `DataSource`
+ * Server MCP locale (13.1, 13.4): registra i 19 tool sopra un `DataSource`
  * e li espone sul trasporto scelto dal chiamante (stdio in `cli.ts`, in
  * memoria nei test). Usa il `Server` di basso livello dell'SDK così la
  * validazione dei parametri resta nostra e ogni errore torna al client come

@@ -1,6 +1,6 @@
 {
   "name": "pivella",
-  "version": "6.1.0",
+  "version": "7.0.0",
   "description": "App per gestire il regime forfettario - P.IVA italiana",
   "license": "MIT",
   "type": "module",
@@ -11,7 +11,7 @@
     "lint": "tsc --noEmit",
     "test": "tsx --test",
     "mcp": "tsx mcp/src/bin.ts",
-    "mcp:build": "esbuild mcp/src/bin.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=mcp/dist/cli.js"
+    "mcp:build": "esbuild mcp/src/bin.ts --bundle --platform=node --target=node20 --format=esm --packages=external --jsx=automatic --outfile=mcp/dist/cli.js && mkdir -p mcp/dist/fonts && cp public/fonts/RobotoMono-Regular.ttf mcp/dist/fonts/"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.3.0",
