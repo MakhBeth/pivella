@@ -7,7 +7,7 @@
 import type { Cliente, Fattura, Scadenza, StoreName, WorkLog } from '../../types';
 import { isPending, ProposalNotPendingError } from './proposals';
 import type { Proposal, SyncRecord } from './schema';
-import { fatturaPreview, ProposalValidationError, validateProposalPayload, valuteDisponibili, type ClientePayload, type FatturaPayload, type ValidationContext, type WorkLogPayload } from './validate';
+import { fatturaPreview, ProposalValidationError, validateFatturaRighe, validateProposalPayload, valuteDisponibili, type ClientePayload, type FatturaPayload, type FatturaRigaPayload, type ValidationContext, type WorkLogPayload } from './validate';
 
 export interface PlanContext extends ValidationContext {
   userId: string;
@@ -41,6 +41,12 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function clienteFromPayload(id: string, userId: string, p: ClientePayload): Cliente {
   return { id, userId, ...p };
+}
+
+/** Le proposte sono già più severe del record; il controllo resta per non salvare mai righe che il file rifiuterebbe. */
+function righeDaSalvare(righe: FatturaRigaPayload[]): Pick<Fattura, 'righe' | 'righeSource'> {
+  const check = validateFatturaRighe(righe);
+  return check.ok ? { righe: check.righe, righeSource: 'app' } : {};
 }
 
 function planFattura(p: FatturaPayload, ctx: PlanContext): ProposalPlan {
@@ -88,6 +94,8 @@ function planFattura(p: FatturaPayload, ctx: PlanContext): ProposalPlan {
     valuta: valuta.codice,
     valutaSimbolo: valuta.simbolo,
     ...(isForeign && p.tassoCambio !== undefined ? { tassoCambio: p.tassoCambio } : {}),
+    ...(isForeign ? { dataCambio: p.dataCambio ?? p.data } : {}),
+    ...righeDaSalvare(p.righe),
   };
   puts.push({ store: 'fatture', record: fattura });
   return { puts, result: { recordId: fattura.id, numero } };

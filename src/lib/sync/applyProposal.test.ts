@@ -68,9 +68,23 @@ test('planProposal fattura assigns the number for the year of the invoice and bu
   const plan = planProposal(proposal('fattura', { clienteId: 'c1', data: '2027-01-05', righe, valuta: 'EUR' }), ctx);
   assert.deepEqual(plan.puts, [{
     store: 'fatture',
-    record: { id: 'id_1', userId: 'u1', numero: '01', importo: 1000, data: '2027-01-05', dataIncasso: '2027-01-05', clienteId: 'c1', clienteNome: 'Acme', duplicateKey: '01-2027-01-05-1000', valuta: 'EUR', valutaSimbolo: '€' },
+    record: { id: 'id_1', userId: 'u1', numero: '01', importo: 1000, data: '2027-01-05', dataIncasso: '2027-01-05', clienteId: 'c1', clienteNome: 'Acme', duplicateKey: '01-2027-01-05-1000', valuta: 'EUR', valutaSimbolo: '€', righe, righeSource: 'app' },
   }]);
   assert.deepEqual(plan.result, { recordId: 'id_1', numero: '01' });
+});
+
+test('planProposal fattura stores righe, righeSource and, for a foreign currency, the exchange date', () => {
+  counter = 0;
+  const righe = [{ descrizione: 'Sviluppo', quantita: 2, prezzoUnitario: 500 }];
+  const eur = planProposal(proposal('fattura', { clienteId: 'c1', data: '2026-09-10', righe }), ctx).puts[0].record as Fattura;
+  assert.deepEqual(eur.righe, righe);
+  assert.equal(eur.righeSource, 'app');
+  assert.equal(eur.dataCambio, undefined);
+  const gbp = planProposal(proposal('fattura', { clienteId: 'c1', data: '2026-09-10', righe, valuta: 'GBP', tassoCambio: 0.8, dataCambio: '2026-09-09' }), ctx).puts[0].record as Fattura;
+  assert.equal(gbp.dataCambio, '2026-09-09');
+  assert.deepEqual(gbp.righe, righe);
+  const gbpSenzaData = planProposal(proposal('fattura', { clienteId: 'c1', data: '2026-09-10', righe, valuta: 'GBP', tassoCambio: 0.8 }), ctx).puts[0].record as Fattura;
+  assert.equal(gbpSenzaData.dataCambio, '2026-09-10');
 });
 
 test('planProposal fattura in a foreign currency stores EUR importo, importoValuta and tassoCambio', () => {
