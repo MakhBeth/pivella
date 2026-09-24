@@ -55,6 +55,9 @@ export interface Fattura extends SyncMeta {
   valuta?: string;  // Currency code e.g. "EUR", "GBP"
   valutaSimbolo?: string; // Currency symbol e.g. "€", "£"
   tassoCambio?: number; // ECB exchange rate: 1 EUR = X foreign currency
+  righe?: FatturaRiga[]; // Righe nella valuta originale; assenti nelle fatture salvate prima della 7.0
+  dataCambio?: string; // Data del cambio BCE (YYYY-MM-DD), per rigenerare l'XML in valuta
+  righeSource?: 'app' | 'xml'; // Da dove vengono le righe: app (modale o proposta) o XML importato
 }
 
 export interface WorkLog extends SyncMeta {
@@ -192,12 +195,15 @@ export interface EmittenteConfig {
   nazione: string;
 }
 
-// Riga fattura per generazione XML
-export interface NuovaFatturaRiga {
+// Riga di una fattura: importi nella valuta originale della fattura
+export interface FatturaRiga {
   descrizione: string;
   quantita: number;
   prezzoUnitario: number;
 }
+
+// Riga fattura per generazione XML
+export type NuovaFatturaRiga = FatturaRiga;
 
 // Draft per nuova fattura XML
 export interface NuovaFatturaDraft {

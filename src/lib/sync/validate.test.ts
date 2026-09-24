@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import type { Cliente, Config, Fattura, Scadenza } from '../../types';
 import { DEFAULT_CONFIG } from '../constants/fiscali';
-import { fatturaPreview, ProposalValidationError, validateProposalPayload, type ValidationContext } from './validate';
+import { fatturaPreview, ProposalValidationError, validateProposalPayload, validateFatturaRighe, type ValidationContext } from './validate';
 
 const TODAY = '2026-09-14';
 const config: Config = {
@@ -180,4 +180,34 @@ test('scadenzaPagata: unknown deadline is NOT_FOUND, paid one is VALIDATION', ()
 
 test('payload must be an object', () => {
   assert.equal(codeOf(() => validateProposalPayload('workLog', null, ctx)), 'VALIDATION');
+});
+
+// validateFatturaRighe
+
+test('validateFatturaRighe accepts zero-priced lines but not a zero total', () => {
+  assert.deepEqual(validateFatturaRighe([{ descrizione: 'Consulenza', quantita: 2, prezzoUnitario: 50 }, { descrizione: 'Nota', quantita: 1, prezzoUnitario: 0 }]), {
+    ok: true,
+    righe: [{ descrizione: 'Consulenza', quantita: 2, prezzoUnitario: 50 }, { descrizione: 'Nota', quantita: 1, prezzoUnitario: 0 }],
+  });
+  assert.equal(validateFatturaRighe([{ descrizione: 'Nota', quantita: 1, prezzoUnitario: 0 }]).ok, false);
+});
+
+test('validateFatturaRighe rejects empty, negative, non-finite and malformed lines', () => {
+  for (const raw of [
+    [],
+    'x',
+    [{ descrizione: '', quantita: 1, prezzoUnitario: 10 }],
+    [{ descrizione: 'A', quantita: 0, prezzoUnitario: 10 }],
+    [{ descrizione: 'A', quantita: 1, prezzoUnitario: -5 }],
+    [{ descrizione: 'A', quantita: Number.NaN, prezzoUnitario: 10 }],
+    [{ descrizione: 'A', quantita: 1, prezzoUnitario: Infinity }],
+    [null],
+  ]) {
+    assert.equal(validateFatturaRighe(raw).ok, false, JSON.stringify(raw));
+  }
+});
+
+test('validateFatturaRighe keeps only the three known fields', () => {
+  const out = validateFatturaRighe([{ descrizione: 'A', quantita: 1, prezzoUnitario: 10, extra: true }]);
+  assert.deepEqual(out, { ok: true, righe: [{ descrizione: 'A', quantita: 1, prezzoUnitario: 10 }] });
 });

@@ -3,7 +3,7 @@
  * che le crea e l'app che le rivaluta prima di applicarle: una proposta nel
  * file non è mai fidata. Modulo puro, senza dipendenze da DOM o Node.
  */
-import { MISC_CLIENT_ID, VACATION_CLIENT_ID, type Cliente, type Config, type Fattura, type Scadenza } from '../../types';
+import { MISC_CLIENT_ID, VACATION_CLIENT_ID, type Cliente, type Config, type Fattura, type FatturaRiga, type Scadenza } from '../../types';
 import type { ProposalKind } from './schema';
 
 export interface ValidationContext {
@@ -54,11 +54,7 @@ export interface NuovoClientePayload {
   provincia?: string;
 }
 
-export interface FatturaRigaPayload {
-  descrizione: string;
-  quantita: number;
-  prezzoUnitario: number;
-}
+export type FatturaRigaPayload = FatturaRiga;
 
 export interface FatturaPayload {
   clienteId?: string;
@@ -301,6 +297,29 @@ function validateRighe(raw: unknown, c: Collector): FatturaRigaPayload[] {
     if (inner.fields.length === 0) righe.push({ descrizione: descrizione!, quantita: quantita!, prezzoUnitario: prezzoUnitario! });
   });
   return righe;
+}
+
+export type FatturaRigheCheck = { ok: true; righe: FatturaRiga[] } | { ok: false; reason: string };
+
+/**
+ * Righe ammesse in un record `Fattura` (non in una proposta, che resta più
+ * severa): prezzo zero consentito per le righe descrittive, totale positivo.
+ * Chi scrive una fattura passa di qui prima di salvare le righe.
+ */
+export function validateFatturaRighe(raw: unknown): FatturaRigheCheck {
+  if (!Array.isArray(raw) || raw.length === 0) return { ok: false, reason: 'righe: almeno una riga' };
+  const righe: FatturaRiga[] = [];
+  for (const [i, riga] of raw.entries()) {
+    if (typeof riga !== 'object' || riga === null || Array.isArray(riga)) return { ok: false, reason: `righe[${i}]: deve essere un oggetto` };
+    const { descrizione, quantita, prezzoUnitario } = riga as Record<string, unknown>;
+    if (typeof descrizione !== 'string' || descrizione.trim().length === 0) return { ok: false, reason: `righe[${i}].descrizione: obbligatoria` };
+    if (typeof quantita !== 'number' || !Number.isFinite(quantita) || quantita <= 0) return { ok: false, reason: `righe[${i}].quantita: numero positivo` };
+    if (typeof prezzoUnitario !== 'number' || !Number.isFinite(prezzoUnitario) || prezzoUnitario < 0) return { ok: false, reason: `righe[${i}].prezzoUnitario: numero non negativo` };
+    righe.push({ descrizione, quantita, prezzoUnitario });
+  }
+  const totale = righe.reduce((sum, r) => sum + r.quantita * r.prezzoUnitario, 0);
+  if (!(totale > 0)) return { ok: false, reason: 'righe: il totale deve essere positivo' };
+  return { ok: true, righe };
 }
 
 function validateFattura(raw: Record<string, unknown>, ctx: ValidationContext): FatturaPayload {
