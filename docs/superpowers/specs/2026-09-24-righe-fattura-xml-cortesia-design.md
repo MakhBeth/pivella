@@ -31,13 +31,15 @@ Schema di sync: `SYNC_SCHEMA_VERSION` passa da 2 a 3.
 - Versioni diverse da 2 e 3 restano rifiutate con l'errore `SOURCE_UNAVAILABLE` esistente.
 - Un client v2 (app 6.x, MCP 0.x) che trova un file v3 si ferma con "versione non supportata" invece di riscrivere fatture perdendo le righe. È il motivo tecnico del bump major.
 
-Validazione: `validateStore('fatture')` controlla `righe` quando presente (array non vuoto, `descrizione` non vuota, `quantita` e `prezzoUnitario` numeri finiti positivi) e `dataCambio` come data. La logica è quella di `validateRighe` in `validate.ts`, estratta e condivisa. Una fattura con righe malformate rende il file non valido come oggi per gli altri campi.
+Validazione: un validatore condiviso `validateFatturaRighe` (in `validate.ts`) definisce le righe ammesse in un record: array non vuoto, `descrizione` non vuota, `quantita` numero finito > 0, `prezzoUnitario` numero finito >= 0, totale (somma di quantità × prezzo) > 0. Le proposte restano più severe (`prezzoUnitario` > 0, come oggi `validateRighe`). `validateStore('fatture')` usa lo stesso validatore quando `righe` è presente e controlla `dataCambio` come data; una fattura con righe malformate rende il file non valido come oggi per gli altri campi. Per questo **ogni punto di scrittura passa le righe dal validatore prima di salvarle**: se non passano, la fattura si salva senza righe (fallback), mai con righe invalide. Nessun flusso dell'app può produrre uno snapshot che l'app stessa rifiuta.
 
 Chi scrive le righe:
 
 - `NuovaFatturaModal` quando aggiunge la fattura (`righeSource: 'app'`, più `dataCambio` per valuta estera).
 - `planFattura` alla conferma di una proposta (`righeSource: 'app'`, `dataCambio` dal payload).
-- Import XML singolo, batch e zip (`righeSource: 'xml'`): per le fatture nuove sempre; per un duplicato (stessa `duplicateKey`) senza righe, aggiunge `righe`, `dataCambio` e `righeSource` (arricchimento); un duplicato che ha già righe non viene toccato.
+- Import XML singolo, batch e zip (`righeSource: 'xml'`), secondo le regole della sezione "Import XML": solo righe rappresentabili, sia per le fatture nuove sia per arricchire un duplicato senza righe; un duplicato che ha già righe non viene toccato.
+
+Riconoscimento dei duplicati: oggi la `duplicateKey` salvata ha due formati (`numero|data|importo` da `batchImport`, `numero-data-importo` da modale, import singolo e proposte, questi ultimi a volte con l'importo in valuta). L'import (dedup e arricchimento) smette di fidarsi della chiave salvata e confronta una chiave **ricalcolata** su entrambi i lati con `computeDuplicateKey(numero, data, importo)`, dove `importo` è sempre in EUR in tutti i percorsi di scrittura. `getDuplicateKey` diventa questo ricalcolo; il campo `duplicateKey` resta scritto per compatibilità ma non viene più letto per il confronto.
 
 ## 2. App
 
@@ -70,7 +72,19 @@ Oltre al caricamento XML, un selettore "Da fattura salvata" (ricerca per numero 
 
 ### Import XML
 
-Il parsing dell'import estrae anche `DettaglioLinee` (descrizione, quantità, prezzo unitario nella valuta del documento) e la data del cambio quando presente. Il riepilogo dell'import conta a parte le fatture arricchite.
+Il modello `righe` rappresenta solo le fatture forfettarie semplici che l'app stessa genera: righe senza IVA, senza sconti, con totale uguale a quantità × prezzo. L'import estrae le righe con una funzione pura `righeFromXml(xml)` che restituisce `{ righe, valuta, importoValuta, tassoCambio, dataCambio }` oppure `{ nonRappresentabile: motivo }`.
+
+Una fattura XML è rappresentabile se, per ogni `DettaglioLinee`: `AliquotaIVA` = 0, nessun `ScontoMaggiorazione`, `Quantita` (default 1) > 0, `PrezzoTotale` = `Quantita` × `PrezzoUnitario` entro 0,01; la somma dei `PrezzoTotale` coincide con `ImponibileImporto` di `DatiRiepilogo` entro 0,01; e, se presente, `ImportoTotaleDocumento` coincide con la stessa somma entro 0,01. Quest'ultimo controllo serve perché l'import salva `ImportoTotaleDocumento` come `importo` (`xmlParsing.ts`) mentre `generateFatturaXML` scrive un totale documento uguale alla somma delle righe: un XML con imponibile 100 e totale 102 (per esempio bollo addebitato al cliente) non è rappresentabile e si importa senza righe. Inoltre le righe estratte devono passare `validateFatturaRighe`. Se una condizione fallisce, la fattura si importa come oggi, senza righe, e il riepilogo dell'import la elenca tra le "righe non importate" con il motivo.
+
+Valuta estera: se le righe hanno `AltriDatiGestionali` con `TipoDato` `VALUTA` (formato scritto da `generateFatturaXML`), tutte le righe devono averlo con lo stesso codice, altrimenti la fattura non è rappresentabile. In quel caso:
+
+- `valuta` è il codice ISO in testa a `RiferimentoTesto`, `prezzoUnitario` = `RiferimentoNumero` / `Quantita` (importi nella valuta originale, mai i prezzi EUR del documento), `dataCambio` = `RiferimentoData`;
+- `importoValuta` = somma dei `RiferimentoNumero`; `tassoCambio` = quello scritto nella `Causale` ("1 EUR = X VAL") se presente, altrimenti `importoValuta / ImponibileImporto` arrotondato a 6 decimali;
+- per una fattura nuova l'import salva anche `valuta`, `valutaSimbolo` (dalle valute configurate, altrimenti il codice), `importoValuta`, `tassoCambio`, `dataCambio`; `importo` resta il totale EUR del documento.
+
+Arricchimento di un duplicato senza righe: avviene solo se la valuta dedotta dall'XML coincide con quella della fattura salvata (assente vale EUR). Per le valute estere si scrivono `righe`, `dataCambio` e, se mancano, `importoValuta` e `tassoCambio`; se la fattura salvata ha già un `tassoCambio` diverso da quello dedotto oltre lo 0,1%, l'arricchimento viene saltato e segnalato. Così la rigenerazione non converte mai due volte.
+
+Il riepilogo dell'import conta a parte le fatture arricchite e quelle con righe non importate.
 
 ### Pulizia
 
@@ -93,7 +107,8 @@ Destinazione:
 
 - `cartella` se indicata, altrimenti `<cartella del file di sync>/documenti/<anno della fattura>/`; le cartelle mancanti vengono create.
 - Nomi: XML `IT<piva>_<progressivo>.xml` (stessa `generateFileName` dell'app), PDF `fattura-cortesia-<numero>-<anno>.pdf`.
-- Mai sovrascrivere: se il nome esiste si aggiunge `-2`, `-3`, ... prima dell'estensione.
+- Sanitizzazione: ogni componente del nome derivato dai dati (partita IVA, numero, anno) passa da `safeFileComponent`, che sostituisce ogni carattere fuori da `[A-Za-z0-9_-]` con `-`, comprime i `-` ripetuti e rifiuta un risultato vuoto. Il nome finale non contiene separatori di percorso; il percorso risolto (`path.resolve`) deve restare dentro la cartella di destinazione risolta, altrimenti errore senza scrivere.
+- Mai sovrascrivere, anche con chiamate concorrenti: il file si crea in modo esclusivo (`fs.open(path, 'wx')`); su `EEXIST` si riprova con `-2`, `-3`, ... prima dell'estensione, fino a 100 tentativi, poi errore.
 
 Risposta: percorso assoluto del file, `fallbackRighe: boolean`, avvisi su dati del cliente mancanti. Emittente incompleto o fattura inesistente: nessun file scritto, errore strutturato con i campi mancanti.
 
@@ -114,7 +129,9 @@ Test (`tsx --test`, TDD):
 - schema: file v2 letto dalla v3, v4 rifiutato, righe malformate rifiutate;
 - `planFattura`: salva `righe`, `dataCambio`, `righeSource`;
 - `fatturaDocumento`: fallback, bollo, valuta estera, XML generato da una fattura salvata uguale a quello del modale per gli stessi dati (a parte il progressivo invio casuale);
-- import: righe estratte, arricchimento di un duplicato senza righe, duplicato con righe intatto;
-- tool MCP su cartella temporanea: file scritto, suffisso anti-sovrascrittura, errore con emittente incompleto, PDF che inizia con `%PDF`, `get_fattura` con `righe`.
+- validazione: righe a prezzo zero ammesse nel record ma non nelle proposte; righe negative e totale zero rifiutati; nessun percorso di scrittura (modale, proposta, import) salva righe che `validateStore` rifiuterebbe;
+- import: righe estratte; XML non rappresentabili (IVA, sconto, `PrezzoTotale` incoerente, somma diversa dal riepilogo, `ImportoTotaleDocumento` 102 con imponibile 100, righe negative) importati senza righe e segnalati; dedup e arricchimento che riconoscono fatture salvate con chiavi `numero|data|importo` e `numero-data-importo` (anche con importo in valuta);
+- valuta estera, andata e ritorno: fattura GBP salvata → `generateFatturaXML` → `righeFromXml` → stesse righe in GBP, stesso `tassoCambio` e `dataCambio` → XML rigenerato con gli stessi importi EUR; arricchimento saltato per valuta o cambio incoerenti;
+- tool MCP su cartella temporanea: file scritto, suffisso anti-sovrascrittura, due scritture concorrenti che producono due file distinti, numero `12/2026` e `../x` sanitizzati dentro la cartella, errore con emittente incompleto, PDF che inizia con `%PDF`, `get_fattura` con `righe`.
 
 Verifica manuale: conferma di una proposta nell'app con download dell'XML; cortesia da fattura salvata con e senza righe.
