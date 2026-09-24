@@ -79,6 +79,12 @@ export function righeFromXml(doc: Document): RigheFromXml {
 
   const conValuta = valutaPerRiga.filter((v) => v !== null);
   if (conValuta.length === 0) {
+    // I prezzi ricostruiti (PrezzoTotale / Quantita) possono, sommati, discostarsi
+    // dall'imponibile dichiarato (ogni PrezzoTotale è già arrotondato a 2 decimali):
+    // se la somma che genererebbe l'XML da queste righe non torna a livello di
+    // centesimo, il documento non è rappresentabile senza perdere importi.
+    const regenImponibile = round2(righeEUR.reduce((sum, r) => sum + r.quantita * r.prezzoUnitario, 0));
+    if (Math.abs(regenImponibile - imponibile) > 0.005) return fail('somma dei prezzi ricostruiti diversa dall\'imponibile');
     const check = validateFatturaRighe(righeEUR);
     return check.ok ? { ok: true, righe: check.righe, valuta: 'EUR' } : fail(check.reason);
   }
@@ -91,12 +97,17 @@ export function righeFromXml(doc: Document): RigheFromXml {
   const righe = righeEUR.map((r, i) => ({ ...r, prezzoUnitario: valutaPerRiga[i]!.importo / r.quantita }));
   const check = validateFatturaRighe(righe);
   if (!check.ok) return fail(check.reason);
-  const importoValuta = round2(conValuta.reduce((sum, v) => sum + v!.importo, 0));
+  const sommaValuta = conValuta.reduce((sum, v) => sum + v!.importo, 0);
+  const importoValuta = round2(sommaValuta);
   const causale = children(doc, 'Causale').map((c) => c.textContent ?? '').join(' ');
   const tassoCausale = new RegExp(`1 EUR = ([0-9.]+) ${codice}`).exec(causale)?.[1];
   const tassoCambio = tassoCausale ? Number(tassoCausale) : Math.round((importoValuta / imponibile) * 1e6) / 1e6;
   if (!Number.isFinite(tassoCambio) || tassoCambio <= 0) return fail('cambio non valido');
-  if (Math.abs(importoValuta / tassoCambio - imponibile) > 0.01 + linee.length * 0.005) return fail('cambio incoerente con gli importi');
+  // Stesso controllo del ramo EUR, con la stessa aritmetica di generateFatturaXML
+  // (somma non arrotondata delle righe, poi conversione e arrotondamento finale):
+  // se la somma ricostruita non torna a livello di centesimo il documento non è
+  // rappresentabile.
+  if (Math.abs(round2(sommaValuta / tassoCambio) - imponibile) > 0.005) return fail('cambio incoerente con gli importi');
   for (const [i, v] of valutaPerRiga.entries()) {
     if (Math.abs(v!.importo / tassoCambio - totaliRighe[i]!) > 0.01) return fail(`riga ${i + 1}: cambio incoerente con la riga`);
   }

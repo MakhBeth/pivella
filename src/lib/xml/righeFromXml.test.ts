@@ -88,6 +88,14 @@ test('F1: rounded PrezzoUnitario is reconstructed from PrezzoTotale so the round
   assert.match(xml2, /<ImponibileImporto>123\.40</);
 });
 
+test('F1: reconstructed prices whose sum drifts from the declared imponibile are not representable', () => {
+  const righe = Array.from({ length: 100 }, (_, i) => ({ descrizione: `Riga ${i + 1}`, quantita: 0.33, prezzoUnitario: 1.01 }));
+  const xml = generateFatturaXML({ ...base, righe });
+  assert.match(xml, /<ImponibileImporto>33\.33</);
+  const out = righeFromXml(parse(xml));
+  assert.equal(out.ok, false);
+});
+
 test('F2: a zero exchange rate in Causale is not representable', () => {
   const data: FatturaXMLData = { ...base, righe: [{ descrizione: 'Workshop', quantita: 1, prezzoUnitario: 100 }], valuta: 'GBP', tassoCambio: 0.84, dataCambio: '2026-03-09' };
   const xml = generateFatturaXML(data).replace('1 EUR = 0.84 GBP', '1 EUR = 0 GBP');
