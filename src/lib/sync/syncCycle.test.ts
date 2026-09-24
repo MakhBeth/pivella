@@ -60,7 +60,7 @@ test('first sync with no file writes the local snapshot and creates no backup', 
   const outcome = await run();
   assert.equal(outcome.status, 'created');
   const written = JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!);
-  assert.equal(written.schemaVersion, 2);
+  assert.equal(written.schemaVersion, 3);
   assert.deepEqual(written.clienti.map((c: any) => c.id), ['c1']);
   assert.deepEqual(await fs.list(BACKUP_DIR), []);
   assert.equal(await fs.read(LOCK_FILE), null, 'il lock viene rilasciato');
@@ -111,7 +111,7 @@ test('a v1 file is upgraded and rewritten as v2 with a v1 backup even when the d
   await fs.write(SYNC_FILENAME, text(v1));
   const outcome = await run();
   assert.equal(outcome.status, 'written');
-  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).schemaVersion, 2);
+  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).schemaVersion, 3);
   const v1Backups = (await fs.list(BACKUP_DIR)).filter((n) => n.endsWith('.v1.json'));
   assert.equal(v1Backups.length, 1);
   assert.equal(fromBytes(await fs.read(`${BACKUP_DIR}/${v1Backups[0]}`)), v1);

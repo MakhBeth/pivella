@@ -101,7 +101,7 @@ test('restoreFromBackup of a v1 backup upgrades it and restores it the same way'
   const { db, fs } = await setup();
   await restoreFromBackup(fs, db, V1_NAME, { now: () => new Date(NOW) });
   const written = JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!);
-  assert.equal(written.schemaVersion, 2);
+  assert.equal(written.schemaVersion, 3);
   assert.equal(written.restoredFrom, V1_NAME);
   assert.deepEqual((await db.getAll('clienti')).map((c) => c.id), ['c-v1']);
 });
