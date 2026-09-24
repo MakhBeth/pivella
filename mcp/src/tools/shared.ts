@@ -5,11 +5,13 @@
  */
 import { z } from 'zod';
 
-import { MISC_CLIENT_ID, VACATION_CLIENT_ID, type Cliente, type Fattura, type WorkLog } from '../../../src/types';
+import { MISC_CLIENT_ID, VACATION_CLIENT_ID, type Cliente, type Config, type Fattura, type WorkLog } from '../../../src/types';
 import { getWorkLogQuantita } from '../../../src/lib/utils/calculations';
+import { DatiEmittenteMancantiError, emittenteMancante, righeOrFallback } from '../../../src/lib/fatturaDocumento';
 import { ProposalNotPendingError } from '../../../src/lib/sync/proposals';
 import { isIsoDate, MOTIVAZIONE_MAX_LENGTH, ProposalValidationError } from '../../../src/lib/sync/validate';
 import { DataSourceError, LIST_MAX_LIMIT, type DataSource, type ErrorCode, type Principal, type UserSnapshot } from '../datasource';
+import { documentsDir } from '../documents';
 
 export interface ToolContext {
   ds: DataSource;
@@ -17,6 +19,8 @@ export interface ToolContext {
   now: () => Date;
   /** `clientInfo.name` dell'handshake MCP, se noto. */
   client?: string;
+  /** Cartella di sync: base della cartella documenti dei tool genera_*. Assente nei contesti senza disco. */
+  syncDir?: string;
 }
 
 export interface ToolResult<Out extends Record<string, unknown>> {
@@ -76,6 +80,7 @@ export function toToolError(err: unknown): ToolError {
   if (err instanceof DataSourceError) return { code: err.code, message: err.message, details: err.details };
   if (err instanceof ProposalValidationError) return { code: err.code, message: err.message, details: err.details };
   if (err instanceof ProposalNotPendingError) return { code: err.code, message: err.message, details: err.details };
+  if (err instanceof DatiEmittenteMancantiError) return { code: 'VALIDATION', message: err.message, details: { campi: err.campi } };
   const ref = globalThis.crypto.randomUUID().slice(0, 8);
   const message = err instanceof Error ? err.message : String(err);
   console.error(`[pivella-mcp] errore interno ${ref}:`, err);
@@ -127,16 +132,38 @@ export function isIncassata(f: Fattura): boolean {
   return f.incassato !== false;
 }
 
-export type FatturaOut = Fattura & { clienteNome: string; incassata: boolean; dataIncassoEffettiva: string | null };
+export type FatturaOut = Fattura & { clienteNome: string; incassata: boolean; dataIncassoEffettiva: string | null; haRighe: boolean };
 
 /**
  * Fattura come esce dai tool: nome cliente risolto e semantica di incasso
  * esplicita, perché il record grezzo la nasconde. `dataIncasso` assente su
  * una fattura incassata vale la data di emissione, come nella Dashboard.
+ * `haRighe` indica se la fattura ha le righe di dettaglio salvate, oppure
+ * se i tool genera_* useranno la riga unica di fallback.
  */
 export function decorateFattura(f: Fattura, resolve: (id: string) => string): FatturaOut {
   const incassata = isIncassata(f);
-  return { ...f, clienteNome: resolve(f.clienteId), incassata, dataIncassoEffettiva: incassata ? f.dataIncasso || f.data : null };
+  return { ...f, clienteNome: resolve(f.clienteId), incassata, dataIncassoEffettiva: incassata ? f.dataIncasso || f.data : null, haRighe: Boolean(f.righe?.length) };
+}
+
+export interface DocumentoFattura { fattura: Fattura; cliente: Cliente | undefined; config: Config; dir: string; avvisi: string[]; fallbackRighe: boolean }
+
+/** Fattura, cliente, config e cartella di destinazione per i tool genera_*. */
+export async function documentoFattura(ctx: ToolContext, userId: string, fatturaId: string, cartella?: string): Promise<DocumentoFattura> {
+  const snap = await snapshotOf(ctx, userId);
+  const fattura = snap.fatture.find((f) => f.id === fatturaId);
+  if (!fattura) throw new DataSourceError('NOT_FOUND', `Fattura ${fatturaId} inesistente per il profilo ${userId}`, { fatturaId });
+  if (!snap.config) throw new DatiEmittenteMancantiError(emittenteMancante(null));
+  const mancanti = emittenteMancante(snap.config);
+  if (mancanti.length > 0) throw new DatiEmittenteMancantiError(mancanti);
+  if (!cartella && !ctx.syncDir) throw validationError('cartella', 'indica una cartella: il server non conosce la cartella di sync');
+  const cliente = snap.clienti.find((c) => c.id === fattura.clienteId);
+  const avvisi: string[] = [];
+  const { fallback } = righeOrFallback(fattura);
+  if (fallback) avvisi.push('La fattura non ha le righe salvate: ho usato una riga unica con il totale. Controlla che corrisponda all\'XML inviato allo SDI.');
+  if (!cliente) avvisi.push(`Cliente ${fattura.clienteId} non trovato: uso solo il nome salvato nella fattura.`);
+  else if (!cliente.indirizzo || !cliente.cap || !cliente.comune) avvisi.push(`Indirizzo del cliente ${cliente.nome} incompleto: l'XML potrebbe essere scartato dallo SDI.`);
+  return { fattura, cliente, config: snap.config, dir: cartella ?? documentsDir(ctx.syncDir!, anno(fattura.data)), avvisi, fallbackRighe: fallback };
 }
 
 export function anno(date: string): number {

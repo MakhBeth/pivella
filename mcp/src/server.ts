@@ -19,6 +19,7 @@ export interface ServerOptions {
   writerId: string;
   version: string;
   now?: () => Date;
+  syncDir?: string;
 }
 
 export function toolDescriptor(def: ToolDef): Tool {
@@ -46,7 +47,7 @@ export function createServer(ds: DataSource, options: ServerOptions): Server {
     if (!def) {
       return errorResult({ code: 'NOT_FOUND', message: `Tool ${request.params.name} inesistente` });
     }
-    const ctx: ToolContext = { ds, principal, now: options.now ?? (() => new Date()), client: server.getClientVersion()?.name };
+    const ctx: ToolContext = { ds, principal, now: options.now ?? (() => new Date()), client: server.getClientVersion()?.name, syncDir: options.syncDir };
     const outcome = await runTool(def, ctx, request.params.arguments ?? {});
     if (outcome.isError) return errorResult(outcome.error!);
     return { content: [{ type: 'text', text: outcome.text }], structuredContent: outcome.structured };
