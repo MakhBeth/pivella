@@ -459,7 +459,7 @@ export function FatturaCortesia() {
             ))}
           </select>
           {fallbackAvviso && (
-            <p role="status" style={{ marginTop: 6, color: 'var(--accent-yellow)' }}>
+            <p role="status" style={{ marginTop: 6, color: 'var(--accent-orange)' }}>
               <AlertTriangle size={14} aria-hidden="true" /> Righe non salvate: ho usato una riga unica, modificala o reimporta l'XML originale.
             </p>
           )}

@@ -77,8 +77,10 @@ export function buildFatturaXMLData(f: Fattura, c: Cliente | undefined, config: 
 
 export function buildCourtesyInvoice(f: Fattura, c: Cliente | undefined, config: Config): Invoice {
   const { righe } = righeOrFallback(f);
+  // Come fatturaPreview e generateFatturaXML: il totale è l'arrotondamento della
+  // somma non arrotondata delle righe, non la somma degli importi già arrotondati.
   const lines = righe.map((r, i) => ({ number: i + 1, description: r.descrizione, quantity: r.quantita, singlePrice: r.prezzoUnitario, amount: round2(r.quantita * r.prezzoUnitario), tax: 0 }));
-  const totale = round2(lines.reduce((sum, l) => sum + l.amount, 0));
+  const totale = round2(righe.reduce((sum, r) => sum + r.quantita * r.prezzoUnitario, 0));
   const totaleEUR = isForeign(f) ? round2(totale / f.tassoCambio!) : totale;
   const emittente = config.emittente;
   const ci = config.courtesyInvoice;

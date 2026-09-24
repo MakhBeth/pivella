@@ -73,6 +73,17 @@ test('buildCourtesyInvoice builds lines, stamp duty over 77.47 EUR and payment',
   assert.equal(g.stampDuty, 2);
 });
 
+test('F3: buildCourtesyInvoice totals fractional lines like fatturaPreview and generateFatturaXML (aggregate rounding)', () => {
+  const f: Fattura = { id: 'f4', userId: 'u1', numero: '10', data: '2026-04-02', clienteId: 'c1', clienteNome: 'Acme Srl', importo: 0.67, righe: [{ descrizione: 'A', quantita: 0.33, prezzoUnitario: 1.01 }, { descrizione: 'B', quantita: 0.33, prezzoUnitario: 1.01 }] };
+  const inv = buildCourtesyInvoice(f, cliente, config);
+  const inst = inv.installments[0];
+  assert.equal(inst.totalAmount, 0.67);
+  assert.equal(inst.payment?.amount, 0.67);
+  assert.equal(inst.taxSummary.paymentAmount, 0.67);
+  const xml = generateFatturaXML(buildFatturaXMLData(f, cliente, config));
+  assert.match(xml, /<ImponibileImporto>0\.67</);
+});
+
 test('buildPdfOptions reads the courtesy settings and allows a locale override', () => {
   const o = buildPdfOptions(config);
   assert.equal(o.colors?.primary, '#112233');

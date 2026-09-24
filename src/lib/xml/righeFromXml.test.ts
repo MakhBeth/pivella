@@ -74,6 +74,34 @@ test('a garbage RiferimentoData is dropped, import still succeeds without dataCa
   if (out.ok) assert.equal(out.dataCambio, undefined);
 });
 
+test('F1: rounded PrezzoUnitario is reconstructed from PrezzoTotale so the round trip preserves the original amounts', () => {
+  const data: FatturaXMLData = { ...base, righe: [{ descrizione: 'Consulenza', quantita: 100, prezzoUnitario: 1.234 }] };
+  const xml1 = generateFatturaXML(data);
+  assert.match(xml1, /<PrezzoUnitario>1\.23<\/PrezzoUnitario>/);
+  assert.match(xml1, /<PrezzoTotale>123\.40<\/PrezzoTotale>/);
+  const out = righeFromXml(parse(xml1));
+  assert.equal(out.ok, true);
+  if (!out.ok) return;
+  assert.equal(out.righe[0]!.prezzoUnitario, 1.234);
+  const xml2 = generateFatturaXML({ ...base, righe: out.righe });
+  assert.match(xml2, /<PrezzoTotale>123\.40<\/PrezzoTotale>/);
+  assert.match(xml2, /<ImponibileImporto>123\.40</);
+});
+
+test('F2: a zero exchange rate in Causale is not representable', () => {
+  const data: FatturaXMLData = { ...base, righe: [{ descrizione: 'Workshop', quantita: 1, prezzoUnitario: 100 }], valuta: 'GBP', tassoCambio: 0.84, dataCambio: '2026-03-09' };
+  const xml = generateFatturaXML(data).replace('1 EUR = 0.84 GBP', '1 EUR = 0 GBP');
+  const out = righeFromXml(parse(xml));
+  assert.equal(out.ok, false);
+});
+
+test('F2: an exchange rate inconsistent with the amounts is not representable', () => {
+  const data: FatturaXMLData = { ...base, righe: [{ descrizione: 'Workshop', quantita: 1, prezzoUnitario: 100 }], valuta: 'GBP', tassoCambio: 0.84, dataCambio: '2026-03-09' };
+  const xml = generateFatturaXML(data).replace('1 EUR = 0.84 GBP', '1 EUR = 2 GBP');
+  const out = righeFromXml(parse(xml));
+  assert.equal(out.ok, false);
+});
+
 test('divergent RiferimentoData across VALUTA lines is not representable', () => {
   const data: FatturaXMLData = { ...base, righe: [{ descrizione: 'A', quantita: 1, prezzoUnitario: 100 }, { descrizione: 'B', quantita: 1, prezzoUnitario: 50 }], valuta: 'GBP', tassoCambio: 0.84, dataCambio: '2026-03-09' };
   const xml = generateFatturaXML(data);

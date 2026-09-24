@@ -43,6 +43,7 @@ export function righeFromXml(doc: Document): RigheFromXml {
 
   const valutaPerRiga: Array<{ codice: string; importo: number; data: string | null } | null> = [];
   let sommaTotali = 0;
+  const totaliRighe: number[] = [];
   const righeEUR: FatturaRiga[] = [];
   for (const [i, linea] of linee.entries()) {
     const n = i + 1;
@@ -55,8 +56,13 @@ export function righeFromXml(doc: Document): RigheFromXml {
     if (prezzo === null || totale === null) return fail(`riga ${n}: prezzi mancanti`);
     if (quantita <= 0) return fail(`riga ${n}: quantità non positiva`);
     if (Math.abs(totale - quantita * prezzo) > 0.01 + quantita * 0.005) return fail(`riga ${n}: totale diverso da quantità per prezzo`);
+    // Il PrezzoUnitario dell'XML è arrotondato a 2 decimali dal generatore: per un
+    // round trip senza perdite ricostruiamo il prezzo dal totale (non arrotondato).
+    const prezzoRicostruito = totale / quantita;
+    if (Math.abs(round2(quantita * prezzoRicostruito) - totale) > 0.005) return fail(`riga ${n}: prezzo non ricostruibile dal totale`);
     sommaTotali += totale;
-    righeEUR.push({ descrizione: text(linea, 'Descrizione') ?? '', quantita, prezzoUnitario: prezzo });
+    totaliRighe.push(totale);
+    righeEUR.push({ descrizione: text(linea, 'Descrizione') ?? '', quantita, prezzoUnitario: prezzoRicostruito });
 
     const valuta = children(linea, 'AltriDatiGestionali').find((d) => text(d, 'TipoDato') === 'VALUTA');
     if (!valuta) { valutaPerRiga.push(null); continue; }
@@ -89,6 +95,11 @@ export function righeFromXml(doc: Document): RigheFromXml {
   const causale = children(doc, 'Causale').map((c) => c.textContent ?? '').join(' ');
   const tassoCausale = new RegExp(`1 EUR = ([0-9.]+) ${codice}`).exec(causale)?.[1];
   const tassoCambio = tassoCausale ? Number(tassoCausale) : Math.round((importoValuta / imponibile) * 1e6) / 1e6;
+  if (!Number.isFinite(tassoCambio) || tassoCambio <= 0) return fail('cambio non valido');
+  if (Math.abs(importoValuta / tassoCambio - imponibile) > 0.01 + linee.length * 0.005) return fail('cambio incoerente con gli importi');
+  for (const [i, v] of valutaPerRiga.entries()) {
+    if (Math.abs(v!.importo / tassoCambio - totaliRighe[i]!) > 0.01) return fail(`riga ${i + 1}: cambio incoerente con la riga`);
+  }
   const dataCambio = normalizeDataCambio(conValuta[0]!.data);
   return { ok: true, righe: check.righe, valuta: codice, importoValuta, tassoCambio, ...(dataCambio ? { dataCambio } : {}) };
 }
