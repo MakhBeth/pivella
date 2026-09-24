@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { join, sep } from 'node:path';
 
 import { SYNC_FILENAME } from '../../../src/lib/sync/backup';
 import { createEmptySnapshot, parseSyncFile, type Proposal } from '../../../src/lib/sync/schema';
@@ -402,6 +402,26 @@ test('genera_fattura_cortesia writes a PDF, never overwriting, into the chosen f
   assert.equal(b.percorso, join(cartella, 'fattura-cortesia-01-2026-2.pdf'));
   assert.equal((await readFile(a.percorso as string)).subarray(0, 4).toString('latin1'), '%PDF');
   assert.equal((await readdir(cartella)).length, 2);
+});
+
+test('genera tools reject a relative cartella without writing anything', async () => {
+  const { ctx, syncDir } = await setup();
+  const err = await fails(ctx, 'genera_fattura_xml', { userId: 'u1', fatturaId: 'f1', cartella: 'documenti/2026' });
+  assert.equal(err.code, 'VALIDATION');
+  assert.deepEqual((await readdir(join(syncDir, 'documenti')).catch(() => [])), []);
+});
+
+test('genera tools expand a ~ cartella under the homedir', async () => {
+  const { ctx } = await setup();
+  const sotto = `pivella-mcp-test-${Date.now()}`;
+  const cartella = `~/${sotto}`;
+  try {
+    const out = await ok(ctx, 'genera_fattura_xml', { userId: 'u1', fatturaId: 'f1', cartella });
+    const percorso = out.percorso as string;
+    assert.ok(percorso.startsWith(join(homedir(), sotto) + sep), percorso);
+  } finally {
+    await rm(join(homedir(), sotto), { recursive: true, force: true });
+  }
 });
 
 test('genera tools fail without writing when the emittente is incomplete or the invoice is missing', async () => {

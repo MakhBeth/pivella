@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 
-import { documentsDir, safeFileComponent, writeExclusive } from './documents';
+import { documentsDir, isFuoriDaCartella, resolveCartella, safeFileComponent, writeExclusive } from './documents';
 
 test('safeFileComponent strips path characters and rejects empty results', () => {
   assert.equal(safeFileComponent('12/2026'), '12-2026');
@@ -12,6 +12,14 @@ test('safeFileComponent strips path characters and rejects empty results', () =>
   assert.equal(safeFileComponent('a  b..c'), 'a-b-c');
   assert.throws(() => safeFileComponent('../'));
   assert.throws(() => safeFileComponent(''));
+});
+
+test('resolveCartella expands a leading ~ or ~/ with the given homedir, leaves other paths untouched', () => {
+  assert.equal(resolveCartella('~', '/home/davide'), '/home/davide');
+  assert.equal(resolveCartella('~/Desktop', '/home/davide'), join('/home/davide', 'Desktop'));
+  assert.equal(resolveCartella('/tmp/altrove', '/home/davide'), '/tmp/altrove');
+  assert.equal(resolveCartella('altrove', '/home/davide'), 'altrove');
+  assert.equal(resolveCartella('~utente/x', '/home/davide'), '~utente/x');
 });
 
 test('writeExclusive never overwrites and adds a numeric suffix', async () => {
@@ -57,4 +65,25 @@ test('writeExclusive propagates non-EEXIST errors after cleanup', async () => {
   await assert.rejects(writeExclusive(dir, 'fail', 'txt', 999 as unknown as string));
   // Verify no files left behind
   assert.equal((await readdir(dir)).length, 0);
+});
+
+test('writeExclusive never deletes a pre-existing entry it could not open', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pivella-docs-'));
+  await writeFile(join(dir, 'x.txt'), 'originale');
+  // Deny traversal into dir so open() fails with EACCES (not EEXIST) before ever succeeding.
+  await chmod(dir, 0o000);
+  try {
+    await assert.rejects(writeExclusive(dir, 'x', 'txt', 'data'), /EACCES/);
+  } finally {
+    await chmod(dir, 0o755);
+  }
+  // The pre-existing file must survive: writeExclusive never actually opened it.
+  assert.equal(await readFile(join(dir, 'x.txt'), 'utf8'), 'originale');
+});
+
+test('isFuoriDaCartella rejects escapes, absolute results and the root itself, accepts a root of /', () => {
+  assert.equal(isFuoriDaCartella('/tmp/docs', '/tmp/docs/a.txt'), false);
+  assert.equal(isFuoriDaCartella('/', '/a.txt'), false);
+  assert.equal(isFuoriDaCartella('/tmp/docs', '/tmp/other/a.txt'), true);
+  assert.equal(isFuoriDaCartella('/tmp/docs', '/tmp/docs'), true);
 });
