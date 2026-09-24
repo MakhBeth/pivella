@@ -1,10 +1,16 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Upload, Download, FileText, ChevronDown, ChevronUp, Plus, Trash2, X, AlertTriangle } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { parseXmlToInvoice } from '../../lib/pdf/xmlParser';
+import { buildCourtesyInvoice, buildPdfOptions, righeOrFallback } from '../../lib/fatturaDocumento';
 import { saveAs } from 'file-saver';
 import type { Invoice, PDFOptions, Line } from '../../lib/pdf/types';
 import type { ValutaConfig } from '../../types';
+
+let cortesiaRequest: string | null = null;
+/** Chiede alla pagina di aprirsi con questa fattura salvata (stesso idioma di goToProposte). */
+export function requestCortesiaFor(fatturaId: string): void { cortesiaRequest = fatturaId; }
+export function takeCortesiaRequest(): string | null { const id = cortesiaRequest; cortesiaRequest = null; return id; }
 
 // WCAG contrast ratio utilities
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -71,9 +77,8 @@ function adjustColorForContrast(color: string, background: string, minRatio: num
 const MIN_CONTRAST_RATIO = 4.5; // WCAG AA for normal text
 
 export function FatturaCortesia() {
-  const { config, setConfig, showToast } = useApp();
+  const { config, setConfig, showToast, fatture, clienti } = useApp();
   const valute: ValutaConfig[] = config.valute?.length ? config.valute : [{ codice: 'EUR', simbolo: '€' }];
-  const currencyMap = Object.fromEntries(valute.map(v => [v.codice, v.simbolo]));
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // PDF Settings (from config)
@@ -96,6 +101,25 @@ export function FatturaCortesia() {
   const [parsedInvoice, setParsedInvoice] = useState<Invoice | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  const [fatturaSalvataId, setFatturaSalvataId] = useState<string>('');
+  const [fallbackAvviso, setFallbackAvviso] = useState(false);
+  const fattureOrdinate = useMemo(() => [...fatture].sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : 0)), [fatture]);
+
+  const caricaFatturaSalvata = (id: string) => {
+    setFatturaSalvataId(id);
+    const f = fatture.find((x) => x.id === id);
+    if (!f) { setParsedInvoice(null); return; }
+    setSelectedFile(null);
+    setParsedInvoice(buildCourtesyInvoice(f, clienti.find((c) => c.id === f.clienteId), config));
+    setFallbackAvviso(righeOrFallback(f).fallback);
+  };
+
+  useEffect(() => {
+    const id = takeCortesiaRequest();
+    if (id) caricaFatturaSalvata(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSaveSettings = () => {
     setConfig({
@@ -150,6 +174,8 @@ export function FatturaCortesia() {
     }
 
     setSelectedFile(file);
+    setFatturaSalvataId('');
+    setFallbackAvviso(false);
 
     try {
       const text = await file.text();
@@ -193,7 +219,7 @@ export function FatturaCortesia() {
 
   const handleGenerate = async () => {
     if (!parsedInvoice) {
-      showToast('Seleziona prima un file XML', 'error');
+      showToast('Scegli una fattura salvata o carica un XML', 'error');
       return;
     }
 
@@ -206,16 +232,12 @@ export function FatturaCortesia() {
       ]);
 
       const options: PDFOptions = {
-        colors: {
-          primary: primaryColor,
-          text: textColor,
-        },
+        ...buildPdfOptions(config, { locale }),
+        colors: { primary: primaryColor, text: textColor },
         footer: showFooter,
         footerText: footerText || undefined,
         footerLink: footerLink || undefined,
-        locale,
         logoSrc: logoBase64,
-        currencyMap,
       };
 
       const pdfDoc = GeneratePDF(parsedInvoice, options);
@@ -241,7 +263,7 @@ export function FatturaCortesia() {
     <>
       <div className="page-header">
         <h1 className="page-title">Fattura di Cortesia</h1>
-        <p className="page-subtitle">Genera PDF da fattura elettronica XML</p>
+        <p className="page-subtitle">Genera il PDF da una fattura salvata o da un XML</p>
       </div>
 
       {/* IMPOSTAZIONI PDF */}
@@ -422,6 +444,22 @@ export function FatturaCortesia() {
         </h2>
 
         <div className="input-group">
+          <label className="input-label" htmlFor="cortesia-fattura-salvata">Da fattura salvata</label>
+          <select id="cortesia-fattura-salvata" className="input-field" value={fatturaSalvataId} onChange={(e) => caricaFatturaSalvata(e.target.value)}>
+            <option value="">Scegli una fattura...</option>
+            {fattureOrdinate.map((f) => (
+              <option key={f.id} value={f.id}>{`${f.numero ?? '-'} del ${new Date(f.data).toLocaleDateString('it-IT')}, ${f.clienteNome}, ${(f.importoValuta ?? f.importo).toFixed(2)} ${f.valuta ?? 'EUR'}`}</option>
+            ))}
+          </select>
+          {fallbackAvviso && (
+            <p role="status" style={{ marginTop: 6, color: 'var(--accent-yellow)' }}>
+              <AlertTriangle size={14} aria-hidden="true" /> Righe non salvate: ho usato una riga unica, modificala o reimporta l'XML originale.
+            </p>
+          )}
+        </div>
+        <p style={{ textAlign: 'center', color: 'var(--text-muted)', margin: '8px 0' }}>oppure</p>
+
+        <div className="input-group">
           <label className="input-label">Seleziona file XML FatturaPA</label>
 
           {/* Drop zone */}
@@ -470,7 +508,7 @@ export function FatturaCortesia() {
         </div>
 
         {/* MODIFICA DATI FATTURA - collapsible */}
-        {selectedFile && parsedInvoice && (
+        {parsedInvoice && (selectedFile || fatturaSalvataId) && (
           <details style={{ marginTop: 20 }}>
             <summary
               style={{
@@ -486,9 +524,11 @@ export function FatturaCortesia() {
             >
               <FileText size={18} aria-hidden="true" />
               Modifica dati fattura
-              <span style={{ marginLeft: 'auto', fontSize: '0.85rem', color: 'var(--text-muted)', fontFamily: 'Space Mono' }}>
-                {selectedFile.name}
-              </span>
+              {selectedFile && (
+                <span style={{ marginLeft: 'auto', fontSize: '0.85rem', color: 'var(--text-muted)', fontFamily: 'Space Mono' }}>
+                  {selectedFile.name}
+                </span>
+              )}
             </summary>
             <div style={{ marginTop: 16 }}>
               <InvoiceEditorContent

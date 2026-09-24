@@ -15,6 +15,7 @@ import {
 import { AppProvider, useApp } from "../context/AppContext";
 import { Toast } from "./shared/Toast";
 import { ProposteBanner } from "./shared/ProposteInbox";
+import { requestCortesiaFor } from "./pages/FatturaCortesia";
 import { LoadingSpinner } from "./shared/LoadingSpinner";
 import { useDesignStyle } from "./shared/DesignStyleSwitch";
 import { UserSelector } from "./shared/UserSelector";
@@ -112,11 +113,6 @@ const ImportBackupModal = lazy(() =>
 const EditDataIncassoModal = lazy(() =>
   import("./modals/EditDataIncassoModal").then((m) => ({
     default: m.EditDataIncassoModal,
-  })),
-);
-const CourtesyInvoiceModal = lazy(() =>
-  import("./modals/CourtesyInvoiceModal").then((m) => ({
-    default: m.CourtesyInvoiceModal,
   })),
 );
 const ManageServicesModal = lazy(() =>
@@ -588,6 +584,10 @@ function ForfettarioAppInner() {
               <FatturePage
                 setShowModal={setShowModal}
                 setEditingFattura={setEditingFattura}
+                onOpenCortesia={(id) => {
+                  requestCortesiaFor(id);
+                  setCurrentPage("fattura-cortesia");
+                }}
               />
             )}
 
@@ -771,13 +771,6 @@ function ForfettarioAppInner() {
                 setShowModal(null);
                 showToast("Data incasso aggiornata!");
               }}
-            />
-          )}
-
-          {showModal === "courtesy-invoice" && (
-            <CourtesyInvoiceModal
-              isOpen={true}
-              onClose={() => setShowModal(null)}
             />
           )}
 

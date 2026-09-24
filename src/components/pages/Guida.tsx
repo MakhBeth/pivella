@@ -49,7 +49,7 @@ const PAGE_SECTIONS: PageSection[] = [
     icon: FilePlus,
     color: "var(--accent-blue)",
     title: "Fattura di Cortesia",
-    text: "Genera un PDF \"di cortesia\" da mandare al cliente: la fattura elettronica vera passa dallo SDI, ma un PDF leggibile da allegare alla mail fa sempre comodo. Scegli fattura e lingua, e il PDF è pronto.",
+    text: "Genera un PDF \"di cortesia\" da mandare al cliente: la fattura elettronica vera passa dallo SDI, ma un PDF leggibile da allegare alla mail fa sempre comodo. Scegli una fattura salvata (o carica il suo XML), la lingua, e il PDF è pronto.",
   },
   {
     icon: CalendarClock,
