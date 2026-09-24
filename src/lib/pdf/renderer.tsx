@@ -12,11 +12,12 @@ import {
 } from '@react-pdf/renderer';
 import { getTranslations } from './translations';
 
-// Register font for browser - using public URL path
-Font.register({
-  family: 'Roboto-Mono',
-  src: '/fonts/RobotoMono-Regular.ttf',
-});
+/** Font del PDF: nel browser dall'URL pubblico, in Node (server MCP) da un percorso su disco. */
+export function registerPdfFont(src: string): void {
+  Font.register({ family: 'Roboto-Mono', src });
+}
+
+if (typeof window !== 'undefined') registerPdfFont('/fonts/RobotoMono-Regular.ttf');
 
 // Create Document Component
 const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
