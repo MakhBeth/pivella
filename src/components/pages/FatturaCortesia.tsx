@@ -109,8 +109,15 @@ export function FatturaCortesia() {
   const caricaFatturaSalvata = (id: string) => {
     setFatturaSalvataId(id);
     const f = fatture.find((x) => x.id === id);
-    if (!f) { setParsedInvoice(null); return; }
+    if (!f) {
+      setParsedInvoice(null);
+      setFallbackAvviso(false);
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
     setParsedInvoice(buildCourtesyInvoice(f, clienti.find((c) => c.id === f.clienteId), config));
     setFallbackAvviso(righeOrFallback(f).fallback);
   };
