@@ -207,7 +207,7 @@ test('exportSnapshot builds the local v2 snapshot from every store plus the loca
   meta.close();
 
   const snapshot = await db.exportSnapshot();
-  assert.equal(snapshot.schemaVersion, 2);
+  assert.equal(snapshot.schemaVersion, 3);
   assert.equal(snapshot.updatedAt, NOW);
   assert.deepEqual(snapshot.writer, { id: db.writerId, kind: 'app' });
   assert.deepEqual(snapshot.clienti.map((c) => c.id), ['c1']);

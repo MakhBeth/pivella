@@ -1,4 +1,6 @@
-/** Registro dei 17 tool nell'ordine del contratto (13.1). */
+/** Registro dei 19 tool nell'ordine del contratto (13.1). */
+import { generaFatturaCortesia } from './generaFatturaCortesia';
+import { generaFatturaXml } from './generaFatturaXml';
 import { getConfig } from './getConfig';
 import { getFattura } from './getFattura';
 import { getGiornatePerCliente } from './getGiornatePerCliente';
@@ -38,4 +40,6 @@ export const TOOLS: ToolDef[] = [
   proposeIncasso,
   proposeScadenzaPagata,
   withdrawProposal,
+  generaFatturaXml,
+  generaFatturaCortesia,
 ] as unknown as ToolDef[];

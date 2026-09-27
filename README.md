@@ -85,13 +85,15 @@ pivella/
 
 ## 🤖 AI assistant (MCP server)
 
-Pivella ships a local MCP server so that Claude, Codex, Cursor or any MCP client can read your data and propose changes, all on your computer. The assistant only proposes; you confirm in the app.
+Pivella ships a local MCP server so that Claude, Codex, Cursor or any MCP client can read your data and propose changes, all on your computer. The assistant only proposes; you confirm in the app. It can also generate the FatturaPA XML or a courtesy PDF for a saved invoice, written into `documenti/<year>` in the sync folder without touching your Pivella data.
 
 ```sh
 claude mcp add pivella -- npx -y pivella-mcp --dir /path/to/sync-folder
 ```
 
 Setup for every client, how it works and how to publish the package: [mcp/README.md](mcp/README.md). Package on npm: [pivella-mcp](https://www.npmjs.com/package/pivella-mcp).
+
+pivella-mcp 1.0 requires Pivella 7.0 and vice versa: the sync file moves to schema version 3. Update both together.
 
 ## 🛠️ Technologies
 

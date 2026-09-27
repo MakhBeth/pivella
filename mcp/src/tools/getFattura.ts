@@ -6,7 +6,7 @@ import { clienteNameResolver, decorateFattura, defineTool, euro, snapshotOf, use
 export const getFattura = defineTool({
   name: 'get_fattura',
   title: 'Dettaglio fattura',
-  description: 'Una fattura del profilo, con il nome del cliente risolto, incassata (boolean) e dataIncassoEffettiva: senza dataIncasso una fattura incassata vale incassata alla data di emissione.',
+  description: 'Una fattura del profilo, con il nome del cliente risolto, incassata (boolean) e dataIncassoEffettiva: senza dataIncasso una fattura incassata vale incassata alla data di emissione. Include righe (se salvate) e haRighe.',
   input: { userId: userIdSchema, fatturaId: z.string().min(1) },
   readOnly: true,
   async handler(ctx, { userId, fatturaId }) {

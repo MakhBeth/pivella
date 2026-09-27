@@ -6,7 +6,7 @@ import { anno, checkRange, clienteNameResolver, dateSchema, decorateFattura, def
 export const listFatture = defineTool({
   name: 'list_fatture',
   title: 'Fatture emesse',
-  description: 'Fatture del profilo per data di emissione, con totali su tutto il filtro: importo (emesso), incassato e daIncassare (la differenza). Ogni fattura porta incassata (boolean) e dataIncassoEffettiva: una fattura senza dataIncasso è incassata alla data di emissione, non "senza incasso". Risponde a "quanto ho emesso e quanto manca all\'appello". Per "quanto ho incassato nell\'anno" usa get_riepilogo_anno, che va per cassa.',
+  description: 'Fatture del profilo per data di emissione, con totali su tutto il filtro: importo (emesso), incassato e daIncassare (la differenza). Ogni fattura porta incassata (boolean) e dataIncassoEffettiva: una fattura senza dataIncasso è incassata alla data di emissione, non "senza incasso". Risponde a "quanto ho emesso e quanto manca all\'appello". Per "quanto ho incassato nell\'anno" usa get_riepilogo_anno, che va per cassa. Ogni fattura ha haRighe: false per le fatture salvate senza dettaglio, per le quali XML e cortesia usano una riga unica.',
   input: {
     userId: userIdSchema,
     anno: z.number().int().optional().describe('Anno di emissione (campo data)'),

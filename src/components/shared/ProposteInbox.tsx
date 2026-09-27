@@ -4,7 +4,8 @@ import { useApp } from '../../context/AppContext';
 import type { Proposal } from '../../lib/sync/schema';
 import { proposalTitle } from '../../lib/sync/applyProposal';
 import { fatturaPreview, type FatturaPayload } from '../../lib/sync/validate';
-import { MISC_CLIENT_ID, VACATION_CLIENT_ID } from '../../types';
+import { downloadFatturaXML } from '../../lib/fatturaDownload';
+import { MISC_CLIENT_ID, VACATION_CLIENT_ID, type Cliente, type Fattura } from '../../types';
 
 export const PROPOSTE_ANCHOR = 'proposte';
 
@@ -69,7 +70,7 @@ function Dettagli({ proposal }: { proposal: Proposal }) {
  * rivalida la proposta e crea il record, il rifiuto la chiude.
  */
 export function ProposteInbox() {
-  const { pendingProposals, confirmProposal, rejectProposal, clienti, fatture, scadenze, isSyncing, showToast } = useApp();
+  const { pendingProposals, confirmProposal, rejectProposal, clienti, fatture, scadenze, isSyncing, showToast, config } = useApp();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const boxRef = useRef<HTMLDivElement>(null);
@@ -93,12 +94,25 @@ export function ProposteInbox() {
     setBusyId(proposal.id);
     setErrors((prev) => ({ ...prev, [proposal.id]: '' }));
     try {
-      const done = apply ? await confirmProposal(proposal.id) : await rejectProposal(proposal.id);
-      if (apply) {
+      const { proposal: done, plan } = apply ? await confirmProposal(proposal.id) : await rejectProposal(proposal.id);
+      if (!apply) {
+        showToast('Proposta rifiutata');
+      } else if (done.kind === 'fattura' && plan) {
+        // I record del piano: il cliente nuovo non è ancora nello stato React
+        const fattura = plan.puts.find((p) => p.store === 'fatture')?.record as Fattura | undefined;
+        const nuovoCliente = plan.puts.find((p) => p.store === 'clienti')?.record as Cliente | undefined;
+        const cliente = nuovoCliente ?? clienti.find((c) => c.id === fattura?.clienteId);
+        try {
+          if (!fattura) throw new Error('fattura non trovata nel piano');
+          downloadFatturaXML(fattura, cliente, config);
+          showToast(`Fattura n. ${fattura.numero} creata, XML scaricato`);
+        } catch (err) {
+          const why = err instanceof Error ? err.message : String(err);
+          showToast(`Fattura n. ${fattura?.numero ?? '?'} creata, ma l'XML non è stato generato: ${why}. Puoi scaricarlo dalla lista fatture.`, 'error');
+        }
+      } else {
         const numero = done.result?.numero ? ` Numero ${done.result.numero}.` : '';
         showToast(`Proposta confermata.${numero}`);
-      } else {
-        showToast('Proposta rifiutata');
       }
     } catch (err) {
       setErrors((prev) => ({ ...prev, [proposal.id]: err instanceof Error ? err.message : String(err) }));

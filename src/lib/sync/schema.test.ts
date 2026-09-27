@@ -30,13 +30,13 @@ const V1_FILE = {
   scadenze: [],
 };
 
-test('schema version is 2', () => {
-  assert.equal(SYNC_SCHEMA_VERSION, 2);
+test('schema version is 3', () => {
+  assert.equal(SYNC_SCHEMA_VERSION, 3);
 });
 
-test('upgradeV1 wraps a v1 file in a v2 envelope and stamps every record', () => {
+test('upgradeV1 wraps a v1 file in a v3 envelope and stamps every record', () => {
   const snap = upgradeV1(V1_FILE, { now: NOW, writer: WRITER });
-  assert.equal(snap.schemaVersion, 2);
+  assert.equal(snap.schemaVersion, 3);
   assert.equal(snap.updatedAt, NOW);
   assert.deepEqual(snap.writer, WRITER);
   assert.equal(snap.restoredAt, null);
@@ -61,7 +61,7 @@ test('upgradeV1 tolerates missing stores', () => {
 test('parseSyncFile detects v1 and reports the upgrade', () => {
   const { snapshot, upgradedFromV1 } = parseSyncFile(JSON.stringify(V1_FILE), { now: NOW, writer: WRITER });
   assert.equal(upgradedFromV1, true);
-  assert.equal(snapshot.schemaVersion, 2);
+  assert.equal(snapshot.schemaVersion, 3);
 });
 
 test('parseSyncFile returns a v2 file untouched', () => {
@@ -73,10 +73,10 @@ test('parseSyncFile returns a v2 file untouched', () => {
 });
 
 test('parseSyncFile rejects a newer schema version', () => {
-  const text = JSON.stringify({ ...createEmptySnapshot({ now: NOW, writer: WRITER }), schemaVersion: 3 });
+  const text = JSON.stringify({ ...createEmptySnapshot({ now: NOW, writer: WRITER }), schemaVersion: 4 });
   assert.throws(
     () => parseSyncFile(text, { now: NOW, writer: WRITER }),
-    (err: unknown) => err instanceof SyncSchemaError && err.code === 'SOURCE_UNAVAILABLE' && err.details?.schemaVersion === 3
+    (err: unknown) => err instanceof SyncSchemaError && err.code === 'SOURCE_UNAVAILABLE' && err.details?.schemaVersion === 4
   );
 });
 
@@ -112,7 +112,7 @@ test('snapshotsEquivalent ignores record order', () => {
 test('serializeSnapshot produces pretty JSON that parses back', () => {
   const snap = createEmptySnapshot({ now: NOW, writer: WRITER });
   const text = serializeSnapshot(snap);
-  assert.ok(text.includes('\n  "schemaVersion": 2'));
+  assert.ok(text.includes('\n  "schemaVersion": 3'));
   assert.deepEqual(JSON.parse(text), snap);
 });
 
@@ -219,4 +219,22 @@ test('parseSyncFile keeps well formed proposals and tombstones', () => {
   const parsed = parseSyncFile(JSON.stringify(file), STAMP).snapshot;
   assert.deepEqual(parsed.proposals, [proposal]);
   assert.deepEqual(parsed.tombstones, [tombstone]);
+});
+
+test('a v2 file is read by v3 and written back as v3', () => {
+  const v2 = { ...createEmptySnapshot({ now: NOW, writer: WRITER }), schemaVersion: 2 };
+  v2.fatture.push({ id: 'f1', userId: 'u1', clienteId: 'c1', clienteNome: 'Acme', data: '2026-01-10', importo: 100 });
+  const { snapshot } = parseSyncFile(JSON.stringify(v2), { now: NOW, writer: WRITER });
+  assert.equal(snapshot.schemaVersion, 3);
+  assert.equal(snapshot.fatture[0].righe, undefined);
+});
+
+test('fatture with valid righe and dataCambio pass, malformed ones make the file unusable', () => {
+  const base = createEmptySnapshot({ now: NOW, writer: WRITER });
+  const good = { ...base, fatture: [{ id: 'f1', userId: 'u1', clienteId: 'c1', clienteNome: 'A', data: '2026-01-10', importo: 100, righe: [{ descrizione: 'X', quantita: 1, prezzoUnitario: 100 }], dataCambio: '2026-01-09' }] };
+  assert.equal(parseSyncFile(JSON.stringify(good), { now: NOW, writer: WRITER }).snapshot.fatture[0].righe?.length, 1);
+  const badRighe = { ...base, fatture: [{ ...good.fatture[0], righe: [{ descrizione: 'X', quantita: -1, prezzoUnitario: 100 }] }] };
+  assert.throws(() => parseSyncFile(JSON.stringify(badRighe), { now: NOW, writer: WRITER }), (e: unknown) => (e as SyncSchemaError).code === 'SOURCE_UNAVAILABLE');
+  const badData = { ...base, fatture: [{ ...good.fatture[0], dataCambio: '09/01/2026' }] };
+  assert.throws(() => parseSyncFile(JSON.stringify(badData), { now: NOW, writer: WRITER }), (e: unknown) => (e as SyncSchemaError).code === 'SOURCE_UNAVAILABLE');
 });

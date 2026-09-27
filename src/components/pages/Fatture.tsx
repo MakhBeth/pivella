@@ -2,15 +2,17 @@ import { useState } from 'react';
 import { Upload, FileText, Trash2, Edit, FileArchive, FilePlus, Landmark, ChevronDown } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { Currency } from '../ui/Currency';
+import { downloadFatturaXML } from '../../lib/fatturaDownload';
 import type { Fattura } from '../../types';
 
 interface FattureProps {
   setShowModal: (modal: string | null) => void;
   setEditingFattura: (fattura: Fattura) => void;
+  onOpenCortesia: (fatturaId: string) => void;
 }
 
-export function FatturePage({ setShowModal, setEditingFattura }: FattureProps) {
-  const { clienti, fatture, removeFattura } = useApp();
+export function FatturePage({ setShowModal, setEditingFattura, onOpenCortesia }: FattureProps) {
+  const { clienti, fatture, removeFattura, config, showToast } = useApp();
   const [filtroAnnoFatture, setFiltroAnnoFatture] = useState<string>(String(new Date().getFullYear()));
   const [ordinamentoFatture, setOrdinamentoFatture] = useState<{ campo: string; direzione: string }>({ campo: 'dataIncasso', direzione: 'desc' });
 
@@ -80,6 +82,15 @@ export function FatturePage({ setShowModal, setEditingFattura }: FattureProps) {
     const fattureCliente = fattureAnnoCorrente.filter(f => f.clienteId === cliente.id);
     return { ...cliente, totale: fattureCliente.reduce((sum, f) => sum + f.importo, 0), count: fattureCliente.length };
   }).sort((a, b) => b.totale - a.totale);
+
+  const scaricaXML = (f: Fattura) => {
+    try {
+      const { fallback } = downloadFatturaXML(f, clienti.find((c) => c.id === f.clienteId), config);
+      showToast(fallback ? 'XML scaricato con una riga unica: questa fattura non ha le righe salvate. Controlla che corrisponda a quello inviato allo SDI.' : 'XML scaricato');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Errore generazione XML', 'error');
+    }
+  };
 
   return (
     <>
@@ -255,7 +266,11 @@ export function FatturePage({ setShowModal, setEditingFattura }: FattureProps) {
                         <Currency amount={f.importo} symbol={f.valutaSimbolo || '€'} tabular />
                       )}
                     </td>
-                    <td><button className="btn btn-danger" onClick={() => removeFattura(f.id)} aria-label="Elimina fattura"><Trash2 size={16} aria-hidden="true" /></button></td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => scaricaXML(f)} aria-label={`Scarica XML della fattura ${f.numero ?? ''}`} title="Scarica XML"><FileText size={16} aria-hidden="true" /></button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => onOpenCortesia(f.id)} aria-label={`Fattura di cortesia per la fattura ${f.numero ?? ''}`} title="Fattura di cortesia" style={{ marginLeft: 6 }}><FilePlus size={16} aria-hidden="true" /></button>
+                      <button className="btn btn-danger" onClick={() => removeFattura(f.id)} aria-label="Elimina fattura" style={{ marginLeft: 6 }}><Trash2 size={16} aria-hidden="true" /></button>
+                    </td>
                   </tr>
                 );
               })}

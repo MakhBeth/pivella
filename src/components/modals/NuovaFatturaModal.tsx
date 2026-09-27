@@ -4,6 +4,8 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../hooks/useDialog';
 import { generateFatturaXML, downloadXML, generateFileName, parseFatturaXMLForEdit } from '../../lib/xml/generator';
 import { getECBRate, convertToEUR } from '../../lib/utils/ecbRates';
+import { clienteXMLData } from '../../lib/fatturaDocumento';
+import { validateFatturaRighe } from '../../lib/sync/validate';
 import type { NuovaFatturaRiga } from '../../types';
 
 interface NuovaFatturaModalProps {
@@ -227,16 +229,7 @@ export function NuovaFatturaModal({ isOpen, onClose }: NuovaFatturaModalProps) {
         showToast('Cliente non trovato', 'error');
         return;
       }
-      clienteData = {
-        denominazione: cliente.nome,
-        partitaIva: cliente.piva,
-        nazione: cliente.nazione || 'IT',
-        indirizzo: cliente.indirizzo,
-        numeroCivico: cliente.numeroCivico,
-        cap: cliente.cap,
-        comune: cliente.comune,
-        provincia: cliente.provincia,
-      };
+      clienteData = clienteXMLData(cliente, cliente.nome);
     }
 
     // Validazione cambio per valuta estera
@@ -304,6 +297,11 @@ export function NuovaFatturaModal({ isOpen, onClose }: NuovaFatturaModalProps) {
         valuta: valutaCorrente.codice,
         valutaSimbolo: valutaCorrente.simbolo,
         ...(isMultiCurrency ? { tassoCambio: tassoCambioNum } : {}),
+        ...(isMultiCurrency ? { dataCambio: dataCambio || data } : {}),
+        ...(() => {
+          const check = validateFatturaRighe(righeValide);
+          return check.ok ? { righe: check.righe, righeSource: 'app' as const } : {};
+        })(),
       };
 
       await addFattura(nuovaFattura);

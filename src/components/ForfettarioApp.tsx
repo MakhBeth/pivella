@@ -15,6 +15,7 @@ import {
 import { AppProvider, useApp } from "../context/AppContext";
 import { Toast } from "./shared/Toast";
 import { ProposteBanner } from "./shared/ProposteInbox";
+import { requestCortesiaFor } from "./pages/FatturaCortesia";
 import { LoadingSpinner } from "./shared/LoadingSpinner";
 import { useDesignStyle } from "./shared/DesignStyleSwitch";
 import { UserSelector } from "./shared/UserSelector";
@@ -112,11 +113,6 @@ const ImportBackupModal = lazy(() =>
 const EditDataIncassoModal = lazy(() =>
   import("./modals/EditDataIncassoModal").then((m) => ({
     default: m.EditDataIncassoModal,
-  })),
-);
-const CourtesyInvoiceModal = lazy(() =>
-  import("./modals/CourtesyInvoiceModal").then((m) => ({
-    default: m.CourtesyInvoiceModal,
   })),
 );
 const ManageServicesModal = lazy(() =>
@@ -302,59 +298,33 @@ function ForfettarioAppInner() {
   const isAltroPageActive = ["fattura-cortesia", "scadenze", "simulatore"].includes(currentPage);
 
   // Upload handlers
+  const saveImport = async (
+    result: Awaited<ReturnType<typeof processBatchXmlFiles>>,
+    firstXml: string | undefined,
+  ) => {
+    for (const cliente of result.newClienti) await addCliente(cliente);
+    for (const fattura of result.newFatture) await addFattura(fattura);
+    for (const fattura of result.enrichedFatture) await updateFattura(fattura);
+    if (firstXml) {
+      const extractedData = extractEmittenteFromXml(firstXml);
+      const configUpdates = extractedData ? autoPopulateConfig(extractedData, config) : null;
+      if (configUpdates) setConfig({ ...config, ...configUpdates });
+      return Boolean(configUpdates);
+    }
+    return false;
+  };
+
   const handleFatturaUpload = async (file: File) => {
     const text = await file.text();
-    const parsed = parseFatturaXML(text);
-    if (parsed) {
-      let clienteId = clienti.find((c) => c.piva === parsed.clientePiva)?.id;
-      if (!clienteId && parsed.clienteNome) {
-        const nuovoCliente = {
-          id: Date.now().toString(),
-          nome: parsed.clienteNome,
-          piva: parsed.clientePiva || "",
-          email: parsed.clienteEmail || "",
-          indirizzo: parsed.clienteIndirizzo || "",
-          numeroCivico: parsed.clienteNumeroCivico || "",
-          cap: parsed.clienteCap || "",
-          comune: parsed.clienteComune || "",
-          provincia: parsed.clienteProvincia || "",
-          nazione: parsed.clienteNazione || "",
-        };
-        await addCliente(nuovoCliente);
-        clienteId = nuovoCliente.id;
-      }
-
-      const nuovaFattura = {
-        id: Date.now().toString(),
-        numero: parsed.numero,
-        importo: parsed.importo,
-        data: parsed.data,
-        dataIncasso: parsed.dataIncasso,
-        clienteId: clienteId || "",
-        clienteNome: parsed.clienteNome,
-        duplicateKey: `${parsed.numero}-${parsed.data}-${parsed.importo}`,
-      };
-      await addFattura(nuovaFattura);
-
-      // Auto-popola impostazioni vuote con dati emittente dalla fattura
-      const extractedData = extractEmittenteFromXml(text);
-      if (extractedData) {
-        const configUpdates = autoPopulateConfig(extractedData, config);
-        if (configUpdates) {
-          setConfig({ ...config, ...configUpdates });
-          showToast(
-            "Fattura caricata! Impostazioni aggiornate automaticamente.",
-          );
-          setShowModal(null);
-          return;
-        }
-      }
-
-      setShowModal(null);
-      showToast("Fattura caricata!");
-    } else {
-      showToast("Errore parsing XML", "error");
-    }
+    const result = await processBatchXmlFiles([{ name: file.name, content: text }], fatture, clienti, parseFatturaXML, null, undefined, config.valute);
+    const { summary } = result;
+    if (summary.failed > 0) { showToast(summary.failedFiles[0]?.error || 'Errore parsing XML', 'error'); return; }
+    const configAggiornata = await saveImport(result, text);
+    setShowModal(null);
+    const avvisoRighe = summary.righeNonImportate[0] ? ` Righe non importate: ${summary.righeNonImportate[0].motivo}.` : '';
+    if (summary.enriched > 0) showToast('Fattura già presente: righe aggiunte.');
+    else if (summary.duplicates > 0) showToast(`Fattura già presente.${avvisoRighe}`);
+    else showToast(`${configAggiornata ? 'Fattura caricata! Impostazioni aggiornate automaticamente.' : 'Fattura caricata!'}${avvisoRighe}`);
   };
 
   const handleBatchUpload = async (files: FileList) => {
@@ -367,35 +337,12 @@ function ForfettarioAppInner() {
         xmlFiles.push({ name: files[i].name, content });
       }
 
-      const { summary, newFatture, newClienti } = await processBatchXmlFiles(
-        xmlFiles,
-        fatture,
-        clienti,
-        parseFatturaXML,
-        null,
-      );
+      const result = await processBatchXmlFiles(xmlFiles, fatture, clienti, parseFatturaXML, null, undefined, config.valute);
 
-      // Save new clienti and fatture to DB using context methods
-      for (const cliente of newClienti) {
-        await addCliente(cliente);
-      }
-      for (const fattura of newFatture) {
-        await addFattura(fattura);
-      }
-
-      // Auto-popola impostazioni vuote con dati emittente dalla prima fattura
-      if (xmlFiles.length > 0) {
-        const extractedData = extractEmittenteFromXml(xmlFiles[0].content);
-        if (extractedData) {
-          const configUpdates = autoPopulateConfig(extractedData, config);
-          if (configUpdates) {
-            setConfig({ ...config, ...configUpdates });
-          }
-        }
-      }
+      await saveImport(result, xmlFiles[0]?.content);
 
       setShowModal("import-summary");
-      setImportSummary(summary);
+      setImportSummary(result.summary);
     } catch (error: any) {
       console.error("Batch upload error:", error);
       showToast(
@@ -413,35 +360,12 @@ function ForfettarioAppInner() {
         return;
       }
 
-      const { summary, newFatture, newClienti } = await processBatchXmlFiles(
-        xmlFiles,
-        fatture,
-        clienti,
-        parseFatturaXML,
-        null,
-      );
+      const result = await processBatchXmlFiles(xmlFiles, fatture, clienti, parseFatturaXML, null, undefined, config.valute);
 
-      // Save new clienti and fatture to DB using context methods
-      for (const cliente of newClienti) {
-        await addCliente(cliente);
-      }
-      for (const fattura of newFatture) {
-        await addFattura(fattura);
-      }
-
-      // Auto-popola impostazioni vuote con dati emittente dalla prima fattura
-      if (xmlFiles.length > 0) {
-        const extractedData = extractEmittenteFromXml(xmlFiles[0].content);
-        if (extractedData) {
-          const configUpdates = autoPopulateConfig(extractedData, config);
-          if (configUpdates) {
-            setConfig({ ...config, ...configUpdates });
-          }
-        }
-      }
+      await saveImport(result, xmlFiles[0]?.content);
 
       setShowModal("import-summary");
-      setImportSummary(summary);
+      setImportSummary(result.summary);
     } catch (error: any) {
       showToast(
         "Errore caricamento ZIP: " + (error?.message || "errore sconosciuto"),
@@ -660,6 +584,10 @@ function ForfettarioAppInner() {
               <FatturePage
                 setShowModal={setShowModal}
                 setEditingFattura={setEditingFattura}
+                onOpenCortesia={(id) => {
+                  requestCortesiaFor(id);
+                  setCurrentPage("fattura-cortesia");
+                }}
               />
             )}
 
@@ -843,13 +771,6 @@ function ForfettarioAppInner() {
                 setShowModal(null);
                 showToast("Data incasso aggiornata!");
               }}
-            />
-          )}
-
-          {showModal === "courtesy-invoice" && (
-            <CourtesyInvoiceModal
-              isOpen={true}
-              onClose={() => setShowModal(null)}
             />
           )}
 

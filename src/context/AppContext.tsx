@@ -10,6 +10,7 @@ import { useWorkLogs } from '../hooks/useWorkLogs';
 import { useScadenze } from '../hooks/useScadenze';
 import { useFolderSync } from '../hooks/useFolderSync';
 import type { Proposal, SyncSnapshot } from '../lib/sync/schema';
+import type { ProposalPlan } from '../lib/sync/applyProposal';
 import { withExpiry } from '../lib/sync/proposals';
 import type { AppliedChanges } from '../lib/sync/syncCycle';
 import type { MergeResult } from '../lib/sync/merge';
@@ -100,8 +101,8 @@ interface AppContextValue {
   restoreBackup: (name: string) => Promise<void>;
   /** Proposte dell'assistente per il profilo attivo, ancora in attesa. */
   pendingProposals: Proposal[];
-  confirmProposal: (proposalId: string) => Promise<Proposal>;
-  rejectProposal: (proposalId: string, reason?: string) => Promise<Proposal>;
+  confirmProposal: (proposalId: string) => Promise<{ proposal: Proposal; plan: ProposalPlan | null }>;
+  rejectProposal: (proposalId: string, reason?: string) => Promise<{ proposal: Proposal; plan: ProposalPlan | null }>;
   setSyncFolderHandle: (handle: FileSystemDirectoryHandle | null) => void;
   setSyncFolderName: (name: string | null) => void;
   setLastSyncTime: (time: Date | null) => void;

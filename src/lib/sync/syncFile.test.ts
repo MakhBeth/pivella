@@ -35,7 +35,7 @@ test('readSyncSnapshot upgrades a v1 file under the current name', async () => {
   const read = (await readSyncSnapshot(fs, STAMP))!;
   assert.equal(read.source, 'current');
   assert.equal(read.upgradedFromV1, true);
-  assert.equal(read.snapshot.schemaVersion, 2);
+  assert.equal(read.snapshot.schemaVersion, 3);
   assert.equal(read.snapshot.clienti[0].updatedAt, NOW);
 });
 
@@ -89,7 +89,7 @@ test('writeSyncSnapshot over a v1 file keeps the original with kind v1', async (
   assert.equal(result.backup.status, 'created');
   assert.match(result.backup.file!, /\.v1\.json$/);
   assert.equal(fromBytes(await fs.read(result.backup.file!)), v1File, 'byte esatti del file v1');
-  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).schemaVersion, 2);
+  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).schemaVersion, 3);
 });
 
 test('writeSyncSnapshot over a legacy-named file keeps it as v1 backup, writes the new name and leaves the legacy file untouched', async () => {
@@ -100,7 +100,7 @@ test('writeSyncSnapshot over a legacy-named file keeps it as v1 backup, writes t
   assert.equal(result.backup.status, 'created');
   assert.match(result.backup.file!, /\.v1\.json$/);
   assert.equal(fromBytes(await fs.read(result.backup.file!)), v1File);
-  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).schemaVersion, 2);
+  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).schemaVersion, 3);
   assert.equal(fromBytes(await fs.read(LEGACY_SYNC_FILENAME)), v1File);
   assert.ok((await fs.list(BACKUP_DIR)).includes(result.backup.file!.replace(`${BACKUP_DIR}/`, '')));
   assert.notEqual(await fs.read(LATEST_FILE), null);
@@ -110,7 +110,7 @@ test('writeSyncSnapshot on first sync creates the file without a backup', async 
   const fs = memoryFileSystem({ withMove: true });
   const result = await writeSyncSnapshot(fs, createEmptySnapshot(STAMP), { now: new Date(NOW), writer: APP, previous: null });
   assert.equal(result.backup.status, 'skipped-missing');
-  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).schemaVersion, 2);
+  assert.equal(JSON.parse(fromBytes(await fs.read(SYNC_FILENAME))!).schemaVersion, 3);
 });
 
 test('writeSyncSnapshot does not touch the sync file when the backup fails', async () => {

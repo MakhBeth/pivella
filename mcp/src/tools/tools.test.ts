@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { join, sep } from 'node:path';
 
 import { SYNC_FILENAME } from '../../../src/lib/sync/backup';
 import { createEmptySnapshot, parseSyncFile, type Proposal } from '../../../src/lib/sync/schema';
@@ -27,7 +30,7 @@ function seed() {
     { id: 'c9', userId: 'u2', nome: 'Altrui' },
   );
   s.fatture.push(
-    { id: 'f1', userId: 'u1', clienteId: 'c1', clienteNome: 'Acme', numero: '01', data: '2026-01-10', dataIncasso: '2026-01-20', importo: 1000 },
+    { id: 'f1', userId: 'u1', clienteId: 'c1', clienteNome: 'Acme', numero: '01', data: '2026-01-10', dataIncasso: '2026-01-20', importo: 1000, righe: [{ descrizione: 'Sviluppo', quantita: 2, prezzoUnitario: 500 }] },
     { id: 'f2', userId: 'u1', clienteId: 'c1', clienteNome: 'Acme', numero: '02', data: '2026-03-10', importo: 500, incassato: false },
     { id: 'f3', userId: 'u1', clienteId: 'c2', clienteNome: 'Beta', numero: '03', data: '2026-12-28', dataIncasso: '2027-01-05', importo: 300 },
     { id: 'f4', userId: 'u1', clienteId: 'c2', clienteNome: 'Beta', numero: '05', data: '2025-06-01', dataIncasso: '2025-06-01', importo: 200 },
@@ -60,8 +63,9 @@ async function setup(proposals: Proposal[] = []) {
   s.proposals = proposals;
   await fs.write(SYNC_FILENAME, text(JSON.stringify(s)));
   const ds = new FileDataSource(fs, { writerId: 'mcp-1', now: () => new Date(NOW), lock: { sleep: async () => {}, timeoutMs: 0 } });
-  const ctx: ToolContext = { ds, principal: { kind: 'local', writerId: 'mcp-1' }, now: () => new Date(NOW), client: 'test-client' };
-  return { fs, ds, ctx };
+  const syncDir = await mkdtemp(join(tmpdir(), 'pivella-mcp-'));
+  const ctx: ToolContext = { ds, principal: { kind: 'local', writerId: 'mcp-1' }, now: () => new Date(NOW), client: 'test-client', syncDir };
+  return { fs, ds, ctx, syncDir };
 }
 
 const parsedFile = (fs: MemoryFileSystem) => parseSyncFile(fromBytes(fs.files.get(SYNC_FILENAME) ?? null) ?? '', { now: NOW, writer: { id: 'x', kind: 'mcp' } }).snapshot;
@@ -85,11 +89,12 @@ async function fails(ctx: ToolContext, name: string, args: unknown): Promise<{ c
   return out.error!;
 }
 
-test('the registry exposes the seventeen tools of the contract', () => {
+test('the registry exposes the nineteen tools of the contract', () => {
   assert.deepEqual(TOOLS.map((t) => t.name), [
     'list_users', 'get_config', 'list_clienti', 'list_fatture', 'get_fattura', 'list_work_logs', 'list_scadenze',
     'get_riepilogo_anno', 'get_giornate_per_cliente', 'list_proposals', 'get_proposal',
     'propose_work_log', 'propose_fattura', 'propose_cliente', 'propose_incasso', 'propose_scadenza_pagata', 'withdraw_proposal',
+    'genera_fattura_xml', 'genera_fattura_cortesia',
   ]);
   for (const t of TOOLS) assert.ok(t.description.length > 10, `${t.name} has a description`);
 });
@@ -357,4 +362,83 @@ test('fund configuration survives sync and MCP reports yearly deductions and mis
   assert.match((missing.avvisi as string[])[0], /2027/);
   const config = await call(ctx, 'get_config', { userId: 'u1' });
   assert.match(config.text, /Inarcassa/);
+});
+
+test('get_fattura and list_fatture expose righe and haRighe', async () => {
+  const { ctx } = await setup();
+  const one = await ok(ctx, 'get_fattura', { userId: 'u1', fatturaId: 'f1' });
+  assert.deepEqual((one.fattura as { righe: unknown }).righe, [{ descrizione: 'Sviluppo', quantita: 2, prezzoUnitario: 500 }]);
+  assert.equal((one.fattura as { haRighe: boolean }).haRighe, true);
+  const list = await ok(ctx, 'list_fatture', { userId: 'u1', anno: 2026 });
+  assert.equal((list.fatture as Array<{ id: string; haRighe: boolean }>).find((f) => f.id === 'f2')!.haRighe, false);
+});
+
+test('genera_fattura_xml writes the XML into documenti/<anno> without touching the sync file', async () => {
+  const { ctx, fs, syncDir } = await setup();
+  const before = fs.files.get(SYNC_FILENAME);
+  const out = await ok(ctx, 'genera_fattura_xml', { userId: 'u1', fatturaId: 'f1' });
+  const percorso = out.percorso as string;
+  assert.ok(percorso.startsWith(join(syncDir, 'documenti', '2026')));
+  assert.match(percorso, /IT01234567890_[A-Z0-9]{5}\.xml$/);
+  const xml = await readFile(percorso, 'utf8');
+  assert.match(xml, /<Descrizione>Sviluppo<\/Descrizione>/);
+  assert.equal(out.fallbackRighe, false);
+  assert.equal(fs.files.get(SYNC_FILENAME), before);
+});
+
+test('genera_fattura_xml on an invoice without righe uses the fallback and says so', async () => {
+  const { ctx } = await setup();
+  const out = await ok(ctx, 'genera_fattura_xml', { userId: 'u1', fatturaId: 'f2' });
+  assert.equal(out.fallbackRighe, true);
+  assert.ok((out.avvisi as string[]).some((a) => /riga unica/.test(a)));
+});
+
+test('genera_fattura_cortesia writes a PDF, never overwriting, into the chosen folder', async () => {
+  const { ctx, syncDir } = await setup();
+  const cartella = join(syncDir, 'altrove');
+  const a = await ok(ctx, 'genera_fattura_cortesia', { userId: 'u1', fatturaId: 'f1', cartella, lingua: 'en' });
+  const b = await ok(ctx, 'genera_fattura_cortesia', { userId: 'u1', fatturaId: 'f1', cartella });
+  assert.equal(a.percorso, join(cartella, 'fattura-cortesia-01-2026.pdf'));
+  assert.equal(b.percorso, join(cartella, 'fattura-cortesia-01-2026-2.pdf'));
+  assert.equal((await readFile(a.percorso as string)).subarray(0, 4).toString('latin1'), '%PDF');
+  assert.equal((await readdir(cartella)).length, 2);
+});
+
+test('genera tools reject a relative cartella without writing anything', async () => {
+  const { ctx, syncDir } = await setup();
+  const err = await fails(ctx, 'genera_fattura_xml', { userId: 'u1', fatturaId: 'f1', cartella: 'documenti/2026' });
+  assert.equal(err.code, 'VALIDATION');
+  assert.deepEqual((await readdir(join(syncDir, 'documenti')).catch(() => [])), []);
+});
+
+test('genera tools expand a ~ cartella under the homedir', async () => {
+  const { ctx } = await setup();
+  const sotto = `pivella-mcp-test-${Date.now()}`;
+  const cartella = `~/${sotto}`;
+  try {
+    const out = await ok(ctx, 'genera_fattura_xml', { userId: 'u1', fatturaId: 'f1', cartella });
+    const percorso = out.percorso as string;
+    assert.ok(percorso.startsWith(join(homedir(), sotto) + sep), percorso);
+  } finally {
+    await rm(join(homedir(), sotto), { recursive: true, force: true });
+  }
+});
+
+test('genera tools fail without writing when the emittente is incomplete or the invoice is missing', async () => {
+  const { ctx, syncDir, fs } = await setup();
+  const snap = parsedFile(fs);
+  snap.config[0] = { ...snap.config[0], partitaIva: '' };
+  await fs.write(SYNC_FILENAME, text(JSON.stringify(snap)));
+  const err = await fails(ctx, 'genera_fattura_xml', { userId: 'u1', fatturaId: 'f1' });
+  assert.equal(err.code, 'VALIDATION');
+  assert.ok((err.details?.campi as string[]).includes('partitaIva'));
+  const missing = await fails(ctx, 'genera_fattura_cortesia', { userId: 'u1', fatturaId: 'nope' });
+  assert.equal(missing.code, 'NOT_FOUND');
+  await assert.rejects(readdir(join(syncDir, 'documenti')));
+});
+
+test('genera tools need a sync folder', async () => {
+  const { ctx } = await setup();
+  const err = await fails({ ...ctx, syncDir: undefined }, 'genera_fattura_xml', { userId: 'u1', fatturaId: 'f1' });
+  assert.equal(err.code, 'VALIDATION');
 });

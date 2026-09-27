@@ -1,13 +1,16 @@
 /**
- * Formato v2 del file di sync (specifica: docs/fattibilita-mcp.md, sezione 13.2).
+ * Formato v3 del file di sync (specifica: docs/fattibilita-mcp.md, sezione 13.2).
  *
  * Modulo puro: nessuna dipendenza dal DOM o da Node, usabile dall'app,
  * dal server MCP e dai test.
  */
 import type { Cliente, Config, Fattura, Scadenza, StoreName, User, WorkLog } from '../../types';
 import { STORES } from '../constants/fiscali';
+import { isIsoDate, validateFatturaRighe } from './validate';
 
-export const SYNC_SCHEMA_VERSION = 2 as const;
+export const SYNC_SCHEMA_VERSION = 3 as const;
+/** Versioni leggibili: la v2 non ha righe nelle fatture, per il resto è identica. */
+export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [2, 3];
 
 export type WriterKind = 'app' | 'mcp' | 'restore';
 
@@ -117,6 +120,16 @@ export function upgradeV1(data: V1File, stamp: Stamp): SyncSnapshot {
   return snapshot;
 }
 
+function validateFatturaFields(record: Record<string, unknown>, id: string): void {
+  if (record.righe !== undefined) {
+    const check = validateFatturaRighe(record.righe);
+    if (!check.ok) throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Fattura ${id}: ${check.reason}`, { store: 'fatture', id });
+  }
+  if (record.dataCambio !== undefined && !isIsoDate(record.dataCambio)) {
+    throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Fattura ${id}: dataCambio non valida`, { store: 'fatture', id });
+  }
+}
+
 /**
  * Uno store deve essere un array di oggetti con `id` stringa e senza
  * duplicati. Un file che non rispetta questo non viene fuso né ripristinato:
@@ -136,6 +149,7 @@ function validateStore(store: StoreName, value: unknown): Record<string, unknown
       throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Id duplicato ${id} nello store ${store}`, { store, id });
     }
     seen.add(id);
+    if (store === 'fatture') validateFatturaFields(record as Record<string, unknown>, id);
   }
   return value as Record<string, unknown>[];
 }
@@ -162,7 +176,7 @@ export function parseSyncFile(text: string, stamp: Stamp): ParsedSyncFile {
     return { snapshot: upgradeV1(obj as V1File, stamp), upgradedFromV1: true };
   }
   const version = obj.schemaVersion;
-  if (version !== SYNC_SCHEMA_VERSION) {
+  if (typeof version !== 'number' || !SUPPORTED_SCHEMA_VERSIONS.includes(version)) {
     throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Versione del file di sync non supportata: ${String(version)}`, {
       schemaVersion: version,
       supported: SYNC_SCHEMA_VERSION,

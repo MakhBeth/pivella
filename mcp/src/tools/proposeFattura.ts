@@ -24,7 +24,7 @@ const nuovoClienteSchema = z.object({
 export const proposeFattura = proposeTool({
   name: 'propose_fattura',
   title: 'Proponi fattura',
-  description: 'Propone una fattura con righe esplicite (descrizione, quantità, prezzo unitario) per un cliente esistente oppure per un nuovo cliente. Il numero non è un parametro: lo assegna l\'app alla conferma, progressivo per anno della fattura. Richiede i dati emittente configurati. Per una valuta diversa da EUR serve tassoCambio (1 EUR = X valuta). La risposta include un\'anteprima dei totali da mostrare all\'utente.',
+  description: 'Propone una fattura con righe esplicite (descrizione, quantità, prezzo unitario) per un cliente esistente oppure per un nuovo cliente. Il numero non è un parametro: lo assegna l\'app alla conferma, progressivo per anno della fattura. Richiede i dati emittente configurati. Per una valuta diversa da EUR serve tassoCambio (1 EUR = X valuta). La risposta include un\'anteprima dei totali da mostrare all\'utente. Dopo la conferma nell\'app, get_proposal restituisce result.recordId: passalo a genera_fattura_xml e genera_fattura_cortesia per i documenti.',
   kind: 'fattura',
   payload: {
     clienteId: z.string().optional().describe('Cliente esistente; alternativo a nuovoCliente'),

@@ -112,7 +112,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, version: stri
     return;
   }
   const ds = new FileDataSource(nodeFileSystem(dir), { writerId, version });
-  const server = createServer(ds, { writerId, version });
+  const server = createServer(ds, { writerId, version, syncDir: dir });
   await server.connect(new StdioServerTransport());
   log(`in ascolto su stdio, cartella ${dir}, writer ${writerId}`);
 }

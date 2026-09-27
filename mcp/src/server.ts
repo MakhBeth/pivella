@@ -1,5 +1,5 @@
 /**
- * Server MCP locale (13.1, 13.4): registra i 17 tool sopra un `DataSource`
+ * Server MCP locale (13.1, 13.4): registra i 19 tool sopra un `DataSource`
  * e li espone sul trasporto scelto dal chiamante (stdio in `cli.ts`, in
  * memoria nei test). Usa il `Server` di basso livello dell'SDK così la
  * validazione dei parametri resta nostra e ogni errore torna al client come
@@ -19,6 +19,7 @@ export interface ServerOptions {
   writerId: string;
   version: string;
   now?: () => Date;
+  syncDir?: string;
 }
 
 export function toolDescriptor(def: ToolDef): Tool {
@@ -46,7 +47,7 @@ export function createServer(ds: DataSource, options: ServerOptions): Server {
     if (!def) {
       return errorResult({ code: 'NOT_FOUND', message: `Tool ${request.params.name} inesistente` });
     }
-    const ctx: ToolContext = { ds, principal, now: options.now ?? (() => new Date()), client: server.getClientVersion()?.name };
+    const ctx: ToolContext = { ds, principal, now: options.now ?? (() => new Date()), client: server.getClientVersion()?.name, syncDir: options.syncDir };
     const outcome = await runTool(def, ctx, request.params.arguments ?? {});
     if (outcome.isError) return errorResult(outcome.error!);
     return { content: [{ type: 'text', text: outcome.text }], structuredContent: outcome.structured };

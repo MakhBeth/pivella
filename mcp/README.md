@@ -19,6 +19,12 @@ Two things to know before you start:
 
 Work days and invoices stay separate on purpose: the assistant can read both, but it never turns days into amounts on its own. When you ask for an invoice, you decide lines, quantities and prices, and you see them before confirming.
 
+It can also generate documents for an invoice already saved: "Generate the FatturaPA XML for invoice 12" or "Send me a courtesy PDF of invoice 12". The two document tools, `genera_fattura_xml` and `genera_fattura_cortesia`, write the file into `documenti/<year>` in the sync folder, or into a folder you name, and never overwrite an existing file. They only write the document: your Pivella data is untouched.
+
+## Compatibility
+
+pivella-mcp 1.0 requires Pivella 7.0 and vice versa: the sync file moves to schema version 3. Update both together.
+
 ## Install
 
 You need:
@@ -145,7 +151,7 @@ npm run mcp:build                                 # bundle into mcp/dist/cli.js
 
 To register the sources in a client: command `npx`, arguments `tsx /path/to/repo/mcp/src/bin.ts --dir /path/to/sync-folder`.
 
-Publishing: `mcp/package.json` is the package (`bin` on `dist/cli.js`, dependencies `@modelcontextprotocol/sdk` and `zod`, everything else bundled). Bump the version, then `cd mcp && npm publish`; `prepublishOnly` builds the bundle. `npm publish --dry-run` shows what goes in.
+Publishing: `mcp/package.json` is the package (`bin` on `dist/cli.js`, dependencies `@modelcontextprotocol/sdk`, `zod`, `@react-pdf/renderer` and `react`, everything else bundled; the bundle also carries `dist/fonts/RobotoMono-Regular.ttf`, the monospace font used by the courtesy PDF). Bump the version, then `cd mcp && npm publish`; `prepublishOnly` builds the bundle. `npm publish --dry-run` shows what goes in.
 
 Layout:
 

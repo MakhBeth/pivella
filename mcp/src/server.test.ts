@@ -28,10 +28,10 @@ async function connect() {
   return { fs, client, server };
 }
 
-test('the server lists the seventeen tools with input schemas and read-only annotations', async () => {
+test('the server lists the nineteen tools with input schemas and read-only annotations', async () => {
   const { client, server } = await connect();
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 17);
+  assert.equal(tools.length, 19);
   const byName = new Map(tools.map((t) => [t.name, t]));
   assert.equal(byName.get('list_fatture')?.inputSchema.type, 'object');
   assert.ok(byName.get('list_fatture')?.inputSchema.properties && 'userId' in byName.get('list_fatture')!.inputSchema.properties!);
