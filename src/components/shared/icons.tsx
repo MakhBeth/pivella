@@ -16,6 +16,7 @@ import {
   CalendarClockIcon,
   Cancel01Icon,
   Clock01Icon,
+  CodeIcon,
   Coins01Icon,
   ComputerIcon,
   DashboardSquare01Icon,
@@ -82,6 +83,7 @@ export const ChevronLeft = createIcon(ArrowLeft01Icon, 'ChevronLeft');
 export const ChevronRight = createIcon(ArrowRight01Icon, 'ChevronRight');
 export const ChevronUp = createIcon(ArrowUp01Icon, 'ChevronUp');
 export const Clock = createIcon(Clock01Icon, 'Clock');
+export const Code = createIcon(CodeIcon, 'Code');
 export const Coins = createIcon(Coins01Icon, 'Coins');
 export const Database = createIcon(Database01Icon, 'Database');
 export const Download = createIcon(Download01Icon, 'Download');

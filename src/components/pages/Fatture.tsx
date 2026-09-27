@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, FileText, Trash2, Edit, FileArchive, FilePlus, Landmark, ChevronDown } from '../shared/icons';
+import { Upload, FileText, Trash2, Edit, FileArchive, FilePlus, Landmark, ChevronDown, Code } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { Currency } from '../ui/Currency';
 import { downloadFatturaXML } from '../../lib/fatturaDownload';
@@ -244,10 +244,11 @@ export function FatturePage({ setShowModal, setEditingFattura, onOpenCortesia }:
                             </>
                         }
                         <button
-                          className="btn btn-secondary btn-sm"
+                          className="btn btn-secondary btn-sm tooltip"
                           style={{ padding: '4px 8px', marginLeft: 'auto' }}
                           onClick={() => { setEditingFattura({ ...f }); setShowModal('edit-data-incasso'); }}
-                          aria-label="Modifica data incasso"
+                          data-tooltip="Modifica data incasso"
+                          aria-label={`Modifica data incasso della fattura ${f.numero ?? ''}`}
                         >
                           <Edit size={14} aria-hidden="true" />
                         </button>
@@ -267,9 +268,32 @@ export function FatturePage({ setShowModal, setEditingFattura, onOpenCortesia }:
                       )}
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => scaricaXML(f)} aria-label={`Scarica XML della fattura ${f.numero ?? ''}`} title="Scarica XML"><FileText size={16} aria-hidden="true" /></button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => onOpenCortesia(f.id)} aria-label={`Fattura di cortesia per la fattura ${f.numero ?? ''}`} title="Fattura di cortesia" style={{ marginLeft: 6 }}><FilePlus size={16} aria-hidden="true" /></button>
-                      <button className="btn btn-danger" onClick={() => removeFattura(f.id)} aria-label="Elimina fattura" style={{ marginLeft: 6 }}><Trash2 size={16} aria-hidden="true" /></button>
+                      <button
+                        className="btn btn-secondary btn-sm tooltip"
+                        onClick={() => scaricaXML(f)}
+                        data-tooltip="Scarica XML"
+                        aria-label={`Scarica XML della fattura ${f.numero ?? ''}`}
+                      >
+                        <Code size={16} aria-hidden="true" />
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm tooltip"
+                        onClick={() => onOpenCortesia(f.id)}
+                        data-tooltip="Fattura di cortesia"
+                        aria-label={`Fattura di cortesia per la fattura ${f.numero ?? ''}`}
+                        style={{ marginLeft: 6 }}
+                      >
+                        <FileText size={16} aria-hidden="true" />
+                      </button>
+                      <button
+                        className="btn btn-danger tooltip"
+                        onClick={() => removeFattura(f.id)}
+                        data-tooltip="Elimina fattura"
+                        aria-label={`Elimina fattura ${f.numero ?? ''}`}
+                        style={{ marginLeft: 6 }}
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
                     </td>
                   </tr>
                 );
