@@ -35,13 +35,18 @@ const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
 
   // Table column widths
   const tableFormat = [
-    { width: '10%' },
-    { width: '32%' },
-    { width: '10%', textAlign: 'right' as const },
-    { width: '20%', textAlign: 'right' as const },
-    { width: '20%', textAlign: 'right' as const },
+    { width: '7%' },
+    { width: '46%' },
+    { width: '8%', textAlign: 'right' as const },
+    { width: '15%', textAlign: 'right' as const },
+    { width: '16%', textAlign: 'right' as const },
     { width: '8%', textAlign: 'right' as const },
   ];
+
+  // Con molte righe la tabella si compatta per restare su una pagina.
+  const RIGHE_COMPATTE = 10;
+  const compatta = invoice.installments.some((i) => i.lines.length > RIGHE_COMPATTE);
+  const lineCompatta = { fontSize: 9, paddingTop: 4, paddingBottom: 3 };
 
   // Recap styles (separate from StyleSheet)
   const recapStyles = {
@@ -214,22 +219,22 @@ const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
     currency: string;
   }): React.ReactElement => (
     <View style={styles.lineRow} wrap={false}>
-      <Text style={[styles.line, tableFormat[0]]}>{line.number}</Text>
-      <Text style={[styles.line, tableFormat[1]]}>
+      <Text style={[styles.line, compatta ? lineCompatta : {}, tableFormat[0]]}>{line.number}</Text>
+      <Text style={[styles.line, compatta ? lineCompatta : {}, tableFormat[1]]}>
         {line.description}
       </Text>
-      <Text style={[styles.line, styles.numbers, tableFormat[2]]}>
+      <Text style={[styles.line, compatta ? lineCompatta : {}, styles.numbers, tableFormat[2]]}>
         {line.quantity}
       </Text>
-      <Text style={[styles.line, styles.numbers, tableFormat[3]]}>
+      <Text style={[styles.line, compatta ? lineCompatta : {}, styles.numbers, tableFormat[3]]}>
         {line.singlePrice.toLocaleString(locale)}
         {currencySymbol(currency)}
       </Text>
-      <Text style={[styles.line, styles.numbers, tableFormat[4]]}>
+      <Text style={[styles.line, compatta ? lineCompatta : {}, styles.numbers, tableFormat[4]]}>
         {line.amount.toLocaleString(locale)}
         {currencySymbol(currency)}
       </Text>
-      <Text style={[styles.line, styles.numbers, tableFormat[5]]}>
+      <Text style={[styles.line, compatta ? lineCompatta : {}, styles.numbers, tableFormat[5]]}>
         {line.tax}%
       </Text>
     </View>
