@@ -247,6 +247,7 @@ export function NuovaFatturaModal({ isOpen, onClose }: NuovaFatturaModalProps) {
       data,
       righe: righeValide,
       iban: config.iban,
+      bic: config.bic || undefined,
       beneficiario: `${config.emittente.nome} ${config.emittente.cognome}`,
       valuta: isMultiCurrency ? valutaSelezionata : undefined,
       tassoCambio: isMultiCurrency ? tassoCambioNum : undefined,

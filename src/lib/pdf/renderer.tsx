@@ -10,7 +10,7 @@ import {
   Link,
   Image,
 } from '@react-pdf/renderer';
-import { getTranslations } from './translations';
+import { getTranslations, paymentMethodLabel } from './translations';
 
 /** Font del PDF: nel browser dall'URL pubblico, in Node (server MCP) da un percorso su disco. */
 export function registerPdfFont(src: string): void {
@@ -268,7 +268,7 @@ const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
       {payment.method && (
         <View>
           <Text>
-            {t.paymentMethod}: {payment.method}
+            {t.paymentMethod}: {paymentMethodLabel(payment.method, locale)}
           </Text>
         </View>
       )}
@@ -279,9 +279,33 @@ const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
           </Text>
         </View>
       )}
+      {payment.accountHolder && (
+        <View>
+          <Text>
+            {t.accountHolder}: {payment.accountHolder}
+          </Text>
+        </View>
+      )}
       {payment.iban && (
         <View>
           <Text>IBAN: {payment.iban}</Text>
+        </View>
+      )}
+      {payment.bic && (
+        <View>
+          <Text>BIC/SWIFT: {payment.bic}</Text>
+        </View>
+      )}
+      {payment.sortCode && (
+        <View>
+          <Text>Sort code: {payment.sortCode}</Text>
+        </View>
+      )}
+      {payment.accountNumber && (
+        <View>
+          <Text>
+            {t.accountNumber}: {payment.accountNumber}
+          </Text>
         </View>
       )}
       {payment.regularPaymentDate && (

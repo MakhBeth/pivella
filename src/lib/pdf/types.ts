@@ -29,6 +29,10 @@ export interface Line {
 export interface Payment {
   amount: number;
   iban?: string;
+  accountHolder?: string;
+  bic?: string;
+  sortCode?: string;
+  accountNumber?: string;
   method?: string;
   type?: string;
   regularPaymentDate?: Date;

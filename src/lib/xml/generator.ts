@@ -20,6 +20,7 @@ export interface FatturaXMLData {
   data: string; // YYYY-MM-DD
   righe: NuovaFatturaRiga[]; // Amounts in original currency
   iban?: string;
+  bic?: string;
   beneficiario?: string;
   // Multi-currency support
   valuta?: string; // ISO 4217 code (e.g. "GBP"). Omit or "EUR" for euro invoices.
@@ -27,10 +28,30 @@ export interface FatturaXMLData {
   dataCambio?: string; // Date of the ECB rate (YYYY-MM-DD)
 }
 
+// I campi testo dell'XSD FatturaPA (String*LatinType) ammettono solo Basic Latin
+// e Latin-1 Supplement: la punteggiatura tipografica diventa l'equivalente ASCII,
+// il resto fuori range diventa '?' perché lo SdI scarterebbe il file.
+const LATIN1_SOSTITUZIONI: Array<[RegExp, string]> = [
+  [/[\u2010-\u2015\u2212]/g, '-'],
+  [/[\u2018\u2019\u201A\u2032]/g, "'"],
+  [/[\u201C\u201D\u201E\u2033]/g, '"'],
+  [/\u2026/g, '...'],
+  [/\u20AC/g, 'EUR'],
+  [/\u2022/g, '-'],
+  [/[\u2000-\u200A\u202F\u205F]/g, ' '],
+  [/[\u200B-\u200D\u2060\uFEFF]/g, ''],
+];
+
+function toLatin1(text: string): string {
+  let out = text.normalize('NFC');
+  for (const [re, sub] of LATIN1_SOSTITUZIONI) out = out.replace(re, sub);
+  return Array.from(out, (ch) => (ch.codePointAt(0)! > 0xff ? '?' : ch)).join('');
+}
+
 // Escape caratteri speciali XML
 function escapeXml(text: string | undefined | null): string {
   if (text == null) return '';
-  return text
+  return toLatin1(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -54,7 +75,7 @@ function generateProgressivoInvio(): string {
 }
 
 export function generateFatturaXML(data: FatturaXMLData): string {
-  const { emittente, partitaIva, cliente, numero, data: dataFattura, righe, iban, beneficiario } = data;
+  const { emittente, partitaIva, cliente, numero, data: dataFattura, righe, iban, bic, beneficiario } = data;
 
   const isMultiCurrency = data.valuta && data.valuta !== 'EUR' && data.tassoCambio;
   const tassoCambio = data.tassoCambio || 1;
@@ -137,7 +158,8 @@ export function generateFatturaXML(data: FatturaXMLData): string {
         <DataRiferimentoTerminiPagamento>${dataFattura}</DataRiferimentoTerminiPagamento>
         <DataScadenzaPagamento>${dataFattura}</DataScadenzaPagamento>
         <ImportoPagamento>${formatAmount(totaleDocumentoEUR)}</ImportoPagamento>
-        <IBAN>${escapeXml(iban)}</IBAN>
+        <IBAN>${escapeXml(iban)}</IBAN>${bic ? `
+        <BIC>${escapeXml(bic)}</BIC>` : ''}
       </DettaglioPagamento>
     </DatiPagamento>` : '';
 
@@ -200,8 +222,8 @@ export function generateFatturaXML(data: FatturaXMLData): string {
         <TipoDocumento>TD01</TipoDocumento>
         <Divisa>EUR</Divisa>
         <Data>${dataFattura}</Data>
-        <Numero>${escapeXml(numero)}</Numero>${bolloXml}${causaleXml}
-        <ImportoTotaleDocumento>${formatAmount(totaleDocumentoEUR)}</ImportoTotaleDocumento>
+        <Numero>${escapeXml(numero)}</Numero>${bolloXml}
+        <ImportoTotaleDocumento>${formatAmount(totaleDocumentoEUR)}</ImportoTotaleDocumento>${causaleXml}
       </DatiGeneraliDocumento>
     </DatiGenerali>
     <DatiBeniServizi>

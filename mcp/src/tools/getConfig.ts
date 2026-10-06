@@ -13,7 +13,7 @@ export function configSenzaLogo(config: Config): Config {
 export const getConfig = defineTool({
   name: 'get_config',
   title: 'Configurazione fiscale',
-  description: 'Configurazione del profilo: regime forfettario (coefficiente, aliquota, ATECO, gestione previdenziale), dati emittente, IBAN, valute. Il logo è escluso. emittenteConfigurato dice se si possono proporre fatture.',
+  description: 'Configurazione del profilo: regime forfettario (coefficiente, aliquota, ATECO, gestione previdenziale), dati emittente, coordinate bancarie (IBAN o, per conti UK, intestatario, BIC, sort code, account number), valute. Il logo è escluso. emittenteConfigurato dice se si possono proporre fatture.',
   input: { userId: userIdSchema },
   readOnly: true,
   async handler(ctx, { userId }) {

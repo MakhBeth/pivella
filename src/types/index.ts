@@ -101,6 +101,12 @@ export interface Config extends SyncMeta {
 
   riduzioneContributiva: boolean;
   iban?: string;
+  // Coordinate bancarie per conti esteri (es. UK). Il BIC va anche nell'XML SdI
+  // accanto all'IBAN; gli altri campi solo sulla fattura di cortesia.
+  intestatarioConto?: string;
+  bic?: string;
+  sortCode?: string;
+  numeroConto?: string;
   valute?: ValutaConfig[];
   courtesyInvoice?: CourtesyInvoiceConfig;
   emittente?: EmittenteConfig;

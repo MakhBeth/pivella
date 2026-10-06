@@ -2,7 +2,8 @@ import { useState, useRef, useMemo, useEffect } from 'react';
 import { Upload, Download, FileText, ChevronDown, ChevronUp, Plus, Trash2, X, AlertTriangle } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { parseXmlToInvoice } from '../../lib/pdf/xmlParser';
-import { buildCourtesyInvoice, buildPdfOptions, righeOrFallback } from '../../lib/fatturaDocumento';
+import { paymentMethods } from '../../lib/pdf/translations';
+import { buildCourtesyInvoice, buildPdfOptions, completaCoordinate, righeOrFallback } from '../../lib/fatturaDocumento';
 import { saveAs } from 'file-saver';
 import type { Invoice, PDFOptions, Line } from '../../lib/pdf/types';
 import type { ValutaConfig } from '../../types';
@@ -186,8 +187,7 @@ export function FatturaCortesia() {
 
     try {
       const text = await file.text();
-      const invoice = parseXmlToInvoice(text);
-      setParsedInvoice(invoice);
+      setParsedInvoice(completaCoordinate(parseXmlToInvoice(text), config));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Errore parsing XML';
       showToast(message, 'error');
@@ -1099,6 +1099,23 @@ function InvoiceEditorContent({
             />
           </div>
         </div>
+        <div className="input-group">
+          <label className="input-label" htmlFor="cortesia-metodo-pagamento">Metodo di pagamento</label>
+          <select
+            id="cortesia-metodo-pagamento"
+            className="input-field"
+            value={inst.payment?.method || ''}
+            onChange={(e) => updatePayment({ method: e.target.value || undefined })}
+          >
+            <option value="">Non indicato</option>
+            {Object.entries(paymentMethods.it).map(([codice, label]) => (
+              <option key={codice} value={codice}>{`${label} (${codice})`}</option>
+            ))}
+            {inst.payment?.method && !(inst.payment.method in paymentMethods.it) && (
+              <option value={inst.payment.method}>{inst.payment.method}</option>
+            )}
+          </select>
+        </div>
         <div className="grid-2">
           <div className="input-group">
             <label className="input-label">IBAN</label>
@@ -1117,6 +1134,49 @@ function InvoiceEditorContent({
               className="input-field"
               value={inst.payment?.bank || ''}
               onChange={(e) => updatePayment({ bank: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="grid-2">
+          <div className="input-group">
+            <label className="input-label">Intestatario conto</label>
+            <input
+              type="text"
+              className="input-field"
+              value={inst.payment?.accountHolder || ''}
+              onChange={(e) => updatePayment({ accountHolder: e.target.value })}
+            />
+          </div>
+          <div className="input-group">
+            <label className="input-label">BIC/SWIFT</label>
+            <input
+              type="text"
+              className="input-field"
+              value={inst.payment?.bic || ''}
+              onChange={(e) => updatePayment({ bic: e.target.value })}
+              autoComplete="off"
+            />
+          </div>
+        </div>
+        <div className="grid-2">
+          <div className="input-group">
+            <label className="input-label">Sort code</label>
+            <input
+              type="text"
+              className="input-field"
+              value={inst.payment?.sortCode || ''}
+              onChange={(e) => updatePayment({ sortCode: e.target.value })}
+              autoComplete="off"
+            />
+          </div>
+          <div className="input-group">
+            <label className="input-label">Account number</label>
+            <input
+              type="text"
+              className="input-field"
+              value={inst.payment?.accountNumber || ''}
+              onChange={(e) => updatePayment({ accountNumber: e.target.value })}
+              autoComplete="off"
             />
           </div>
         </div>

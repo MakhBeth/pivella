@@ -405,6 +405,30 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
           </div>
         </div>
 
+        <div style={{ marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          Coordinate per conti esteri (es. UK). Nell'XML per lo SdI finiscono solo IBAN e BIC: intestatario, sort code e account number compaiono solo sulla fattura di cortesia.
+        </div>
+        <div className="grid-2">
+          <div className="input-group">
+            <label className="input-label" htmlFor="intestatario-conto">Intestatario conto</label>
+            <input type="text" id="intestatario-conto" className="input-field" value={config.intestatarioConto || ''} onChange={(e) => setConfig({ ...config, intestatarioConto: e.target.value })} autoComplete="name" />
+          </div>
+          <div className="input-group">
+            <label className="input-label" htmlFor="bic">BIC/SWIFT</label>
+            <input type="text" id="bic" className="input-field" value={config.bic || ''} onChange={(e) => setConfig({ ...config, bic: e.target.value.replace(/\s/g, '').toUpperCase() })} placeholder="BARCGB22" style={{ fontFamily: 'Space Mono' }} />
+          </div>
+        </div>
+        <div className="grid-2">
+          <div className="input-group">
+            <label className="input-label" htmlFor="sort-code">Sort code</label>
+            <input type="text" id="sort-code" className="input-field" value={config.sortCode || ''} onChange={(e) => setConfig({ ...config, sortCode: e.target.value })} placeholder="20-00-00" inputMode="numeric" style={{ fontFamily: 'Space Mono' }} />
+          </div>
+          <div className="input-group">
+            <label className="input-label" htmlFor="numero-conto">Account number</label>
+            <input type="text" id="numero-conto" className="input-field" value={config.numeroConto || ''} onChange={(e) => setConfig({ ...config, numeroConto: e.target.value.replace(/\s/g, '') })} placeholder="55779911" inputMode="numeric" style={{ fontFamily: 'Space Mono' }} />
+          </div>
+        </div>
+
         <div className="grid-2">
           <div className="input-group">
             <label className="input-label" htmlFor="anno-apertura">Anno Apertura</label>

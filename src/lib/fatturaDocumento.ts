@@ -6,7 +6,7 @@
  */
 import type { Cliente, Config, Fattura, FatturaRiga } from '../types';
 import type { FatturaXMLData } from './xml/generator';
-import type { Invoice, PDFOptions } from './pdf/types';
+import type { Invoice, Payment, PDFOptions } from './pdf/types';
 
 export const FALLBACK_DESCRIZIONE = 'Prestazione professionale';
 export const FORFETTARIO_LEGAL_REF = "Operazione in franchigia da IVA ai sensi dell'art. 1, commi 54-89, L. 190/2014";
@@ -68,10 +68,42 @@ export function buildFatturaXMLData(f: Fattura, c: Cliente | undefined, config: 
     data: f.data,
     righe: righeOrFallback(f).righe,
     iban: config.iban,
+    bic: config.bic || undefined,
     beneficiario: `${emittente.nome} ${emittente.cognome}`,
     valuta: foreign ? f.valuta : undefined,
     tassoCambio: foreign ? f.tassoCambio : undefined,
     dataCambio: foreign ? f.dataCambio || f.data : undefined,
+  };
+}
+
+/** Coordinate bancarie per la cortesia: IBAN e/o dati non IBAN (es. sort code UK). */
+export function coordinateBancarie(config: Config): Pick<Payment, 'iban' | 'accountHolder' | 'bic' | 'sortCode' | 'accountNumber'> | undefined {
+  const c = {
+    iban: config.iban || config.courtesyInvoice?.iban || undefined,
+    accountHolder: config.intestatarioConto || undefined,
+    bic: config.bic || undefined,
+    sortCode: config.sortCode || undefined,
+    accountNumber: config.numeroConto || undefined,
+  };
+  return Object.values(c).some(Boolean) ? c : undefined;
+}
+
+/**
+ * Completa il pagamento di una fattura importata da XML con le coordinate
+ * salvate, senza sovrascrivere quelle già presenti nell'XML.
+ */
+export function completaCoordinate(invoice: Invoice, config: Config): Invoice {
+  const coordinate = coordinateBancarie(config);
+  if (!coordinate) return invoice;
+  return {
+    ...invoice,
+    installments: invoice.installments.map((inst) => {
+      const payment: Payment = { amount: inst.totalAmount, ...inst.payment };
+      for (const [k, v] of Object.entries(coordinate) as [keyof typeof coordinate, string | undefined][]) {
+        if (!payment[k]) payment[k] = v;
+      }
+      return { ...inst, payment };
+    }),
   };
 }
 
@@ -85,6 +117,7 @@ export function buildCourtesyInvoice(f: Fattura, c: Cliente | undefined, config:
   const emittente = config.emittente;
   const ci = config.courtesyInvoice;
   const nomeEmittente = emittente ? `${emittente.nome} ${emittente.cognome}`.trim() : '';
+  const coordinate = coordinateBancarie(config);
   return {
     invoicer: {
       name: nomeEmittente || ci?.companyName || config.nomeAttivita,
@@ -104,7 +137,7 @@ export function buildCourtesyInvoice(f: Fattura, c: Cliente | undefined, config:
       totalAmount: totale,
       issueDate: new Date(`${f.data}T00:00:00`),
       lines,
-      payment: config.iban || ci?.iban ? { amount: totale, iban: config.iban || ci?.iban, method: 'MP05', bank: ci?.bankName } : undefined,
+      payment: coordinate ? { amount: totale, method: 'MP05', bank: ci?.bankName, ...coordinate } : undefined,
       taxSummary: { taxPercentage: 0, taxAmount: 0, paymentAmount: totale, legalRef: FORFETTARIO_LEGAL_REF },
       stampDuty: totaleEUR > BOLLO_SOGLIA_EUR ? BOLLO_IMPORTO : undefined,
     }],

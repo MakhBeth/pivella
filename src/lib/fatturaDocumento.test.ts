@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { DEFAULT_CONFIG } from './constants/fiscali';
 import type { Cliente, Config, Fattura } from '../types';
-import { buildCourtesyInvoice, buildFatturaXMLData, buildPdfOptions, clienteXMLData, DatiEmittenteMancantiError, emittenteMancante, righeOrFallback } from './fatturaDocumento';
+import { buildCourtesyInvoice, buildFatturaXMLData, buildPdfOptions, clienteXMLData, completaCoordinate, DatiEmittenteMancantiError, emittenteMancante, righeOrFallback } from './fatturaDocumento';
 import { generateFatturaXML } from './xml/generator';
 
 const config: Config = {
@@ -71,6 +71,45 @@ test('buildCourtesyInvoice builds lines, stamp duty over 77.47 EUR and payment',
   assert.equal(g.currency, 'GBP');
   assert.equal(g.totalAmount, 1000);
   assert.equal(g.stampDuty, 2);
+});
+
+test('buildCourtesyInvoice carries non-IBAN bank details, also without an IBAN', () => {
+  const uk: Config = { ...config, iban: undefined, intestatarioConto: 'Mario Rossi', bic: 'BARCGB22', sortCode: '20-00-00', numeroConto: '55779911' };
+  const p = buildCourtesyInvoice(conRighe, cliente, uk).installments[0].payment;
+  assert.deepEqual(
+    [p?.iban, p?.accountHolder, p?.bic, p?.sortCode, p?.accountNumber, p?.amount],
+    [undefined, 'Mario Rossi', 'BARCGB22', '20-00-00', '55779911', 1000],
+  );
+  const nessuno: Config = { ...config, iban: undefined, courtesyInvoice: { ...config.courtesyInvoice!, iban: undefined } };
+  assert.equal(buildCourtesyInvoice(conRighe, cliente, nessuno).installments[0].payment, undefined);
+});
+
+test('completaCoordinate fills missing bank details of an XML invoice without overwriting it', () => {
+  const uk: Config = { ...config, intestatarioConto: 'Mario Rossi', sortCode: '20-00-00', numeroConto: '55779911' };
+  const base = buildCourtesyInvoice(conRighe, cliente, { ...config, iban: undefined, courtesyInvoice: { ...config.courtesyInvoice!, iban: undefined } });
+  const conXmlIban = { ...base, installments: [{ ...base.installments[0], payment: { amount: 1000, iban: 'IT00XML', bank: 'Banca XML' } }] };
+  const p = completaCoordinate(conXmlIban, uk).installments[0].payment;
+  assert.deepEqual([p?.iban, p?.bank, p?.accountHolder, p?.sortCode, p?.accountNumber], ['IT00XML', 'Banca XML', 'Mario Rossi', '20-00-00', '55779911']);
+  assert.equal(completaCoordinate(base, uk).installments[0].payment?.amount, 1000);
+});
+
+test('the XML carries the BIC right after the IBAN, and only with an IBAN', () => {
+  const xml = generateFatturaXML(buildFatturaXMLData(conRighe, cliente, { ...config, iban: 'GB33BUKB20201555555555', bic: 'BUKBGB22' }));
+  assert.match(xml, /<IBAN>GB33BUKB20201555555555<\/IBAN>\s*<BIC>BUKBGB22<\/BIC>/);
+  assert.doesNotMatch(generateFatturaXML(buildFatturaXMLData(conRighe, cliente, config)), /<BIC>/);
+  assert.doesNotMatch(generateFatturaXML(buildFatturaXMLData(conRighe, cliente, { ...config, iban: undefined, bic: 'BUKBGB22' })), /<BIC>/);
+});
+
+test('the XML follows the XSD order: Causale after ImportoTotaleDocumento', () => {
+  const xml = generateFatturaXML(buildFatturaXMLData(gbp, cliente, config));
+  assert.match(xml, /<ImportoTotaleDocumento>[^<]*<\/ImportoTotaleDocumento>\s*<Causale>/);
+});
+
+test('the XML keeps text within Latin-1 as the XSD requires', () => {
+  const f: Fattura = { ...conRighe, righe: [{ descrizione: '19/06/2026 — The Paddock, “Ringmore” – 5€ … ok àèé', quantita: 1, prezzoUnitario: 10 }] };
+  const xml = generateFatturaXML(buildFatturaXMLData(f, cliente, config));
+  assert.match(xml, /<Descrizione>19\/06\/2026 - The Paddock, &quot;Ringmore&quot; - 5EUR \.\.\. ok àèé<\/Descrizione>/);
+  assert.doesNotMatch(xml, /[^\u0000-\u00ff]/);
 });
 
 test('F3: buildCourtesyInvoice totals fractional lines like fatturaPreview and generateFatturaXML (aggregate rounding)', () => {
