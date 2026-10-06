@@ -213,7 +213,7 @@ const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
     line: Line;
     currency: string;
   }): React.ReactElement => (
-    <View style={styles.lineRow}>
+    <View style={styles.lineRow} wrap={false}>
       <Text style={[styles.line, tableFormat[0]]}>{line.number}</Text>
       <Text style={[styles.line, tableFormat[1]]}>
         {line.description}
@@ -264,7 +264,7 @@ const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
     payment: Payment;
     currency: string;
   }): React.ReactElement => (
-    <View style={{ lineHeight: 1.5, color: colors.lighterText }}>
+    <View style={{ color: colors.lighterText }}>
       {payment.method && (
         <View>
           <Text>
@@ -393,7 +393,9 @@ const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
             style={{
               paddingLeft: 30,
               paddingRight: 30,
-              height: '100%',
+              // flexGrow e non height: '100%', così con molte righe il
+              // contenuto va a pagina nuova invece di sovrapporsi.
+              flexGrow: 1,
               flexDirection: 'column',
               justifyContent: 'space-between',
             }}
@@ -478,6 +480,7 @@ const GeneratePDF = (invoice: Invoice, options: PDFOptions) => {
               </View>
             )}
             <View
+              wrap={false}
               style={{
                 flexDirection: 'row',
                 alignItems: 'flex-end',
