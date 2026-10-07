@@ -238,3 +238,24 @@ test('fatture with valid righe and dataCambio pass, malformed ones make the file
   const badData = { ...base, fatture: [{ ...good.fatture[0], dataCambio: '09/01/2026' }] };
   assert.throws(() => parseSyncFile(JSON.stringify(badData), { now: NOW, writer: WRITER }), (e: unknown) => (e as SyncSchemaError).code === 'SOURCE_UNAVAILABLE');
 });
+
+// --- Storico tariffe dei clienti ---------------------------------------------
+
+test('parseSyncFile keeps a client tariff history round-trip', () => {
+  const snap = createEmptySnapshot({ now: NOW, writer: WRITER });
+  const rateHistory = [{ rate: 400, billingUnit: 'giornata' as const }, { dal: '2026-10-01', rate: 450, billingUnit: 'giornata' as const }];
+  snap.clienti.push({ id: 'c1', userId: 'u', nome: 'Acme', rate: 450, billingUnit: 'giornata', rateHistory, updatedAt: T('01') });
+  const { snapshot } = parseSyncFile(serializeSnapshot(snap), { now: NOW, writer: WRITER });
+  assert.deepEqual(snapshot.clienti[0].rateHistory, rateHistory);
+});
+
+test('parseSyncFile rejects a malformed client tariff history', () => {
+  for (const rateHistory of [{ rate: 1 }, [{ rate: '400', billingUnit: 'giornata' }], [{ dal: '2026-13-01', rate: 400, billingUnit: 'giornata' }], [null]]) {
+    const text = JSON.stringify({ ...createEmptySnapshot({ now: NOW, writer: WRITER }), clienti: [{ id: 'c1', userId: 'u', nome: 'Acme', rateHistory }] });
+    assert.throws(
+      () => parseSyncFile(text, { now: NOW, writer: WRITER }),
+      (err: unknown) => err instanceof SyncSchemaError && err.details?.store === 'clienti' && err.details?.id === 'c1',
+      JSON.stringify(rateHistory)
+    );
+  }
+});

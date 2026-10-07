@@ -289,6 +289,20 @@ test('propose_fattura returns an anteprima and never accepts a numero', async ()
   assert.deepEqual((noEmittente.details?.fields as { field: string }[]).map((f) => f.field), ['emittente']);
 });
 
+test('propose_cliente writes a tariff history and ignores billingStartDate', async () => {
+  const { ctx } = await setup();
+  const rateHistory = [{ rate: 50, billingUnit: 'ore' }, { dal: '2026-10-01', rate: 400, billingUnit: 'giornata' }];
+  const out = await ok(ctx, 'propose_cliente', { userId: 'u1', nome: 'Gamma', rateHistory, billingStartDate: '2026-01-01' });
+  assert.deepEqual((out.proposal as Proposal).payload, { nome: 'Gamma', rateHistory, nazione: 'IT' });
+
+  const both = await fails(ctx, 'propose_cliente', { userId: 'u1', nome: 'Delta', rateHistory, rate: 50 });
+  assert.deepEqual((both.details?.fields as { field: string }[]).map((f) => f.field), ['rate']);
+  const extra = await fails(ctx, 'propose_cliente', { userId: 'u1', nome: 'Delta', rateHistory: [{ rate: 50, billingUnit: 'ore', valuta: 'EUR' }] });
+  assert.equal(extra.code, 'VALIDATION');
+  const sameDate = await fails(ctx, 'propose_cliente', { userId: 'u1', nome: 'Delta', rateHistory: [{ rate: 50, billingUnit: 'ore' }, { rate: 60, billingUnit: 'ore' }] });
+  assert.deepEqual((sameDate.details?.fields as { field: string }[]).map((f) => f.field), ['rateHistory[1]']);
+});
+
 test('propose_cliente rejects duplicates with the existing id', async () => {
   const { ctx } = await setup();
   const out = await ok(ctx, 'propose_cliente', { userId: 'u1', nome: 'Gamma', rate: 300, billingUnit: 'ore' });

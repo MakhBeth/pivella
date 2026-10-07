@@ -145,6 +145,23 @@ test('cliente: rejects a duplicate name ignoring case and spaces, with the exist
   }
 });
 
+test('cliente: accepts a tariff history and drops the deprecated billingStartDate', () => {
+  const rateHistory = [{ rate: 400, billingUnit: 'giornata' }, { dal: '2026-10-01', rate: 450, billingUnit: 'giornata' }];
+  const out = validateProposalPayload('cliente', { nome: 'Beta Spa', rateHistory, billingStartDate: '2026-01-01' }, ctx);
+  assert.deepEqual(out, { nome: 'Beta Spa', rateHistory, nazione: 'IT' });
+});
+
+test('cliente: a tariff history excludes rate and billingUnit and must be well formed', () => {
+  const rateHistory = [{ rate: 400, billingUnit: 'giornata' }];
+  assert.deepEqual(fieldsOf(() => validateProposalPayload('cliente', { nome: 'Beta', rateHistory, rate: 400, billingUnit: 'giornata' }, ctx)).sort(), ['billingUnit', 'rate']);
+  assert.deepEqual(fieldsOf(() => validateProposalPayload('cliente', { nome: 'Beta', rateHistory: [] }, ctx)), ['rateHistory']);
+  assert.deepEqual(fieldsOf(() => validateProposalPayload('cliente', { nome: 'Beta', rateHistory: [{ rate: 1, billingUnit: 'ore', extra: 1 }] }, ctx)), ['rateHistory[0].extra']);
+  assert.deepEqual(fieldsOf(() => validateProposalPayload('cliente', {
+    nome: 'Beta',
+    rateHistory: [{ rate: 400, billingUnit: 'giornata' }, { rate: 0, billingUnit: 'giornata', dal: '2026-02-30' }, { rate: 1, billingUnit: 'mesi', dal: '2026-03-01' }, { rate: 1, billingUnit: 'ore', dal: '2026-03-01' }],
+  }, ctx)), ['rateHistory[1]', 'rateHistory[1]', 'rateHistory[2]', 'rateHistory[3]']);
+});
+
 test('cliente: rejects empty name, negative rate, bad billingUnit and bad date', () => {
   assert.deepEqual(fieldsOf(() => validateProposalPayload('cliente', { nome: '  ', rate: -1, billingUnit: 'mesi', billingStartDate: 'ieri' }, ctx)).sort(), ['billingStartDate', 'billingUnit', 'nome', 'rate']);
 });

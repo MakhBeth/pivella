@@ -21,14 +21,28 @@ export interface User extends SyncMeta {
   color?: string; // Hex color for user theme
 }
 
+export type BillingUnit = 'ore' | 'giornata';
+
+// Tariffa del cliente con decorrenza. Senza `dal` vale dall'inizio: è la forma
+// in cui entra la tariffa unica dei clienti salvati prima dello storico.
+export interface TariffaCliente {
+  dal?: string; // YYYY-MM-DD
+  rate: number;
+  billingUnit: BillingUnit;
+}
+
 export interface Cliente extends SyncMeta {
   id: string;
   userId: string;
   nome: string;
   piva?: string;
   email?: string;
-  billingUnit?: 'ore' | 'giornata';
+  // Specchio dell'ultima tariffa dello storico, per chi legge ancora questi campi.
+  // I conti usano rateHistory (vedi lib/utils/tariffe).
+  billingUnit?: BillingUnit;
   rate?: number;
+  rateHistory?: TariffaCliente[];
+  /** @deprecated Non filtra più il riepilogo; si toglie al primo salvataggio dello storico. */
   billingStartDate?: string; // YYYY-MM-DD
   color?: string; // Hex color for calendar display
   // Indirizzo per fatturazione

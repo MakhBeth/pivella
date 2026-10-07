@@ -1,6 +1,13 @@
 import { X, Check, Clock } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
+import { unitaAllaData } from '../../lib/utils/tariffe';
 import type { WorkLog, Cliente } from '../../types';
+
+// Se cambia l'unità (altra data o altro cliente) la quantità non vale più:
+// si svuota e Salva resta disabilitato finché non viene reinserita.
+function conUnita(workLog: WorkLog, patch: Partial<WorkLog>, tipo: WorkLog['tipo']): WorkLog {
+  return tipo === workLog.tipo ? { ...workLog, ...patch } : { ...workLog, ...patch, tipo, quantita: undefined, ore: undefined };
+}
 
 interface EditWorkLogModalProps {
   isOpen: boolean;
@@ -17,7 +24,7 @@ export function EditWorkLogModal({ isOpen, onClose, workLog, setWorkLog, clienti
   if (!isOpen || !workLog) return null;
 
   const selectedCliente = clienti.find(c => c.id === workLog.clienteId);
-  const billingUnit = selectedCliente?.billingUnit || workLog.tipo || 'ore';
+  const billingUnit = selectedCliente ? unitaAllaData(selectedCliente, workLog.data) : workLog.tipo || 'ore';
   const isHourly = billingUnit === 'ore';
 
   return (
@@ -38,15 +45,17 @@ export function EditWorkLogModal({ isOpen, onClose, workLog, setWorkLog, clienti
             type="date"
             className="input-field"
             value={workLog.data}
-            onChange={(e) => setWorkLog({ ...workLog, data: e.target.value })}
+            onChange={(e) => {
+              const data = e.target.value;
+              setWorkLog(conUnita(workLog, { data }, selectedCliente && data ? unitaAllaData(selectedCliente, data) : workLog.tipo));
+            }}
           />
         </div>
         <div className="input-group">
           <label className="input-label">Cliente *</label>
           <select className="input-field" value={workLog.clienteId} onChange={(e) => {
             const newCliente = clienti.find(c => c.id === e.target.value);
-            const newBillingUnit = newCliente?.billingUnit || 'ore';
-            setWorkLog({ ...workLog, clienteId: e.target.value, tipo: newBillingUnit });
+            setWorkLog(conUnita(workLog, { clienteId: e.target.value }, unitaAllaData(newCliente, workLog.data)));
           }}>
             <option value="">Seleziona...</option>
             {clienti.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}

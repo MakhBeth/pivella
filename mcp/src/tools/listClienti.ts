@@ -6,7 +6,7 @@ import { defineTool, limitSchema, offsetSchema, snapshotOf, SPECIAL_CLIENTS, use
 export const listClienti = defineTool({
   name: 'list_clienti',
   title: 'Clienti',
-  description: 'Clienti del profilo con tariffa (rate) e unità di fatturazione (billingUnit) quando impostate. Con includeSpeciali entrano anche Ferie e Varie, che non si fatturano.',
+  description: 'Clienti del profilo. rateHistory, quando presente, è lo storico tariffe con decorrenza (dal) e unità: ogni attività usa la tariffa in vigore alla sua data, e rate e billingUnit sono la più recente. I clienti senza rateHistory hanno al più una tariffa unica (rate, billingUnit) valida da sempre. billingStartDate, se c\'è, è un campo vecchio che l\'app ignora. Con includeSpeciali entrano anche Ferie e Varie, che non si fatturano.',
   input: {
     userId: userIdSchema,
     includeSpeciali: z.boolean().optional().describe('Includi i clienti speciali Ferie e Varie (default false)'),

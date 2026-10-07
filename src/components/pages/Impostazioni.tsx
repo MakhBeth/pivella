@@ -11,6 +11,8 @@ import { ThemeSwitch } from '../shared/ThemeSwitch';
 import { ProposteInbox } from '../shared/ProposteInbox';
 import { DesignStyleSwitch } from '../shared/DesignStyleSwitch';
 import { getClientColor } from '../../lib/utils/colorUtils';
+import { getStoricoTariffe, tariffaAllaData } from '../../lib/utils/tariffe';
+import { formatDate } from '../../lib/utils/dateHelpers';
 import {
   isFileSystemAccessSupported,
   getUnsupportedBrowserMessage,
@@ -826,7 +828,14 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
                   </td>
                   <td style={{ fontFamily: 'Space Mono' }}>{c.piva || '-'}</td>
                   <td>{c.email || '-'}</td>
-                  <td>{c.rate && c.billingUnit ? `€${c.rate}/${c.billingUnit === 'ore' ? 'h' : 'gg'}` : '-'}</td>
+                  <td>{(() => {
+                    // Tariffa in vigore oggi; se lo storico parte nel futuro, la prima prevista.
+                    const storico = getStoricoTariffe(c);
+                    const t = tariffaAllaData(c, formatDate(new Date())) ?? storico[0];
+                    if (!t) return '-';
+                    const altre = storico.length - 1;
+                    return `€${t.rate}/${t.billingUnit === 'ore' ? 'h' : 'gg'}${altre > 0 ? ` (+${altre} nello storico)` : ''}`;
+                  })()}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => { setEditingCliente({ ...c }); setShowModal('edit-cliente'); }} aria-label={`Modifica ${c.nome}`}><Edit size={16} aria-hidden="true" /></button>

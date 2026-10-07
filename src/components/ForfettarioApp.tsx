@@ -21,6 +21,7 @@ import { useDesignStyle } from "./shared/DesignStyleSwitch";
 import { UserSelector } from "./shared/UserSelector";
 import { parseFatturaXML, extractXmlFromZip } from "../lib/utils/xmlParsing";
 import { processBatchXmlFiles } from "../lib/utils/batchImport";
+import { conStoricoTariffe, getStoricoTariffe } from "../lib/utils/tariffe";
 import {
   extractEmittenteFromXml,
   autoPopulateConfig,
@@ -685,7 +686,7 @@ function ForfettarioAppInner() {
               onUpdate={async () => {
                 if (!editingCliente) return;
 
-                await updateCliente(editingCliente);
+                await updateCliente(conStoricoTariffe(editingCliente, editingCliente.rateHistory ?? getStoricoTariffe(editingCliente)));
                 setEditingCliente(null);
                 setShowModal(null);
                 showToast("Cliente aggiornato!");

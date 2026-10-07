@@ -7,6 +7,7 @@
 import type { Cliente, Config, Fattura, Scadenza, StoreName, User, WorkLog } from '../../types';
 import { STORES } from '../constants/fiscali';
 import { isIsoDate, validateFatturaRighe } from './validate';
+import { validaStoricoTariffe } from '../utils/tariffe';
 
 export const SYNC_SCHEMA_VERSION = 3 as const;
 /** Versioni leggibili: la v2 non ha righe nelle fatture, per il resto è identica. */
@@ -130,6 +131,14 @@ function validateFatturaFields(record: Record<string, unknown>, id: string): voi
   }
 }
 
+function validateClienteFields(record: Record<string, unknown>, id: string): void {
+  if (record.rateHistory === undefined) return;
+  const storico = record.rateHistory;
+  const forma = Array.isArray(storico) && storico.every((t) => typeof t === 'object' && t !== null && !Array.isArray(t));
+  const errore = !forma ? 'storico tariffe non è un elenco' : validaStoricoTariffe(storico)[0]?.reason;
+  if (errore) throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Cliente ${id}: ${errore}`, { store: 'clienti', id });
+}
+
 /**
  * Uno store deve essere un array di oggetti con `id` stringa e senza
  * duplicati. Un file che non rispetta questo non viene fuso né ripristinato:
@@ -150,6 +159,7 @@ function validateStore(store: StoreName, value: unknown): Record<string, unknown
     }
     seen.add(id);
     if (store === 'fatture') validateFatturaFields(record as Record<string, unknown>, id);
+    if (store === 'clienti') validateClienteFields(record as Record<string, unknown>, id);
   }
   return value as Record<string, unknown>[];
 }

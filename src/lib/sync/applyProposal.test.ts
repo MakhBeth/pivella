@@ -51,6 +51,21 @@ test('planProposal cliente produces one client record with nazione default', () 
   assert.deepEqual(plan.puts, [{ store: 'clienti', record: { id: 'id_1', userId: 'u1', nome: 'Beta', rate: 300, nazione: 'IT' } }]);
 });
 
+test('planProposal cliente with a tariff history sorts it and mirrors the latest tariff', () => {
+  counter = 0;
+  const plan = planProposal(proposal('cliente', { nome: 'Beta', rateHistory: [{ dal: '2026-10-01', rate: 450, billingUnit: 'giornata' }, { rate: 400, billingUnit: 'giornata' }] }), ctx);
+  assert.deepEqual(plan.puts, [{ store: 'clienti', record: {
+    id: 'id_1', userId: 'u1', nome: 'Beta', nazione: 'IT', rate: 450, billingUnit: 'giornata',
+    rateHistory: [{ rate: 400, billingUnit: 'giornata' }, { dal: '2026-10-01', rate: 450, billingUnit: 'giornata' }],
+  } }]);
+});
+
+test('planProposal cliente drops billingStartDate from proposals queued before the history', () => {
+  counter = 0;
+  const plan = planProposal(proposal('cliente', { nome: 'Beta', rate: 300, billingUnit: 'ore', billingStartDate: '2026-05-01' }), ctx);
+  assert.deepEqual(plan.puts, [{ store: 'clienti', record: { id: 'id_1', userId: 'u1', nome: 'Beta', rate: 300, billingUnit: 'ore', nazione: 'IT' } }]);
+});
+
 test('planProposal incasso updates the invoice keeping every other field', () => {
   const plan = planProposal(proposal('incasso', { fatturaId: 'f2', dataIncasso: '2026-09-10' }), ctx);
   assert.deepEqual(plan.puts, [{ store: 'fatture', record: { ...fatture[1], incassato: true, dataIncasso: '2026-09-10' } }]);
