@@ -373,7 +373,17 @@ dialog.modal {
   width: min(90%, 500px);
   max-height: 85vh;
   overflow-y: auto;
+  /* Arrivati in fondo al dialog la rotella non passa alla pagina sotto */
+  overscroll-behavior: contain;
   color: var(--text-primary);
+}
+
+/* showModal() rende inerte la pagina ma non ne blocca lo scroll: lo si
+   blocca finché un modale è aperto, tenendo lo spazio della scrollbar per
+   non far saltare il layout. */
+html:has(dialog.modal:modal) {
+  overflow: hidden;
+  scrollbar-gutter: stable;
 }
 
 dialog.modal::backdrop {
