@@ -3,8 +3,10 @@
  * che le crea e l'app che le rivaluta prima di applicarle: una proposta nel
  * file non è mai fidata. Modulo puro, senza dipendenze da DOM o Node.
  */
-import { MISC_CLIENT_ID, VACATION_CLIENT_ID, type Cliente, type Config, type Fattura, type FatturaRiga, type Scadenza } from '../../types';
+import { MISC_CLIENT_ID, VACATION_CLIENT_ID, type Cliente, type Config, type Fattura, type FatturaRiga, type Scadenza, type TariffaCliente } from '../../types';
 import type { ProposalKind } from './schema';
+import { isIsoDate } from '../utils/dateHelpers';
+import { validaStoricoTariffe } from '../utils/tariffe';
 
 export interface ValidationContext {
   config: Config | null;
@@ -71,9 +73,10 @@ export interface ClientePayload {
   nome: string;
   piva?: string;
   email?: string;
+  // Tariffa unica legacy, valida dall'inizio. In alternativa a rateHistory.
   billingUnit?: 'ore' | 'giornata';
   rate?: number;
-  billingStartDate?: string;
+  rateHistory?: TariffaCliente[];
   indirizzo?: string;
   numeroCivico?: string;
   cap?: string;
@@ -103,13 +106,7 @@ export interface PayloadByKind {
 export const WORK_LOG_MAX_FUTURE_DAYS = 30;
 export const MOTIVAZIONE_MAX_LENGTH = 500;
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-export function isIsoDate(value: unknown): value is string {
-  if (typeof value !== 'string' || !DATE_RE.test(value)) return false;
-  const ms = Date.parse(`${value}T00:00:00Z`);
-  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === value;
-}
+export { isIsoDate };
 
 function addDays(date: string, days: number): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
@@ -362,6 +359,36 @@ function validateFattura(raw: Record<string, unknown>, ctx: ValidationContext): 
   return withoutUndefined({ clienteId, nuovoCliente, data: data!, righe, valuta, tassoCambio, dataCambio, dataIncasso });
 }
 
+const TARIFFA_KEYS = new Set(['dal', 'rate', 'billingUnit']);
+
+function storicoTariffe(c: Collector): TariffaCliente[] | undefined {
+  const raw = c.claim('rateHistory');
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    c.add('rateHistory', 'deve essere un elenco non vuoto di tariffe');
+    return undefined;
+  }
+  let forma = true;
+  raw.forEach((t, i) => {
+    if (typeof t !== 'object' || t === null || Array.isArray(t)) {
+      c.add(`rateHistory[${i}]`, 'deve essere un oggetto { dal?, rate, billingUnit }');
+      forma = false;
+      return;
+    }
+    for (const key of Object.keys(t)) {
+      if (!TARIFFA_KEYS.has(key)) {
+        c.add(`rateHistory[${i}].${key}`, 'campo non previsto');
+        forma = false;
+      }
+    }
+  });
+  if (!forma) return undefined;
+  const storico = (raw as Record<string, unknown>[]).map((t) => withoutUndefined({ dal: t.dal === null ? undefined : t.dal, rate: t.rate, billingUnit: t.billingUnit }) as unknown as TariffaCliente);
+  const errori = validaStoricoTariffe(storico);
+  for (const e of errori) c.add(`rateHistory[${e.index}]`, e.reason);
+  return errori.length === 0 ? storico : undefined;
+}
+
 function validateCliente(raw: Record<string, unknown>, ctx: ValidationContext): ClientePayload {
   const c = new Collector(raw);
   const nome = c.requiredString('nome');
@@ -379,7 +406,7 @@ function validateCliente(raw: Record<string, unknown>, ctx: ValidationContext): 
     email: c.optionalString('email'),
     billingUnit: c.oneOf('billingUnit', ['ore', 'giornata'] as const, true),
     rate: c.positiveNumber('rate', true),
-    billingStartDate: c.optionalDate('billingStartDate'),
+    rateHistory: storicoTariffe(c),
     indirizzo: c.optionalString('indirizzo'),
     numeroCivico: c.optionalString('numeroCivico'),
     cap: c.optionalString('cap'),
@@ -387,6 +414,14 @@ function validateCliente(raw: Record<string, unknown>, ctx: ValidationContext): 
     provincia: c.optionalString('provincia'),
     nazione: c.optionalString('nazione') ?? 'IT',
   });
+  // Deprecato: si accetta (client MCP vecchi, proposte in coda) e si scarta,
+  // perché escludeva attività dal riepilogo invece di segnare un cambio tariffa.
+  c.optionalDate('billingStartDate');
+  if (out.rateHistory !== undefined) {
+    // Due fonti per la stessa tariffa sarebbero ambigue: con lo storico l'unità sta in ogni riga.
+    if (out.rate !== undefined) c.add('rate', 'non insieme a rateHistory: metti la tariffa nello storico');
+    if (out.billingUnit !== undefined) c.add('billingUnit', 'non insieme a rateHistory: ogni tariffa ha la sua unità');
+  }
   c.rejectUnknown();
   c.throwIfAny(clienteEsistenteId ? { clienteEsistenteId } : undefined);
   return out;

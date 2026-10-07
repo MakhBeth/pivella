@@ -1,5 +1,6 @@
 import { X, Check, Clock } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
+import { unitaAllaData } from '../../lib/utils/tariffe';
 import type { WorkLog, Cliente } from '../../types';
 
 interface AddWorkLogModalProps {
@@ -33,7 +34,7 @@ export function AddWorkLogModal({ isOpen, onClose, selectedDate, newWorkLog, set
           <label className="input-label">Cliente *</label>
           <select className="input-field" value={newWorkLog.clienteId || ''} onChange={(e) => {
             const selectedCliente = clienti.find(c => c.id === e.target.value);
-            const billingUnit = selectedCliente?.billingUnit || 'ore';
+            const billingUnit = unitaAllaData(selectedCliente, selectedDate);
             const defaultQuantita = billingUnit === 'giornata' ? 1 : undefined;
             setNewWorkLog({ ...newWorkLog, clienteId: e.target.value, tipo: billingUnit, quantita: defaultQuantita });
           }}>
@@ -43,7 +44,7 @@ export function AddWorkLogModal({ isOpen, onClose, selectedDate, newWorkLog, set
         </div>
         {newWorkLog.clienteId && (() => {
           const selectedCliente = clienti.find(c => c.id === newWorkLog.clienteId);
-          const billingUnit = selectedCliente?.billingUnit || 'ore';
+          const billingUnit = unitaAllaData(selectedCliente, selectedDate);
           const isHourly = billingUnit === 'ore';
 
           return (

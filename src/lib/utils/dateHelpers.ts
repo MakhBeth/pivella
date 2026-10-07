@@ -70,3 +70,12 @@ export const adjustForWeekend = (date: Date): Date => {
   }
   return date;
 };
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Data di calendario YYYY-MM-DD esistente (rifiuta 2026-02-30).
+export function isIsoDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !ISO_DATE_RE.test(value)) return false;
+  const ms = Date.parse(`${value}T00:00:00Z`);
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === value;
+}

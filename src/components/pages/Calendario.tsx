@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { getCalendarDays, formatDate, parseDateLocal } from '../../lib/utils/dateHelpers';
 import { getClientColor } from '../../lib/utils/colorUtils';
 import { getWorkLogQuantita } from '../../lib/utils/calculations';
+import { riepilogoPerCliente, unitaAllaData } from '../../lib/utils/tariffe';
 import { Currency } from '../ui/Currency';
 import type { Cliente, WorkLog } from '../../types';
 import { VACATION_CLIENT_ID, MISC_CLIENT_ID } from '../../types';
@@ -42,7 +43,7 @@ type ActivitySortField = 'data' | 'cliente' | 'durata';
 type SortDirection = 'asc' | 'desc';
 
 export function Calendario({ setShowModal, setSelectedDate, setEditingWorkLog, setSelectedScadenzeDate }: CalendarioProps) {
-  const { clienti, workLogs, removeWorkLog, updateWorkLog, addWorkLog, scadenze } = useApp();
+  const { clienti, workLogs, removeWorkLog, updateWorkLog, addWorkLog, scadenze, showToast } = useApp();
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [recapSort, setRecapSort] = useState<{ field: RecapSortField; direction: SortDirection }>({ field: 'totale', direction: 'desc' });
   const [activitySort, setActivitySort] = useState<{ field: ActivitySortField; direction: SortDirection }>({ field: 'data', direction: 'desc' });
@@ -75,33 +76,8 @@ export function Calendario({ setShowModal, setSelectedDate, setEditingWorkLog, s
   const miscClient: Cliente = { id: MISC_CLIENT_ID, userId: '', nome: '🔧 Misc', billingUnit: 'ore', rate: 0, color: '#8b5cf6' };
   const allClients = [...clienti, miscClient];
 
-  const recapData = allClients
-    .map(cliente => {
-      const clientLogs = workLogs.filter(log => {
-        const logDate = parseDateLocal(log.data);
-        const isInMonth = logDate >= monthStart && logDate <= monthEnd;
-
-        if (cliente.billingStartDate) {
-          const billingStart = parseDateLocal(cliente.billingStartDate);
-          return isInMonth && log.clienteId === cliente.id && logDate >= billingStart;
-        }
-
-        return isInMonth && log.clienteId === cliente.id;
-      });
-
-      if (clientLogs.length === 0) return null;
-
-      const totalQuantita = clientLogs.reduce((sum, log) => sum + getWorkLogQuantita(log), 0);
-      const amount = cliente.rate ? totalQuantita * cliente.rate : null;
-
-      return {
-        cliente,
-        totalQuantita,
-        amount,
-        unit: cliente.billingUnit || 'ore'
-      };
-    })
-    .filter(item => item !== null);
+  // Ogni attività vale la tariffa in vigore alla sua data: una riga per tariffa
+  const recapData = riepilogoPerCliente(allClients, workLogs, formatDate(monthStart), formatDate(monthEnd), { perTariffa: true });
 
   // Helper to check if a date is a weekend
   const isWeekend = (dateStr: string): boolean => {
@@ -166,33 +142,7 @@ export function Calendario({ setShowModal, setSelectedDate, setEditingWorkLog, s
   const totalYearWorkedDays = yearWorkedDates.length;
 
   // Yearly Recap Calculation (per client)
-  const yearlyRecapData = allClients
-    .map(cliente => {
-      const clientLogs = workLogs.filter(log => {
-        const logDate = parseDateLocal(log.data);
-        const isInYear = logDate >= yearStart && logDate <= yearEnd;
-
-        if (cliente.billingStartDate) {
-          const billingStart = parseDateLocal(cliente.billingStartDate);
-          return isInYear && log.clienteId === cliente.id && logDate >= billingStart;
-        }
-
-        return isInYear && log.clienteId === cliente.id;
-      });
-
-      if (clientLogs.length === 0) return null;
-
-      const totalQuantita = clientLogs.reduce((sum, log) => sum + getWorkLogQuantita(log), 0);
-      const amount = cliente.rate ? totalQuantita * cliente.rate : null;
-
-      return {
-        cliente,
-        totalQuantita,
-        amount,
-        unit: cliente.billingUnit || 'ore'
-      };
-    })
-    .filter(item => item !== null);
+  const yearlyRecapData = riepilogoPerCliente(allClients, workLogs, `${currentMonth.getFullYear()}-01-01`, `${currentMonth.getFullYear()}-12-31`, { perTariffa: false });
 
   return (
     <>
@@ -317,6 +267,14 @@ export function Calendario({ setShowModal, setSelectedDate, setEditingWorkLog, s
                   e.preventDefault();
                   e.currentTarget.style.outline = '';
                   if (draggedWorkLog && !day.otherMonth && draggedWorkLog.log.data !== dateStr) {
+                    // La quantità ha senso solo nell'unità della tariffa: oltre un cambio
+                    // ore/giornate va riscritta a mano, non spostata.
+                    const draggedCliente = clienti.find(c => c.id === draggedWorkLog.log.clienteId);
+                    if (draggedCliente && unitaAllaData(draggedCliente, dateStr) !== unitaAllaData(draggedCliente, draggedWorkLog.log.data)) {
+                      showToast(`Il ${dateStr} ${draggedCliente.nome} si fattura in un'altra unità: modifica l'attività e reinserisci la quantità`, 'error');
+                      setDraggedWorkLog(null);
+                      return;
+                    }
                     if (draggedWorkLog.duplicate) {
                       // ALT+drag: duplicate the work log
                       await addWorkLog({ ...draggedWorkLog.log, id: Date.now().toString(), data: dateStr });
@@ -449,12 +407,12 @@ export function Calendario({ setShowModal, setSelectedDate, setEditingWorkLog, s
                 switch (recapSort.field) {
                   case 'cliente': return dir * a.cliente.nome.localeCompare(b.cliente.nome);
                   case 'quantita': return dir * (a.totalQuantita - b.totalQuantita);
-                  case 'tariffa': return dir * ((a.cliente.rate || 0) - (b.cliente.rate || 0));
+                  case 'tariffa': return dir * ((a.rate || 0) - (b.rate || 0));
                   case 'totale': return dir * ((a.amount || 0) - (b.amount || 0));
                   default: return 0;
                 }
-              }).map(({ cliente, totalQuantita, amount, unit }) => (
-                <tr key={cliente.id}>
+              }).map(({ cliente, totalQuantita, rate, amount, unit }) => (
+                <tr key={`${cliente.id}|${unit}|${rate ?? ''}`}>
                   <td style={{ fontWeight: 500 }}>{cliente.nome}</td>
                   <td>
                     <span className="badge badge-green">
@@ -462,7 +420,7 @@ export function Calendario({ setShowModal, setSelectedDate, setEditingWorkLog, s
                     </span>
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    {cliente.rate ? <><Currency amount={cliente.rate} tabular />/{unit === 'ore' ? 'h' : 'gg'}</> : '-'}
+                    {rate ? <><Currency amount={rate} tabular />/{unit === 'ore' ? 'h' : 'gg'}</> : '-'}
                   </td>
                   <td style={{ fontWeight: 600, color: 'var(--accent-green)', textAlign: 'right' }}>
                     {amount !== null ? <Currency amount={amount} tabular /> : '-'}
@@ -489,7 +447,7 @@ export function Calendario({ setShowModal, setSelectedDate, setEditingWorkLog, s
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             {[...yearlyRecapData].sort((a, b) => (b.amount || 0) - (a.amount || 0)).map(({ cliente, totalQuantita, amount, unit }) => (
               <div
-                key={cliente.id}
+                key={`${cliente.id}|${unit}`}
                 style={{
                   flex: '1 1 auto',
                   minWidth: 140,

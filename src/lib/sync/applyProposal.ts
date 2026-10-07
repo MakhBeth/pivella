@@ -5,6 +5,7 @@
  * Solo l'app applica; il server MCP non passa mai di qui.
  */
 import type { Cliente, Fattura, Scadenza, StoreName, WorkLog } from '../../types';
+import { conStoricoTariffe } from '../utils/tariffe';
 import { isPending, ProposalNotPendingError } from './proposals';
 import type { Proposal, SyncRecord } from './schema';
 import { fatturaPreview, ProposalValidationError, validateFatturaRighe, validateProposalPayload, valuteDisponibili, type ClientePayload, type FatturaPayload, type FatturaRigaPayload, type ValidationContext, type WorkLogPayload } from './validate';
@@ -39,8 +40,11 @@ export function nextInvoiceNumber(fatture: Fattura[], anno: number): string {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+// Con lo storico, rate e billingUnit ne sono lo specchio.
 function clienteFromPayload(id: string, userId: string, p: ClientePayload): Cliente {
-  return { id, userId, ...p };
+  const { rateHistory, ...rest } = p;
+  const cliente: Cliente = { id, userId, ...rest };
+  return rateHistory ? conStoricoTariffe(cliente, rateHistory) : cliente;
 }
 
 /** Le proposte sono già più severe del record; il controllo resta per non salvare mai righe che il file rifiuterebbe. */

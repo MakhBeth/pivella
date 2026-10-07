@@ -1,6 +1,6 @@
 {
   "name": "pivella-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Server MCP locale per Pivella: legge il file di sync e propone modifiche da confermare nell'app",
   "license": "MIT",
   "type": "module",
