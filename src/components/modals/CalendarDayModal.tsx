@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Check, Clock, CalendarClock } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
 import { unitaAllaData } from '../../lib/utils/tariffe';
+import { formatDate } from '../../lib/utils/dateHelpers';
 import { useApp } from '../../context/AppContext';
 import type { WorkLog, Cliente, Scadenza } from '../../types';
 
@@ -54,7 +55,7 @@ export function CalendarDayModal({
       await updateScadenza({
         ...scadenza,
         pagato: nextPagato,
-        dataPagamento: nextPagato ? new Date().toISOString().split('T')[0] : undefined,
+        dataPagamento: nextPagato ? formatDate(new Date()) : undefined,
       });
     } catch (error) {
       console.error('Failed to update scadenza:', error);
@@ -309,7 +310,7 @@ export function CalendarDayModal({
                   await updateScadenza({
                     ...s,
                     pagato: true,
-                    dataPagamento: new Date().toISOString().split('T')[0],
+                    dataPagamento: formatDate(new Date()),
                   });
                 }
               }}

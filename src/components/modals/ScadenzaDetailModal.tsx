@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Check, CalendarClock, Loader2 } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
 import { useApp } from '../../context/AppContext';
-import { parseDateLocal } from '../../lib/utils/dateHelpers';
+import { formatDate, parseDateLocal } from '../../lib/utils/dateHelpers';
 import type { Scadenza } from '../../types';
 
 interface ScadenzaDetailModalProps {
@@ -34,7 +34,7 @@ export function ScadenzaDetailModal({ isOpen, onClose, selectedDate }: ScadenzaD
     await updateScadenza({
       ...scadenza,
       pagato: !scadenza.pagato,
-      dataPagamento: !scadenza.pagato ? new Date().toISOString().split('T')[0] : undefined,
+      dataPagamento: !scadenza.pagato ? formatDate(new Date()) : undefined,
     });
   };
 
@@ -175,7 +175,7 @@ export function ScadenzaDetailModal({ isOpen, onClose, selectedDate }: ScadenzaD
           onClick={async () => {
             setIsProcessing(true);
             const unpaid = dayScadenze.filter(s => !s.pagato);
-            const dataPagamento = new Date().toISOString().split('T')[0];
+            const dataPagamento = formatDate(new Date());
             const failedIds: string[] = [];
 
             for (const s of unpaid) {
