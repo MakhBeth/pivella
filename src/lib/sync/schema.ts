@@ -8,6 +8,7 @@ import type { Cliente, Config, Fattura, Scadenza, StoreName, User, WorkLog } fro
 import { STORES } from '../constants/fiscali';
 import { isIsoDate, validateFatturaRighe } from './validate';
 import { validaStoricoTariffe } from '../utils/tariffe';
+import { validaDeduzioneInpsConfig } from '../utils/deduzioneInps';
 
 export const SYNC_SCHEMA_VERSION = 3 as const;
 /** Versioni leggibili: la v2 non ha righe nelle fatture, per il resto è identica. */
@@ -139,6 +140,11 @@ function validateClienteFields(record: Record<string, unknown>, id: string): voi
   if (errore) throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Cliente ${id}: ${errore}`, { store: 'clienti', id });
 }
 
+function validateConfigFields(record: Record<string, unknown>, id: string): void {
+  const errore = validaDeduzioneInpsConfig(record);
+  if (errore) throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Config ${id}: ${errore}`, { store: 'config', id });
+}
+
 /**
  * Uno store deve essere un array di oggetti con `id` stringa e senza
  * duplicati. Un file che non rispetta questo non viene fuso né ripristinato:
@@ -160,6 +166,7 @@ function validateStore(store: StoreName, value: unknown): Record<string, unknown
     seen.add(id);
     if (store === 'fatture') validateFatturaFields(record as Record<string, unknown>, id);
     if (store === 'clienti') validateClienteFields(record as Record<string, unknown>, id);
+    if (store === 'config') validateConfigFields(record as Record<string, unknown>, id);
   }
   return value as Record<string, unknown>[];
 }

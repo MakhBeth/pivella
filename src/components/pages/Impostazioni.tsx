@@ -4,7 +4,8 @@ import { InpsControls } from '../shared/InpsControls';
 import { useState } from 'react';
 import { Download, Upload, Database, Plus, X, Edit, Trash2, Users, Palette, Building, FolderSync, RefreshCw, FolderOpen, AlertCircle, AlertTriangle, FileArchive, UserCircle, Coins, ChevronUp, ChevronDown, BookOpen } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
-import type { CassaOrdinisticaId, Cliente, EmittenteConfig, User, ValutaConfig } from '../../types';
+import type { CassaOrdinisticaId, Cliente, DeduzioneInpsModalita, EmittenteConfig, User, ValutaConfig } from '../../types';
+import { getDeduzioneInpsModalita } from '../../lib/utils/deduzioneInps';
 import { getCassaAmounts, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva } from '../../lib/utils/forfettario';
 import { CASSE_ORDINISTICHE, GESTIONI_PREVIDENZIALI } from '../../lib/constants/fiscali';
 import { ThemeSwitch } from '../shared/ThemeSwitch';
@@ -538,6 +539,25 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
         )}
 
         {config.gestionePrevidenziale === 'cassa_ordinistica' && <CassaHelp cassa={config.cassaOrdinistica} anno={annoCassa} showLink={false} />}
+
+        {config.gestionePrevidenziale !== 'cassa_ordinistica' && (
+          <div className="previdenza-field" style={{ marginTop: 16, maxWidth: 420 }}>
+            <label className="input-label" htmlFor="deduzione-inps">Deduzione contributi INPS</label>
+            <select
+              id="deduzione-inps"
+              className="input-field"
+              aria-describedby="deduzione-inps-nota"
+              value={getDeduzioneInpsModalita(config)}
+              onChange={(e) => setConfig({ ...config, deduzioneInpsModalita: e.target.value as DeduzioneInpsModalita })}
+            >
+              <option value="cassa">Per cassa: versamenti dell’anno (predefinita)</option>
+              <option value="competenza">Per competenza: solo stima previsionale</option>
+            </select>
+            <p id="deduzione-inps-nota" style={{ margin: '6px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Nel forfettario i contributi si deducono nell’anno in cui li versi (art. 1, comma 64, L. 190/2014): conta la data di pagamento delle scadenze INPS, o il totale inserito a mano in Scadenze o Dashboard. La competenza usa i contributi dovuti stimati e serve solo come previsione, non per la dichiarazione.
+            </p>
+          </div>
+        )}
         </div>
 
         <div style={{ marginTop: 16 }}>

@@ -8,6 +8,9 @@ import { SYNC_FILENAME } from '../../../src/lib/sync/backup';
 import { createEmptySnapshot, parseSyncFile, type Proposal } from '../../../src/lib/sync/schema';
 import { fromBytes, memoryFileSystem, text, type MemoryFileSystem } from '../../../src/lib/sync/testing/memoryFileSystem';
 import { DEFAULT_CONFIG } from '../../../src/lib/constants/fiscali';
+import { calcolaFiscale } from '../../../src/lib/utils/calculations';
+import { getInpsCalculationInput } from '../../../src/lib/utils/forfettario';
+import { risolviDeduzioneInps } from '../../../src/lib/utils/deduzioneInps';
 import { FileDataSource } from '../fileDataSource';
 import { TOOLS, runTool, type ToolContext, type ToolOutcome } from './index';
 
@@ -455,4 +458,50 @@ test('genera tools need a sync folder', async () => {
   const { ctx } = await setup();
   const err = await fails({ ...ctx, syncDir: undefined }, 'genera_fattura_xml', { userId: 'u1', fatturaId: 'f1' });
   assert.equal(err.code, 'VALIDATION');
+});
+
+test('get_riepilogo_anno deducts INPS on a cash basis with the same resolver as the app', async () => {
+  const { ctx, fs } = await setup();
+  const snapshot = seed();
+  // s2: saldo INPS 2025 pagato il 30/6/2026 (capitale 50, interessi 1). Si aggiungono un acconto
+  // pagato a cavallo d'anno, uno pagato senza data e uno non pagato.
+  snapshot.scadenze.push(
+    { id: 's4', userId: 'u1', visibleId: 'v4', annoRiferimento: 2025, annoVersamento: 2025, date: '2025-12-01', tipo: 'acconto_inps', label: 'Secondo Acconto INPS', importo: 30, interessi: 0, totale: 30, pagato: true, dataPagamento: '2026-01-05' },
+    { id: 's5', userId: 'u1', visibleId: 'v5', annoRiferimento: 2026, annoVersamento: 2026, date: '2026-06-30', tipo: 'acconto_inps', label: 'Primo Acconto INPS', importo: 70, interessi: 0, totale: 70, pagato: true },
+    { id: 's6', userId: 'u1', visibleId: 'v6', annoRiferimento: 2026, annoVersamento: 2026, date: '2026-11-30', tipo: 'acconto_inps', label: 'Secondo Acconto INPS', importo: 90, interessi: 0, totale: 90, pagato: false },
+  );
+  await fs.write(SYNC_FILENAME, text(JSON.stringify(snapshot)));
+
+  const config = snapshot.config[0];
+  const atteso = calcolaFiscale(1000, 67, 0.15, getInpsCalculationInput(config, 2026), risolviDeduzioneInps(config, 2026, snapshot.scadenze).contributiVersati);
+  const cassa = await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2026 });
+  assert.equal(cassa.contributiDeducibili, 80);
+  assert.equal(cassa.impostaSostitutiva, atteso.irpef);
+  assert.equal(cassa.contributiPrevidenziali, atteso.inps);
+  const dettaglio = cassa.deduzioneContributi as Record<string, unknown>;
+  assert.equal(dettaglio.fonte, 'scadenze');
+  assert.equal(dettaglio.previsionale, false);
+  assert.equal(dettaglio.versamentiSenzaData, 1);
+  assert.match((cassa.avvisi as string[]).join(' '), /data di pagamento/);
+
+  Object.assign(snapshot.config[0], { contributiInpsVersatiManuali: { 2026: 0 } });
+  await fs.write(SYNC_FILENAME, text(JSON.stringify(snapshot)));
+  const zero = await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2026 });
+  assert.equal(zero.contributiDeducibili, 0);
+  assert.equal((zero.deduzioneContributi as Record<string, unknown>).fonte, 'manuale');
+
+  Object.assign(snapshot.config[0], { deduzioneInpsModalita: 'competenza' });
+  await fs.write(SYNC_FILENAME, text(JSON.stringify(snapshot)));
+  const competenza = await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2026 });
+  assert.equal(competenza.contributiDeducibili, competenza.contributiPrevidenziali);
+  assert.equal(competenza.contributiPrevidenziali, cassa.contributiPrevidenziali);
+  assert.equal((competenza.deduzioneContributi as Record<string, unknown>).previsionale, true);
+  assert.equal((competenza.deduzioneContributi as Record<string, unknown>).criterio, 'competenza');
+
+  // Il criterio degli incassi resta per cassa; la nota descrive a parte la deduzione.
+  assert.equal(cassa.criterio, 'cassa');
+  assert.equal(competenza.criterio, 'cassa');
+  assert.match(cassa.nota as string, /fatturato calcolato per cassa.*dedotti per cassa, dai versamenti/);
+  assert.match(competenza.nota as string, /fatturato calcolato per cassa.*per competenza.*previsionale/);
+  assert.doesNotMatch(competenza.nota as string, /dedotti per cassa/);
 });

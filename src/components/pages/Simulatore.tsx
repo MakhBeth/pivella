@@ -30,9 +30,11 @@ import {
 } from "../../lib/utils/forfettario";
 import { parseCurrency, formatCurrency } from "../../lib/utils/formatting";
 import { Currency } from "../ui/Currency";
+import { DeduzioneInpsInfo } from "../shared/DeduzioneInps";
+import { risolviDeduzioneInps } from "../../lib/utils/deduzioneInps";
 
 export function Simulatore() {
-  const { config } = useApp();
+  const { config, scadenze } = useApp();
   const [fatturato, setFatturato] = useState<string>("");
 
   const annoCorrente = new Date().getFullYear();
@@ -70,9 +72,11 @@ export function Simulatore() {
 
   const fatturatoNum = parseCurrency(fatturato);
 
+  const deduzioneInps = useMemo(() => risolviDeduzioneInps(simulationConfig, annoCorrente, scadenze), [simulationConfig, annoCorrente, scadenze]);
+
   const calculations = useMemo(() => {
-    return calcolaFiscale(fatturatoNum, coefficienteMedio, aliquotaIrpef, inpsInput);
-  }, [fatturatoNum, coefficienteMedio, aliquotaIrpef, inpsInput]);
+    return calcolaFiscale(fatturatoNum, coefficienteMedio, aliquotaIrpef, inpsInput, deduzioneInps.contributiVersati);
+  }, [fatturatoNum, coefficienteMedio, aliquotaIrpef, inpsInput, deduzioneInps.contributiVersati]);
 
   const previdenzialeInfo = useMemo(() => {
     if (isGestioneSeparata) {
@@ -371,6 +375,9 @@ export function Simulatore() {
             {cassaIncomplete ? <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Da configurare</span> : <Currency amount={calculations.irpef} />}
           </div>
             <div className="stat-label">{(aliquotaIrpef * 100).toFixed(0)}% di (imponibile − contributi deducibili)</div>
+            <div style={{ marginTop: 8 }}>
+              <DeduzioneInpsInfo config={simulationConfig} anno={annoCorrente} deduzione={deduzioneInps} importoDedotto={calculations.deduzioneContributi} />
+            </div>
         </div>
 
         <div className="card">

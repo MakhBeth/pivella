@@ -95,6 +95,11 @@ export interface ContributiCassa { annui: number | null; deducibili: number | nu
 
 export type GestionePrevidenziale = 'gestione_separata' | 'artigiani' | 'commercianti' | 'cassa_ordinistica';
 
+// Deduzione dei contributi INPS dall'imponibile. Nel forfettario vale il
+// principio di cassa (art. 1, comma 64, L. 190/2014): "competenza" è solo una
+// stima previsionale sui dovuti. Assente vale "cassa".
+export type DeduzioneInpsModalita = 'cassa' | 'competenza';
+
 export interface Config extends SyncMeta {
   id: string;
   userId: string;
@@ -112,6 +117,10 @@ export interface Config extends SyncMeta {
   gestioneSeparataAltraCopertura?: boolean;
   cassaOrdinistica?: CassaOrdinisticaId;
   contributiCassePerAnno?: Partial<Record<CassaOrdinisticaId, Record<number, ContributiCassa>>>;
+  deduzioneInpsModalita?: DeduzioneInpsModalita;
+  // Totale INPS versato nell'anno (per cassa) inserito a mano: sostituisce la
+  // somma delle scadenze pagate. Chiave assente = nessun totale manuale; 0 è un valore.
+  contributiInpsVersatiManuali?: Record<number, number>;
 
   riduzioneContributiva: boolean;
   iban?: string;

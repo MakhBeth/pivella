@@ -55,18 +55,22 @@ export interface CalcoloFiscale {
 }
 
 // La deduzione esplicita dei contributi versati prevale anche quando vale zero.
-// In sua assenza si usa deductibleAmount, se configurato per la cassa;
-// per INPS si mantiene la stima basata sull’intero contributo dovuto.
+// 'competenza' deduce i contributi dovuti stimati (solo previsionale).
+// In assenza si usa deductibleAmount, se configurato per la cassa professionale;
+// per INPS la deduzione è zero: i dovuti non sono versamenti (principio di cassa).
+// Il valore da passare lo decide risolviDeduzioneInps.
 export const calcolaFiscale = (
   fatturato: number,
   coefficiente: number,
   aliquotaIrpef: number,
   aliquotaInps: InpsCalculationInput = INPS_GESTIONE_SEPARATA,
-  contributiVersati?: number,
+  contributiVersati?: number | 'competenza',
 ): CalcoloFiscale => {
   const imponibile = fatturato * (coefficiente / 100);
   const inps = calculateContribution(imponibile, aliquotaInps);
-  const deduzioneContributi = contributiVersati !== undefined ? contributiVersati : (typeof aliquotaInps === 'number' ? inps : aliquotaInps.deductibleAmount ?? inps);
+  const deduzioneContributi = contributiVersati === 'competenza' ? inps
+    : contributiVersati !== undefined ? contributiVersati
+    : (typeof aliquotaInps === 'number' ? 0 : aliquotaInps.deductibleAmount ?? 0);
   const imponibileDopoContributi = Math.max(0, imponibile - deduzioneContributi);
   const irpef = imponibileDopoContributi * aliquotaIrpef;
   const totaleTasse = irpef + inps;
