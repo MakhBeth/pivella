@@ -5,7 +5,11 @@ import { useApp } from '../../context/AppContext';
 import { calcolaFiscale } from '../../lib/utils/calculations';
 import { getCassaWarning, calcolaAccontiForfettario, calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, includeInpsInScadenze, usesFixedContributiPrevidenziali } from '../../lib/utils/forfettario';
 import { generatePaymentSchedule, calculateScheduleTotals } from '../../lib/utils/paymentScheduler';
-import { parseDateLocal, formatDateLong } from '../../lib/utils/dateHelpers';
+import { parseDateLocal, formatDateLong, formatDate, isIsoDate } from '../../lib/utils/dateHelpers';
+import { risolviDeduzioneInps } from '../../lib/utils/deduzioneInps';
+import { accontiUsatiDalPiano, rigeneraPreservandoPagate } from '../../lib/utils/rigeneraScadenze';
+import { convertScheduleToScadenze } from '../../lib/utils/scheduleToScadenze';
+import { DeduzioneInpsInfo } from '../shared/DeduzioneInps';
 import { parseOptionalContribution, parseCurrency, formatCurrency } from '../../lib/utils/formatting';
 import { Currency } from '../ui/Currency';
 import type { PaymentScheduleInput, PaymentScheduleItem, Scadenza, ScadenzaTipo } from '../../types';
@@ -13,7 +17,7 @@ import type { PaymentScheduleInput, PaymentScheduleItem, Scadenza, ScadenzaTipo 
 type NumberOfTranches = 1 | 2 | 3 | 4 | 5 | 6;
 
 export function Scadenze() {
-  const { config, fatture, scadenze, getScadenzeByYear, getPaidAccontiForYear, bulkSaveScadenze, removeScadenzeByYear, updateScadenza, showToast } = useApp();
+  const { config, updateConfig, fatture, scadenze, getScadenzeByYear, getPaidAccontiForYear, bulkSaveScadenze, removeScadenza, removeScadenzeByYear, updateScadenza, showToast } = useApp();
 
   const annoCorrente = new Date().getFullYear();
   const [annoRiferimento, setAnnoRiferimento] = useState(annoCorrente - 1);
@@ -36,17 +40,7 @@ export function Scadenze() {
 
   const paidAccontiFromDb = getPaidAccontiForYear(annoRiferimento);
 
-  const savedAccontiFromScadenze = useMemo(() => {
-    if (savedScadenze.length === 0) return null;
-    const first = savedScadenze[0];
-    if (first.accontiIrpefUsed !== undefined || first.accontiInpsUsed !== undefined) {
-      return {
-        irpef: first.accontiIrpefUsed ?? 0,
-        inps: first.accontiInpsUsed ?? 0,
-      };
-    }
-    return null;
-  }, [savedScadenze]);
+  const savedAccontiFromScadenze = useMemo(() => accontiUsatiDalPiano(savedScadenze), [savedScadenze]);
 
   useEffect(() => {
     if (!useManualAcconti) {
@@ -84,9 +78,13 @@ export function Scadenze() {
   
   const parsedAccontiIrpef = parseCurrency(manualAccontiIrpef);
   const parsedAccontiInps = parseCurrency(manualAccontiInps);
-  const contributiInput = parseOptionalContribution(manualContributiVersati);
+  // Casse professionali: importo deducibile inserito qui per la sola stima, come prima.
+  // INPS: deduzione per cassa (o previsionale) condivisa con Dashboard e Simulatore.
+  const isCassaProfessionale = config.gestionePrevidenziale === 'cassa_ordinistica';
+  const contributiInput = isCassaProfessionale ? parseOptionalContribution(manualContributiVersati) : { amount: undefined, invalid: false };
+  const deduzioneInps = risolviDeduzioneInps(config, annoRiferimento, scadenze);
 
-  const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config, annoRiferimento), contributiInput.amount);
+  const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config, annoRiferimento), isCassaProfessionale ? contributiInput.amount : deduzioneInps.contributiVersati);
   const redditoImponibile = fiscale.imponibile;
   const irpefTotale = fiscale.irpef;
   const inpsTotale = fiscale.inps;
@@ -117,6 +115,16 @@ export function Scadenze() {
 
   const schedule = useMemo(() => generatePaymentSchedule(scheduleInput), [scheduleInput]);
   const totals = useMemo(() => calculateScheduleTotals(schedule), [schedule]);
+  // Con un piano salvato i riepiloghi seguono le scadenze registrate (rate pagate
+  // comprese), non il piano ipotetico ricalcolato dai dati attuali.
+  const round2 = (v: number) => Math.round(v * 100) / 100;
+  const savedTotals = useMemo(() => {
+    const totalPrincipal = round2(savedScadenze.reduce((sum, s) => sum + s.importo, 0));
+    const totalInterest = round2(savedScadenze.reduce((sum, s) => sum + s.interessi, 0));
+    return { totalPrincipal, totalInterest, grandTotal: round2(totalPrincipal + totalInterest) };
+  }, [savedScadenze]);
+  const shownTotals = hasSavedScadenze ? savedTotals : totals;
+  const previewDiffers = hasSavedScadenze && (savedTotals.totalPrincipal !== totals.totalPrincipal || savedTotals.totalInterest !== totals.totalInterest);
 
   const isUpcoming = (dateStr: string) => {
     const date = parseDateLocal(dateStr);
@@ -134,144 +142,13 @@ export function Scadenze() {
     return date < today;
   };
 
-  const round2 = (v: number) => Math.round(v * 100) / 100;
-
-  const convertScheduleToScadenze = (scheduleItems: PaymentScheduleItem[], accontiIrpef: number, accontiInps: number): Array<Omit<Scadenza, 'userId'>> => {
-    const result: Array<Omit<Scadenza, 'userId'>> = [];
-    let idCounter = Date.now();
-
-    for (const item of scheduleItems) {
-      const isSummerBundle = item.label.includes('Saldo') || item.label.includes('Rata');
-      const trancheMatch = item.label.match(/Rata (\d+)\/(\d+)/);
-      const trancheIndex = trancheMatch ? parseInt(trancheMatch[1]) - 1 : 0;
-      const totalTranches = trancheMatch ? parseInt(trancheMatch[2]) : 1;
-
-      // Compute interest shares for each active component, rounded to 2 decimals.
-      // The last active component absorbs the rounding remainder so the sum
-      // of per-component interest equals item.interestAmount exactly.
-      const activeComponents: { key: string; principal: number }[] = [];
-      if (item.components.taxSaldo > 0) activeComponents.push({ key: 'taxSaldo', principal: item.components.taxSaldo });
-      if (item.components.taxAcconto > 0) activeComponents.push({ key: 'taxAcconto', principal: item.components.taxAcconto });
-      if (item.components.inpsSaldo > 0) activeComponents.push({ key: 'inpsSaldo', principal: item.components.inpsSaldo });
-      if (item.components.inpsAcconto > 0) activeComponents.push({ key: 'inpsAcconto', principal: item.components.inpsAcconto });
-
-      const interestByKey: Record<string, number> = {};
-      if (item.principalAmount > 0 && item.interestAmount > 0 && activeComponents.length > 0) {
-        let allocated = 0;
-        for (let ci = 0; ci < activeComponents.length; ci++) {
-          const comp = activeComponents[ci];
-          if (ci === activeComponents.length - 1) {
-            // Last component gets the remainder to avoid cent drift
-            interestByKey[comp.key] = round2(item.interestAmount - allocated);
-          } else {
-            const share = round2(item.interestAmount * (comp.principal / item.principalAmount));
-            interestByKey[comp.key] = share;
-            allocated = round2(allocated + share);
-          }
-        }
-      }
-
-      if (item.components.taxSaldo > 0) {
-        const interessi = interestByKey['taxSaldo'] ?? 0;
-        result.push({
-          id: `${idCounter++}`,
-          visibleId: `${annoVersamento}-saldo-irpef-${trancheIndex}`,
-          annoRiferimento,
-          annoVersamento,
-          date: item.date,
-          tipo: 'saldo_irpef',
-          label: isSummerBundle && totalTranches > 1 ? `Saldo imposta sostitutiva (${trancheIndex + 1}/${totalTranches})` : 'Saldo imposta sostitutiva',
-          importo: item.components.taxSaldo,
-          interessi,
-          totale: round2(item.components.taxSaldo + interessi),
-          pagato: false,
-          trancheIndex,
-          totalTranches,
-          accontiIrpefUsed: accontiIrpef,
-          accontiInpsUsed: accontiInps,
-        });
-      }
-
-      if (item.components.taxAcconto > 0) {
-        const isSecondAcconto = item.label.includes('Secondo');
-        const interessi = interestByKey['taxAcconto'] ?? 0;
-        result.push({
-          id: `${idCounter++}`,
-          visibleId: `${annoVersamento}-acconto-irpef-${isSecondAcconto ? '2' : '1'}-${trancheIndex}`,
-          annoRiferimento,
-          annoVersamento,
-          date: item.date,
-          tipo: 'acconto_irpef',
-          label: isSecondAcconto 
-            ? 'Secondo acconto imposta sostitutiva' 
-            : (isSummerBundle && totalTranches > 1 ? `Primo acconto imposta sostitutiva (${trancheIndex + 1}/${totalTranches})` : 'Primo acconto imposta sostitutiva'),
-          importo: item.components.taxAcconto,
-          interessi,
-          totale: round2(item.components.taxAcconto + interessi),
-          pagato: false,
-          trancheIndex: isSecondAcconto ? 0 : trancheIndex,
-          totalTranches: isSecondAcconto ? 1 : totalTranches,
-          accontiIrpefUsed: accontiIrpef,
-          accontiInpsUsed: accontiInps,
-        });
-      }
-
-      if (item.components.inpsSaldo > 0) {
-        const interessi = interestByKey['inpsSaldo'] ?? 0;
-        result.push({
-          id: `${idCounter++}`,
-          visibleId: `${annoVersamento}-saldo-inps-${trancheIndex}`,
-          annoRiferimento,
-          annoVersamento,
-          date: item.date,
-          tipo: 'saldo_inps',
-          label: isSummerBundle && totalTranches > 1 ? `Saldo INPS (${trancheIndex + 1}/${totalTranches})` : 'Saldo INPS',
-          importo: item.components.inpsSaldo,
-          interessi,
-          totale: round2(item.components.inpsSaldo + interessi),
-          pagato: false,
-          trancheIndex,
-          totalTranches,
-          accontiIrpefUsed: accontiIrpef,
-          accontiInpsUsed: accontiInps,
-        });
-      }
-
-      if (item.components.inpsAcconto > 0) {
-        const isSecondAcconto = item.label.includes('Secondo');
-        const interessi = interestByKey['inpsAcconto'] ?? 0;
-        result.push({
-          id: `${idCounter++}`,
-          visibleId: `${annoVersamento}-acconto-inps-${isSecondAcconto ? '2' : '1'}-${trancheIndex}`,
-          annoRiferimento,
-          annoVersamento,
-          date: item.date,
-          tipo: 'acconto_inps',
-          label: isSecondAcconto 
-            ? 'Secondo Acconto INPS' 
-            : (isSummerBundle && totalTranches > 1 ? `Primo Acconto INPS (${trancheIndex + 1}/${totalTranches})` : 'Primo Acconto INPS'),
-          importo: item.components.inpsAcconto,
-          interessi,
-          totale: round2(item.components.inpsAcconto + interessi),
-          pagato: false,
-          trancheIndex: isSecondAcconto ? 0 : trancheIndex,
-          totalTranches: isSecondAcconto ? 1 : totalTranches,
-          accontiIrpefUsed: accontiIrpef,
-          accontiInpsUsed: accontiInps,
-        });
-      }
-    }
-
-    return result;
-  };
-
   const handleSaveScadenze = async () => {
     if (contributiInput.invalid || getCassaWarning(config, annoRiferimento)) {
       showToast(contributiInput.invalid ? 'Correggi l’importo dei contributi versati prima di salvare.' : 'Completa i contributi della cassa per l’anno selezionato in Impostazioni.', 'error');
       return;
     }
     try {
-      const newScadenze = convertScheduleToScadenze(schedule, parsedAccontiIrpef, parsedAccontiInps);
+      const newScadenze = convertScheduleToScadenze(schedule, { annoRiferimento, annoVersamento, accontiIrpef: parsedAccontiIrpef, accontiInps: parsedAccontiInps });
       await removeScadenzeByYear(annoVersamento);
       await bulkSaveScadenze(newScadenze);
       showToast(`Scadenze ${annoVersamento} salvate!`);
@@ -286,22 +163,22 @@ export function Scadenze() {
       return;
     }
     try {
-      const newScadenze = convertScheduleToScadenze(schedule, parsedAccontiIrpef, parsedAccontiInps);
-      const existingPaidStatus = new Map(
-        savedScadenze.map(s => [s.visibleId, { pagato: s.pagato, dataPagamento: s.dataPagamento }])
+      // Le scadenze pagate non si eliminano né si ricalcolano: sono versamenti
+      // avvenuti e alimentano la deduzione per cassa.
+      const piano = rigeneraPreservandoPagate(
+        savedScadenze,
+        convertScheduleToScadenze(schedule, { annoRiferimento, annoVersamento, accontiIrpef: parsedAccontiIrpef, accontiInps: parsedAccontiInps }),
+        { accontiIrpefUsed: parsedAccontiIrpef, accontiInpsUsed: parsedAccontiInps },
       );
-      
-      const mergedScadenze = newScadenze.map(s => {
-        const existing = existingPaidStatus.get(s.visibleId);
-        if (existing) {
-          return { ...s, pagato: existing.pagato, dataPagamento: existing.dataPagamento };
-        }
-        return s;
-      });
-
-      await removeScadenzeByYear(annoVersamento);
-      await bulkSaveScadenze(mergedScadenze);
-      showToast(`Scadenze ${annoVersamento} rigenerate!`);
+      if (piano.blocchi.length > 0) {
+        showToast(`Rigenerazione annullata, nessuna scadenza modificata. ${piano.blocchi.join(' ')}`, 'error');
+        return;
+      }
+      for (const id of piano.daEliminare) await removeScadenza(id);
+      await bulkSaveScadenze(piano.daSalvare);
+      for (const pagata of piano.pagateDaAggiornare) await updateScadenza(pagata);
+      if (piano.avvisi.length > 0) showToast(`Scadenze ${annoVersamento} rigenerate, rate pagate invariate. ${piano.avvisi.join(' ')}`, 'error');
+      else showToast(`Scadenze ${annoVersamento} rigenerate, rate pagate invariate.`);
     } catch (error) {
       showToast('Errore rigenerazione scadenze', 'error');
     }
@@ -312,11 +189,21 @@ export function Scadenze() {
       const updated: Scadenza = {
         ...scadenza,
         pagato: !scadenza.pagato,
-        dataPagamento: !scadenza.pagato ? new Date().toISOString().split('T')[0] : undefined,
+        dataPagamento: !scadenza.pagato ? formatDate(new Date()) : undefined,
       };
       await updateScadenza(updated);
     } catch (error) {
       showToast('Errore aggiornamento scadenza', 'error');
+    }
+  };
+
+  // Data effettiva del versamento: decide l'anno della deduzione per cassa.
+  const handleChangeDataPagamento = async (scadenza: Scadenza, value: string) => {
+    if (!isIsoDate(value) || value === scadenza.dataPagamento) return;
+    try {
+      await updateScadenza({ ...scadenza, dataPagamento: value });
+    } catch (error) {
+      showToast('Errore aggiornamento data di pagamento', 'error');
     }
   };
 
@@ -450,6 +337,7 @@ export function Scadenze() {
             </div>
           </div>
 
+          {isCassaProfessionale ? (
           <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div style={{ flex: '1 1 250px' }}>
@@ -478,12 +366,17 @@ export function Scadenze() {
                 {contributiInput.invalid && <p id="contributi-versati-errore" role="alert">Inserisci un importo valido, per esempio 1.000,50. Finché non lo correggi, la stima usa la deduzione configurata.</p>}
                 {contributiInput.amount === undefined && (
                   <span style={{ display: 'block', marginTop: 4, color: 'var(--accent-orange)' }}>
-                    Se non specificato, si usa la deduzione configurata (per INPS, il totale stimato).
+                    Se non specificato, si usa la quota deducibile configurata in Impostazioni.
                   </span>
                 )}
               </div>
             </div>
           </div>
+          ) : (
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <DeduzioneInpsInfo config={config} anno={annoRiferimento} deduzione={deduzioneInps} importoDedotto={fiscale.deduzioneContributi} updateConfig={updateConfig} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -583,18 +476,18 @@ export function Scadenze() {
       <div className="grid-3" style={{ marginBottom: 24 }}>
         <div className="card">
           <h2 className="card-title"><Euro size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Totale Principale</h2>
-          <div className="stat-value" style={{ color: 'var(--accent-orange)' }}><Currency amount={totals.totalPrincipal} /></div>
-          <div className="stat-label">Capitale da versare</div>
+          <div className="stat-value" style={{ color: 'var(--accent-orange)' }}><Currency amount={shownTotals.totalPrincipal} /></div>
+          <div className="stat-label">{hasSavedScadenze ? 'Capitale del piano salvato' : 'Capitale da versare'}</div>
         </div>
         <div className="card">
           <h2 className="card-title"><Percent size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Interessi Rateizzazione</h2>
-          <div className="stat-value" style={{ color: numberOfTranches > 1 ? 'var(--accent-red)' : 'var(--text-muted)' }}><Currency amount={totals.totalInterest} /></div>
+          <div className="stat-value" style={{ color: shownTotals.totalInterest > 0 ? 'var(--accent-red)' : 'var(--text-muted)' }}><Currency amount={shownTotals.totalInterest} /></div>
           <div className="stat-label">0.33% mensile dalla 2ª rata</div>
         </div>
         <div className="card" style={{ background: 'linear-gradient(135deg, var(--bg-card) 0%, rgba(239,68,68,0.1) 100%)' }}>
           <h2 className="card-title"><CalendarClock size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Totale da Versare</h2>
-          <div className="stat-value" style={{ fontSize: '2rem', color: 'var(--accent-red)' }}><Currency amount={totals.grandTotal} /></div>
-          <div className="stat-label">Principale + interessi</div>
+          <div className="stat-value" style={{ fontSize: '2rem', color: 'var(--accent-red)' }}><Currency amount={shownTotals.grandTotal} /></div>
+          <div className="stat-label">Principale + interessi{hasSavedScadenze ? ', rate pagate comprese' : ''}</div>
         </div>
       </div>
 
@@ -614,7 +507,13 @@ export function Scadenze() {
           </div>
         </div>
 
-        {numberOfTranches > 1 && (
+        {previewDiffers && (
+          <div role="status" style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 12, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            Anteprima con i dati attuali: capitale <Currency amount={totals.totalPrincipal} />, interessi <Currency amount={totals.totalInterest} />. È un piano ipotetico: con <strong>Rigenera</strong> le rate già pagate restano invariate e si ripianifica solo il residuo, quindi i totali salvati possono differire.
+          </div>
+        )}
+
+        {numberOfTranches > 1 && !hasSavedScadenze && (
           <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <Info size={18} style={{ color: '#fbbf24', flexShrink: 0 }} />
             <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
@@ -634,6 +533,7 @@ export function Scadenze() {
                   <th style={{ textAlign: 'right' }}>Importo</th>
                   <th style={{ textAlign: 'right' }}>Interessi</th>
                   <th style={{ textAlign: 'right' }}>Totale</th>
+                  <th>Pagato il</th>
                 </tr>
               </thead>
               <tbody>
@@ -691,6 +591,24 @@ export function Scadenze() {
                         </td>
                         <td style={{ textAlign: 'right', fontWeight: 600, color: scadenza.pagato ? 'var(--accent-green)' : 'var(--accent-orange)' }}>
                           <Currency amount={scadenza.totale} tabular />
+                        </td>
+                        <td>
+                          {scadenza.pagato && (
+                            <>
+                              <input
+                                type="date"
+                                className="input-field"
+                                aria-label={`Data di pagamento: ${scadenza.label}`}
+                                aria-invalid={!isIsoDate(scadenza.dataPagamento)}
+                                value={scadenza.dataPagamento ?? ''}
+                                onChange={(e) => handleChangeDataPagamento(scadenza, e.target.value)}
+                                style={{ padding: '4px 8px', fontSize: '0.8rem', width: 'auto' }}
+                              />
+                              {!isIsoDate(scadenza.dataPagamento) && (
+                                <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--accent-orange)' }}>Data mancante</span>
+                              )}
+                            </>
+                          )}
                         </td>
                       </tr>
                     );
