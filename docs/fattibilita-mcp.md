@@ -736,13 +736,18 @@ Ritorna:
 {
   anno, criterio: "cassa", fatturato, numeroFatture,
   redditoImponibile, impostaSostitutiva, contributiPrevidenziali, totaleStimato,
+  contributiDeducibili, entePrevidenziale, avvisi: string[],
+  deduzioneContributi: { criterio: "cassa" | "competenza" | null, fonte, previsionale,
+    versamentiConteggiati, versamentiSenzaData, descrizione },
   aliquotaApplicata, coefficienteRedditivita,
   soglia: { limite, percentuale, rimanente, stato },
   acconti: { irpef, inps },
   nota: string
 }
 ```
-**Principio di cassa**, come la Dashboard **[V]** `Dashboard.tsx` righe 273-277: entrano le fatture con `incassato !== false` il cui anno di `dataIncasso || data` è `anno`. `fatturato` è quindi l'incassato dell'anno; `criterio` vale sempre `"cassa"` così chi legge non deve indovinarlo. Calcolato con `calcolaFiscale`, `getAliquotaImpostaSostitutiva` con `annoImposta = anno`, `calcolaCoefficienteMedioAteco`, `calcolaContributiPrevidenziali`, `calcolaAccontiForfettario` **[V]** pure; `soglia.stato` viene da `getRegimeThresholdStatus` **[V]**. `nota` è fissa: `Stima indicativa basata sui dati inseriti, calcolata per cassa, non sostituisce il commercialista.`
+**Principio di cassa**, come la Dashboard **[V]** `Dashboard.tsx` righe 273-277: entrano le fatture con `incassato !== false` il cui anno di `dataIncasso || data` è `anno`. `fatturato` è quindi l'incassato dell'anno; `criterio` vale sempre `"cassa"` così chi legge non deve indovinarlo. Calcolato con `calcolaFiscale`, `getAliquotaImpostaSostitutiva` con `annoImposta = anno`, `calcolaCoefficienteMedioAteco`, `calcolaContributiPrevidenziali`, `calcolaAccontiForfettario` **[V]** pure; `soglia.stato` viene da `getRegimeThresholdStatus` **[V]**.
+
+**Deduzione dei contributi** (ottobre 2026): `criterio` in cima riguarda solo gli incassi; la deduzione ha un criterio suo, in `deduzioneContributi`, calcolato con `risolviDeduzioneInps` (`src/lib/utils/deduzioneInps.ts`), lo stesso di Dashboard, Simulatore e Scadenze. Per INPS vale la scelta del profilo (`config.deduzioneInpsModalita`, assente = `"cassa"`): per cassa si somma il capitale delle scadenze INPS pagate con `dataPagamento` nell'anno, oppure il totale manuale `config.contributiInpsVersatiManuali[anno]`, che le sostituisce; senza versamenti noti la deduzione è zero con un avviso. `"competenza"` deduce i contributi dovuti ed è segnata `previsionale: true`. Per le casse professionali `criterio` è `null` e si usa la quota deducibile configurata. `fonte` vale `manuale`, `scadenze`, `nessun_versamento`, `dovuti_stimati` o `cassa_professionale`. `nota` descrive i due criteri, per esempio: `Stima indicativa basata sui dati inseriti: fatturato calcolato per cassa (data di incasso); contributi INPS dedotti per cassa, dai versamenti pagati nell'anno. Non sostituisce il commercialista.`
 Errori: `VALIDATION` se `anno` non è un intero.
 
 **9. `get_giornate_per_cliente`**

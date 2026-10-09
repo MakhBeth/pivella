@@ -31,7 +31,7 @@ const PAGE_SECTIONS: PageSection[] = [
     icon: LayoutDashboard,
     color: "var(--accent-primary)",
     title: "Dashboard",
-    text: "Il colpo d'occhio sull'anno: quanto hai fatturato, quanto hai incassato, quanto sei vicino alla soglia dei 85.000€ del forfettario e una stima di tasse e contributi da accantonare. È la pagina da guardare quando ti chiedi \"come sto andando?\".",
+    text: "Il colpo d'occhio sull'anno: quanto hai fatturato, quanto hai incassato, quanto sei vicino alla soglia dei 85.000€ del forfettario e una stima di tasse e contributi da accantonare. I contributi INPS si deducono per cassa, cioè quelli versati nell'anno: Pivella li prende dalle scadenze segnate come pagate, oppure dal totale che inserisci tu. È la pagina da guardare quando ti chiedi \"come sto andando?\".",
   },
   {
     icon: FileText,
@@ -55,7 +55,7 @@ const PAGE_SECTIONS: PageSection[] = [
     icon: CalendarClock,
     color: "var(--accent-red)",
     title: "Scadenze",
-    text: "Le scadenze fiscali calcolate sui tuoi numeri: acconti e saldi dell’imposta sostitutiva e della Gestione Separata INPS. Le casse professionali sono incluse nelle stime con importi manuali per anno e seguono il calendario del proprio ente. Niente più \"quanto devo mettere da parte per giugno?\": lo vedi qui, con le date e gli importi stimati.",
+    text: "Le scadenze fiscali calcolate sui tuoi numeri: acconti e saldi dell’imposta sostitutiva e della Gestione Separata INPS. Le casse professionali sono incluse nelle stime con importi manuali per anno e seguono il calendario del proprio ente. Niente più \"quanto devo mettere da parte per giugno?\": lo vedi qui, con le date e gli importi stimati. Quando paghi, segna la scadenza e correggi la data se serve: la data di pagamento decide in che anno deduci i contributi. Se rigeneri il piano, le rate già pagate non cambiano.",
   },
   {
     icon: Calculator,
