@@ -4,6 +4,7 @@ import { descriviDeduzioneInps, getContributiInpsManuali, setContributiInpsManua
 import { formatCurrency } from '../../lib/utils/formatting';
 import { parseOptionalContribution } from '../../lib/utils/formatting';
 import { Currency } from '../ui/Currency';
+import { Info } from './icons';
 
 interface DeduzioneInpsInfoProps {
   config: Config;
@@ -31,6 +32,13 @@ export function DeduzioneInpsInfo({ config, anno, deduzione, importoDedotto, upd
 
   if (deduzione.fonte === 'cassa_professionale') return null;
 
+  // In sola lettura (Dashboard, Simulatore) gli avvisi diventano un'icona con tooltip che porta a Scadenze.
+  const compatto = !updateConfig && linkScadenze === true;
+  const titoloAvviso = deduzione.avvisi.length === 0 ? null
+    : deduzione.previsionale ? 'Stima previsionale: ai fini fiscali vale la cassa'
+    : deduzione.fonte === 'nessun_versamento' ? 'Nessun versamento INPS'
+    : 'Versamenti INPS senza data';
+
   const salva = () => {
     if (!updateConfig || parsed.invalid || parsed.amount === manuale) return;
     updateConfig({ contributiInpsVersatiManuali: setContributiInpsManuali(config, anno, parsed.amount) });
@@ -50,15 +58,19 @@ export function DeduzioneInpsInfo({ config, anno, deduzione, importoDedotto, upd
           <span style={{ background: 'var(--accent-orange)', color: '#000', fontSize: '0.7rem', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>PREVISIONALE</span>
         )}
       </div>
-      <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>{descriviDeduzioneInps(deduzione, anno)}</div>
-      {deduzione.avvisi.map(avviso => (
-        <p key={avviso} role="status" style={{ color: 'var(--accent-orange)', margin: '6px 0 0' }}>{avviso}</p>
+      <div style={{ color: 'var(--text-muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {descriviDeduzioneInps(deduzione, anno)}
+        {compatto && titoloAvviso && (
+          <a href="#/scadenze" className="tooltip" data-tooltip={titoloAvviso}
+            aria-label={`${titoloAvviso}. ${deduzione.avvisi.join(' ')} Vai a Scadenze.`}
+            style={{ display: 'inline-flex', color: '#fbbf24' }}>
+            <Info size={16} aria-hidden="true" />
+          </a>
+        )}
+      </div>
+      {!compatto && deduzione.avvisi.map(avviso => (
+        <p key={avviso} role="status" style={{ fontWeight: 600, color: 'var(--text-primary)', margin: '6px 0 0' }}>{avviso}</p>
       ))}
-      {!updateConfig && linkScadenze && deduzione.modalita === 'cassa' && (
-        <p style={{ margin: '6px 0 0' }}>
-          <a href="#/scadenze">Inserisci o correggi i versamenti INPS in Scadenze</a>
-        </p>
-      )}
       {updateConfig && deduzione.modalita === 'cassa' && deduzione.fonte === 'nessun_versamento' && stima && (
         <div role="status" style={{ marginTop: 12, padding: '10px 12px', border: '1px dashed var(--border)', borderRadius: 8 }}>
           <div>
