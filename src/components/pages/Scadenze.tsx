@@ -7,10 +7,11 @@ import { calcolaFiscale } from '../../lib/utils/calculations';
 import { getCassaWarning, calcolaAccontiForfettario, calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, includeInpsInScadenze, usesFixedContributiPrevidenziali } from '../../lib/utils/forfettario';
 import { generatePaymentSchedule, calculateScheduleTotals } from '../../lib/utils/paymentScheduler';
 import { parseDateLocal, formatDateLong, formatDate, isIsoDate } from '../../lib/utils/dateHelpers';
-import { risolviDeduzioneInps } from '../../lib/utils/deduzioneInps';
+import { descriviDeduzioneInps, risolviDeduzioneInps } from '../../lib/utils/deduzioneInps';
 import { accontiUsatiDalPiano, rigeneraPreservandoPagate } from '../../lib/utils/rigeneraScadenze';
 import { convertScheduleToScadenze } from '../../lib/utils/scheduleToScadenze';
-import { DeduzioneInpsInfo } from '../shared/DeduzioneInps';
+import { BadgeStima, ContributiInpsManuale } from '../shared/DeduzioneInps';
+import { calcolaAccantonamento } from '../../lib/utils/accantonamento';
 import { parseOptionalContribution, parseCurrency, formatCurrency } from '../../lib/utils/formatting';
 import { Currency } from '../ui/Currency';
 import type { PaymentScheduleInput, PaymentScheduleItem, Scadenza, ScadenzaTipo } from '../../types';
@@ -18,7 +19,7 @@ import type { PaymentScheduleInput, PaymentScheduleItem, Scadenza, ScadenzaTipo 
 type NumberOfTranches = 1 | 2 | 3 | 4 | 5 | 6;
 
 export function Scadenze() {
-  const { config, updateConfig, fatture, scadenze, getScadenzeByYear, getPaidAccontiForYear, bulkSaveScadenze, removeScadenza, removeScadenzeByYear, updateScadenza, showToast } = useApp();
+  const { config, updateConfig, fatture, scadenze, getScadenzeByYear, bulkSaveScadenze, removeScadenza, removeScadenzeByYear, updateScadenza, showToast } = useApp();
 
   const annoCorrente = new Date().getFullYear();
   // Dai link della Dashboard arriva l'anno da mostrare (#/scadenze?anno=2026),
@@ -50,21 +51,7 @@ export function Scadenze() {
   const savedScadenze = getScadenzeByYear(annoVersamento);
   const hasSavedScadenze = savedScadenze.length > 0;
 
-  const paidAccontiFromDb = getPaidAccontiForYear(annoRiferimento);
-
   const savedAccontiFromScadenze = useMemo(() => accontiUsatiDalPiano(savedScadenze), [savedScadenze]);
-
-  useEffect(() => {
-    if (!useManualAcconti) {
-      if (savedAccontiFromScadenze) {
-        setManualAccontiIrpef(savedAccontiFromScadenze.irpef > 0 ? savedAccontiFromScadenze.irpef.toString() : '');
-        setManualAccontiInps(savedAccontiFromScadenze.inps > 0 ? savedAccontiFromScadenze.inps.toString() : '');
-      } else {
-        setManualAccontiIrpef(paidAccontiFromDb.irpefPaid > 0 ? paidAccontiFromDb.irpefPaid.toString() : '');
-        setManualAccontiInps(paidAccontiFromDb.inpsPaid > 0 ? paidAccontiFromDb.inpsPaid.toString() : '');
-      }
-    }
-  }, [paidAccontiFromDb.irpefPaid, paidAccontiFromDb.inpsPaid, useManualAcconti, annoRiferimento, savedAccontiFromScadenze]);
 
   const aliquotaIrpef = getAliquotaImpostaSostitutiva({
     annoApertura: config.annoApertura,
@@ -103,6 +90,20 @@ export function Scadenze() {
   const previdenzialeInfo = calcolaContributiPrevidenziali(redditoImponibile, config, annoRiferimento);
   const includeInpsSchedule = includeInpsInScadenze(config.gestionePrevidenziale);
   const usesFixedInps = usesFixedContributiPrevidenziali(config.gestionePrevidenziale);
+
+  // Acconti dell'anno da scalare dal saldo: quelli usati per il piano già salvato,
+  // altrimenti gli stessi della Dashboard (piano dell'anno o stima dall'anno prima).
+  const accantonamento = calcolaAccantonamento(config, annoRiferimento, fiscale, fatture, scadenze);
+  const accontiCalcolati = savedAccontiFromScadenze ?? { irpef: accantonamento.acconti.imposta, inps: accantonamento.acconti.inps };
+  const accontiStimati = !savedAccontiFromScadenze && accantonamento.acconti.stimato;
+  useEffect(() => { setUseManualAcconti(false); }, [annoRiferimento]);
+  useEffect(() => {
+    if (useManualAcconti) return;
+    setManualAccontiIrpef(accontiCalcolati.irpef > 0 ? accontiCalcolati.irpef.toString().replace('.', ',') : '');
+    setManualAccontiInps(accontiCalcolati.inps > 0 ? accontiCalcolati.inps.toString().replace('.', ',') : '');
+  }, [accontiCalcolati.irpef, accontiCalcolati.inps, useManualAcconti]);
+  const inpsVersato = isCassaProfessionale ? 0 : fiscale.deduzioneContributi;
+  const primoAnnoSenzaVersamenti = annoRiferimento <= config.annoApertura && deduzioneInps.fonte === 'nessun_versamento' && parsedAccontiIrpef === 0 && parsedAccontiInps === 0;
 
   const taxAmounts = useMemo(() => {
     return calcolaAccontiForfettario({
@@ -384,76 +385,116 @@ export function Scadenze() {
               </div>
             </div>
           </div>
-          ) : (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-              <DeduzioneInpsInfo config={config} anno={annoRiferimento} deduzione={deduzioneInps} importoDedotto={fiscale.deduzioneContributi} updateConfig={updateConfig} />
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h2 className="card-title">Versamenti già registrati (anno precedente)</h2>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 16 }}>
-          {paidAccontiFromDb.irpefPaid > 0 || paidAccontiFromDb.inpsPaid > 0 
-            ? 'Acconti calcolati dalle scadenze marcate come pagate. Puoi sovrascrivere manualmente.'
-            : usesFixedInps
-              ? 'Inserisci gli acconti di imposta sostitutiva e gli eventuali contributi previdenziali già versati per stimare il residuo annuo.'
-              : 'Inserisci gli acconti di imposta sostitutiva e INPS già versati per calcolare il saldo netto.'
-          }
-        </p>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={useManualAcconti}
-              onChange={(e) => setUseManualAcconti(e.target.checked)}
-              style={{ width: 18, height: 18 }}
-            />
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Modifica manualmente
-            </span>
-          </label>
-        </div>
+        <h2 className="card-title">Versamenti nel {annoRiferimento}</h2>
+        {primoAnnoSenzaVersamenti ? (
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', margin: 0 }}>
+            Primo anno di attività: nel {annoRiferimento} non si versano saldo né acconti. I primi arrivano a giugno {annoRiferimento + 1}, nel piano qui sotto.
+          </p>
+        ) : (
+          <>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 12px' }}>
+              Quanto hai versato (o versi) nel {annoRiferimento}: gli acconti si scalano dal saldo {annoRiferimento}, l’INPS versato si deduce dall’imponibile.
+            </p>
+            <table style={{ fontSize: '0.9rem', borderCollapse: 'collapse' }}>
+              <tbody>
+                {includeInpsSchedule && (
+                  <>
+                    <tr>
+                      <td style={{ width: 16 }} />
+                      <td style={{ paddingRight: 24, color: 'var(--text-secondary)' }}>Saldo INPS {annoRiferimento - 1}</td>
+                      <td style={{ textAlign: 'right' }}><Currency amount={Math.max(0, Math.round((inpsVersato - parsedAccontiInps) * 100) / 100)} tabular /></td>
+                    </tr>
+                    <tr>
+                      <td style={{ color: 'var(--text-muted)', fontFamily: 'Space Mono, monospace' }}>+</td>
+                      <td style={{ paddingRight: 24, color: 'var(--text-secondary)' }}>Acconti INPS {annoRiferimento}{accontiStimati && !useManualAcconti && <BadgeStima />}</td>
+                      <td style={{ textAlign: 'right' }}><Currency amount={parsedAccontiInps} tabular /></td>
+                    </tr>
+                  </>
+                )}
+                {!isCassaProfessionale && (
+                  <tr>
+                    <td style={{ color: 'var(--text-muted)', fontFamily: 'Space Mono, monospace' }}>{includeInpsSchedule ? '=' : ''}</td>
+                    <td style={{ paddingRight: 24, fontWeight: 600 }}>
+                      INPS versato nel {annoRiferimento}, dedotto dall’imponibile
+                      {(deduzioneInps.stimato || deduzioneInps.previsionale) && <BadgeStima testo={deduzioneInps.previsionale ? 'PREVISIONALE' : 'STIMA'} />}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 600 }}><Currency amount={inpsVersato} tabular /></td>
+                  </tr>
+                )}
+                <tr>
+                  <td />
+                  <td style={{ paddingRight: 24, paddingTop: 8, color: 'var(--text-secondary)' }}>Acconti imposta sostitutiva {annoRiferimento}{accontiStimati && !useManualAcconti && <BadgeStima />}</td>
+                  <td style={{ textAlign: 'right', paddingTop: 8 }}><Currency amount={parsedAccontiIrpef} tabular /></td>
+                </tr>
+              </tbody>
+            </table>
+            {!isCassaProfessionale && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '8px 0 0' }}>{descriviDeduzioneInps(deduzioneInps, annoRiferimento)}</p>
+            )}
+            {!isCassaProfessionale && deduzioneInps.avvisi.map(avviso => (
+              <p key={avviso} role="status" style={{ fontSize: '0.85rem', fontWeight: 600, margin: '6px 0 0' }}>{avviso}</p>
+            ))}
+          </>
+        )}
 
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 200px' }}>
-            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Acconti imposta sostitutiva già pagati
-            </label>
-            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                className="input-field"
-                placeholder="0"
-                value={manualAccontiIrpef}
-                onChange={(e) => { setManualAccontiIrpef(e.target.value); setUseManualAcconti(true); }}
-                style={{ paddingLeft: 32, fontFamily: 'Space Mono, monospace' }}
-              />
+        <details style={{ marginTop: 16 }}>
+          <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Correggi a mano</summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
+            {!isCassaProfessionale && deduzioneInps.modalita === 'cassa' && (
+              <ContributiInpsManuale config={config} anno={annoRiferimento} updateConfig={updateConfig} />
+            )}
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ flex: '1 1 200px' }}>
+                <label htmlFor="acconti-imposta-input" style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Acconti imposta sostitutiva {annoRiferimento}
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
+                  <input
+                    id="acconti-imposta-input"
+                    type="text"
+                    inputMode="decimal"
+                    className="input-field"
+                    placeholder="0"
+                    value={manualAccontiIrpef}
+                    onChange={(e) => { setManualAccontiIrpef(e.target.value); setUseManualAcconti(true); }}
+                    style={{ paddingLeft: 32, fontFamily: 'Space Mono, monospace' }}
+                  />
+                </div>
+              </div>
+              <div style={{ flex: '1 1 200px' }}>
+                <label htmlFor="acconti-inps-input" style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  {usesFixedInps ? `Contributi ${annoRiferimento} già pagati` : `Acconti INPS ${annoRiferimento}`}
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
+                  <input
+                    id="acconti-inps-input"
+                    type="text"
+                    inputMode="decimal"
+                    className="input-field"
+                    placeholder="0"
+                    value={manualAccontiInps}
+                    onChange={(e) => { setManualAccontiInps(e.target.value); setUseManualAcconti(true); }}
+                    style={{ paddingLeft: 32, fontFamily: 'Space Mono, monospace' }}
+                  />
+                </div>
+              </div>
+              {useManualAcconti && (
+                <button type="button" className="btn btn-secondary" onClick={() => setUseManualAcconti(false)}>Usa gli acconti calcolati</button>
+              )}
             </div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+              Le correzioni degli acconti valgono per questa pagina e finiscono nel piano quando salvi o rigeneri; il totale INPS si salva per l’anno.
+            </p>
           </div>
-          <div style={{ flex: '1 1 200px' }}>
-            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              {usesFixedInps ? 'Contributi già pagati' : 'Acconti INPS già pagati'}
-            </label>
-            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                className="input-field"
-                placeholder="0"
-                value={manualAccontiInps}
-                onChange={(e) => { setManualAccontiInps(e.target.value); setUseManualAcconti(true); }}
-                style={{ paddingLeft: 32, fontFamily: 'Space Mono, monospace' }}
-              />
-            </div>
-          </div>
-        </div>
-        
+        </details>
+
         {(taxAmounts.accontiIrpefPagati > 0 || taxAmounts.accontiInpsPagati > 0) && (
           <div style={{ marginTop: 16, padding: '12px 16px', background: 'rgba(4, 120, 87, 0.1)', border: '1px solid rgba(4, 120, 87, 0.3)', borderRadius: 12, fontSize: '0.85rem' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 24px' }}>
@@ -462,6 +503,11 @@ export function Scadenze() {
                   <span style={{ color: 'var(--text-muted)' }}>Saldo imposta sostitutiva: </span>
                   <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}><Currency amount={taxAmounts.taxSaldoLordo} /></span>
                   <span style={{ color: 'var(--accent-green)', fontWeight: 600, marginLeft: 8 }}><Currency amount={taxAmounts.taxSaldo} /></span>
+                  {taxAmounts.accontiIrpefPagati > taxAmounts.taxSaldoLordo && (
+                    <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>
+                      credito di <Currency amount={Math.round((taxAmounts.accontiIrpefPagati - taxAmounts.taxSaldoLordo) * 100) / 100} />, compensabile nell’F24 di giugno {annoVersamento}
+                    </span>
+                  )}
                 </div>
               )}
               {taxAmounts.accontiInpsPagati > 0 && (
@@ -469,6 +515,11 @@ export function Scadenze() {
                   <span style={{ color: 'var(--text-muted)' }}>Saldo contributi: </span>
                   <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}><Currency amount={taxAmounts.inpsSaldoLordo} /></span>
                   <span style={{ color: 'var(--accent-green)', fontWeight: 600, marginLeft: 8 }}><Currency amount={taxAmounts.inpsSaldo} /></span>
+                  {taxAmounts.accontiInpsPagati > taxAmounts.inpsSaldoLordo && (
+                    <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>
+                      credito di <Currency amount={Math.round((taxAmounts.accontiInpsPagati - taxAmounts.inpsSaldoLordo) * 100) / 100} />, compensabile nell’F24 di giugno {annoVersamento}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
