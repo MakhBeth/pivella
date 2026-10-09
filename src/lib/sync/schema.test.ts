@@ -8,6 +8,7 @@ import {
   compareInstants,
   createEmptySnapshot,
   instantOf,
+  isUnreadableSyncFile,
   tombstoneTimestamp,
   parseSyncFile,
   serializeSnapshot,
@@ -258,4 +259,28 @@ test('parseSyncFile rejects a malformed client tariff history', () => {
       JSON.stringify(rateHistory)
     );
   }
+});
+
+test('isUnreadableSyncFile recognizes a file that is not JSON, such as a stale SMB copy padded with zeros', () => {
+  const padded = `${serializeSnapshot(createEmptySnapshot({ now: NOW, writer: WRITER }))}\u0000\u0000\u0000`;
+  let caught: unknown;
+  try {
+    parseSyncFile(padded, { now: NOW, writer: WRITER });
+  } catch (err) {
+    caught = err;
+  }
+  assert.ok(caught instanceof SyncSchemaError);
+  assert.equal(isUnreadableSyncFile(caught), true);
+});
+
+test('isUnreadableSyncFile ignores other sync errors', () => {
+  let caught: unknown;
+  try {
+    parseSyncFile(JSON.stringify({ schemaVersion: 99 }), { now: NOW, writer: WRITER });
+  } catch (err) {
+    caught = err;
+  }
+  assert.ok(caught instanceof SyncSchemaError);
+  assert.equal(isUnreadableSyncFile(caught), false);
+  assert.equal(isUnreadableSyncFile(new Error('File di sync non è JSON valido')), false);
 });
