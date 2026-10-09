@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Scadenza } from '../types';
 import type { IndexedDBManager } from '../lib/db/IndexedDBManager';
+import { accontiPagatiPerAnno } from '../lib/utils/accontiPagati';
 
 export function useScadenze(dbManager: IndexedDBManager, dbReady: boolean, currentUserId: string | null) {
   const [scadenze, setScadenze] = useState<Scadenza[]>([]);
@@ -95,21 +96,8 @@ export function useScadenze(dbManager: IndexedDBManager, dbReady: boolean, curre
     return scadenze.filter(s => s.annoVersamento === annoVersamento);
   }, [scadenze]);
 
-  const getPaidAccontiForYear = useCallback((annoRiferimento: number) => {
-    const relevantScadenze = scadenze.filter(
-      s => s.annoRiferimento === annoRiferimento && s.pagato
-    );
-
-    const irpefPaid = relevantScadenze
-      .filter(s => s.tipo === 'acconto_irpef')
-      .reduce((sum, s) => sum + s.importo, 0);
-
-    const inpsPaid = relevantScadenze
-      .filter(s => s.tipo === 'acconto_inps')
-      .reduce((sum, s) => sum + s.importo, 0);
-
-    return { irpefPaid, inpsPaid };
-  }, [scadenze]);
+  // Acconti dell'anno d'imposta: vedi accontiPagatiPerAnno.
+  const getPaidAccontiForYear = useCallback((anno: number) => accontiPagatiPerAnno(scadenze, anno), [scadenze]);
 
   return {
     scadenze,
