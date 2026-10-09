@@ -15,6 +15,7 @@ export interface FatturaXMLData {
     comune?: string;
     provincia?: string;
     nazione: string;
+    codiceDestinatario?: string;
   };
   numero: string;
   data: string; // YYYY-MM-DD
@@ -90,6 +91,8 @@ export function generateFatturaXML(data: FatturaXMLData): string {
   const totaleDocumentoEUR = totaleImponibileEUR;
 
   const progressivoInvio = generateProgressivoInvio();
+  // Senza codice SDI del cliente la fattura va nel cassetto fiscale (0000000)
+  const codiceDestinatario = cliente.codiceDestinatario?.trim().toUpperCase() || '0000000';
 
   // Genera linee dettaglio (importi in EUR per SDI)
   // Se multi-valuta, aggiunge AltriDatiGestionali con importi originali
@@ -174,7 +177,7 @@ export function generateFatturaXML(data: FatturaXMLData): string {
       </IdTrasmittente>
       <ProgressivoInvio>${progressivoInvio}</ProgressivoInvio>
       <FormatoTrasmissione>FPR12</FormatoTrasmissione>
-      <CodiceDestinatario>0000000</CodiceDestinatario>
+      <CodiceDestinatario>${escapeXml(codiceDestinatario)}</CodiceDestinatario>
     </DatiTrasmissione>
     <CedentePrestatore>
       <DatiAnagrafici>

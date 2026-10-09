@@ -52,6 +52,7 @@ export interface Cliente extends SyncMeta {
   comune?: string;
   provincia?: string;
   nazione?: string; // Default: IT
+  codiceDestinatario?: string; // Codice SDI a 7 caratteri; senza, l'XML usa 0000000
 }
 
 export interface Fattura extends SyncMeta {

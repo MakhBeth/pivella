@@ -83,6 +83,7 @@ export interface ClientePayload {
   comune?: string;
   provincia?: string;
   nazione: string;
+  codiceDestinatario?: string;
 }
 
 export interface IncassoPayload {
@@ -413,6 +414,7 @@ function validateCliente(raw: Record<string, unknown>, ctx: ValidationContext): 
     comune: c.optionalString('comune'),
     provincia: c.optionalString('provincia'),
     nazione: c.optionalString('nazione') ?? 'IT',
+    codiceDestinatario: c.optionalString('codiceDestinatario'),
   });
   // Deprecato: si accetta (client MCP vecchi, proposte in coda) e si scarta,
   // perché escludeva attività dal riepilogo invece di segnare un cambio tariffa.
