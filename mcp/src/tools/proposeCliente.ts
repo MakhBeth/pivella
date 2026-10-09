@@ -26,6 +26,7 @@ export const proposeCliente = proposeTool({
     comune: z.string().optional(),
     provincia: z.string().optional(),
     nazione: z.string().optional().describe('Default IT'),
+    codiceDestinatario: z.string().regex(/^[A-Za-z0-9]{7}$/).optional().describe('Codice destinatario SDI a 7 caratteri; senza, la fattura XML usa 0000000'),
   },
   summary: (p) => `Proposta: nuovo cliente ${p.nome}`,
 });

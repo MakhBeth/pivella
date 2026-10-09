@@ -82,6 +82,15 @@ export class SyncSchemaError extends Error {
   }
 }
 
+/**
+ * Il file c'è ma non è JSON. Su una cartella di rete può essere transitorio:
+ * il client SMB del Mac ha servito la dimensione nuova con il contenuto vecchio
+ * e una coda di zeri (9/10/2026). Chi sincronizza riprova prima di arrendersi.
+ */
+export function isUnreadableSyncFile(err: unknown): boolean {
+  return err instanceof SyncSchemaError && err.details?.unreadable === true;
+}
+
 export interface Stamp {
   now: string;
   writer: Writer;
@@ -182,6 +191,7 @@ export function parseSyncFile(text: string, stamp: Stamp): ParsedSyncFile {
     raw = JSON.parse(text);
   } catch (err) {
     throw new SyncSchemaError('SOURCE_UNAVAILABLE', 'File di sync non è JSON valido', {
+      unreadable: true,
       reason: err instanceof Error ? err.message : String(err),
     });
   }

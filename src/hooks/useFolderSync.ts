@@ -12,7 +12,7 @@ import type { MergeResult } from '../lib/sync/merge';
 import { listBackups, readBackup, restoreBackupSafely, type BackupEntry, type BackupPreview } from '../lib/sync/restore';
 import { BackupError } from '../lib/sync/backup';
 import { SyncLockedError } from '../lib/sync/lock';
-import type { Proposal, SyncSnapshot } from '../lib/sync/schema';
+import { isUnreadableSyncFile, type Proposal, type SyncSnapshot } from '../lib/sync/schema';
 import { decideProposal as runDecideProposal, type Decision } from '../lib/sync/proposalFlow';
 import type { ProposalPlan } from '../lib/sync/applyProposal';
 import { ProposalValidationError } from '../lib/sync/validate';
@@ -57,11 +57,19 @@ interface UseFolderSyncReturn {
   setLastSyncTime: (time: Date | null) => void;
 }
 
+/**
+ * Attese prima di riprovare quando il file di sync non è JSON: su una cartella
+ * di rete il Mac può vedere per qualche decina di secondi una copia vecchia
+ * con una coda di zeri. Finite queste, l'errore diventa visibile.
+ */
+const UNREADABLE_RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
+
 function describeSyncError(err: unknown): string {
   if (err instanceof ProposalValidationError) return `Proposta non più valida: ${err.message}`;
   if (err instanceof ProposalNotPendingError) return 'La proposta non è più in attesa: forse è stata ritirata o è scaduta';
   if (err instanceof BackupError) return `Sincronizzazione sospesa: impossibile creare il backup (${err.reason})`;
   if (err instanceof SyncLockedError) return 'Sincronizzazione rimandata: il file è in uso da un altro programma';
+  if (isUnreadableSyncFile(err)) return 'Il file di sincronizzazione non si legge (non è JSON valido). Se la cartella è su un disco di rete, riprova tra poco: a volte il computer ne mostra per un po\' una copia vecchia';
   if (err instanceof Error) return `Errore di sincronizzazione: ${err.message}`;
   return 'Errore di sincronizzazione';
 }
@@ -93,6 +101,7 @@ export function useFolderSync({
   const runningRef = useRef(false);
   const rerunRequestedRef = useRef(false);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unreadableRetryRef = useRef<{ attempts: number; timer: ReturnType<typeof setTimeout> | null }>({ attempts: 0, timer: null });
   const syncFolderHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
   // Callback in ref: cambiano a ogni render e non devono far ripartire l'avvio.
   const onAppliedRef = useRef(onApplied);
@@ -122,6 +131,11 @@ export function useFolderSync({
 
     runningRef.current = true;
     setIsSyncing(true);
+    const retry = unreadableRetryRef.current;
+    if (retry.timer) {
+      clearTimeout(retry.timer);
+      retry.timer = null;
+    }
     try {
       if (!(await verifyPermission(folderHandle))) {
         setSyncError('Permesso sulla cartella di sincronizzazione da rinnovare');
@@ -145,9 +159,21 @@ export function useFolderSync({
         setSyncError(null);
         setLastSyncTime(new Date());
       }
+      retry.attempts = 0;
       setSyncStatus(await dbManager.getSyncStatus());
     } catch (err: any) {
       console.error('[useFolderSync] Errore di sync:', err);
+      if (isUnreadableSyncFile(err) && retry.attempts < UNREADABLE_RETRY_DELAYS_MS.length) {
+        // Probabilmente transitorio: nessun avviso, un nuovo giro più tardi.
+        const delay = UNREADABLE_RETRY_DELAYS_MS[retry.attempts];
+        retry.attempts += 1;
+        retry.timer = setTimeout(() => {
+          retry.timer = null;
+          void runCycle();
+        }, delay);
+        return;
+      }
+      retry.attempts = 0;
       setSyncError(describeSyncError(err));
       // Permesso revocato: la cartella va riselezionata.
       if (err?.name === 'NotAllowedError') {
@@ -208,6 +234,7 @@ export function useFolderSync({
 
   useEffect(() => () => {
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    if (unreadableRetryRef.current.timer) clearTimeout(unreadableRetryRef.current.timer);
   }, []);
 
   const syncToFolder = useCallback(async () => {

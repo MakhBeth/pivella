@@ -33,6 +33,7 @@ export function clienteXMLData(c: Cliente | undefined, clienteNome: string): Fat
   if (c.cap) out.cap = c.cap;
   if (c.comune) out.comune = c.comune;
   if (c.provincia) out.provincia = c.provincia;
+  if (c.codiceDestinatario) out.codiceDestinatario = c.codiceDestinatario;
   return out;
 }
 

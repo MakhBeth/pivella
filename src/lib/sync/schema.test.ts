@@ -8,6 +8,7 @@ import {
   compareInstants,
   createEmptySnapshot,
   instantOf,
+  isUnreadableSyncFile,
   tombstoneTimestamp,
   parseSyncFile,
   serializeSnapshot,
@@ -277,4 +278,28 @@ test('a config with malformed INPS deduction settings is not merged', () => {
   const snap = createEmptySnapshot(STAMP);
   snap.config.push({ id: 'config_u1', userId: 'u1', contributiInpsVersatiManuali: { 2026: -5 } } as unknown as SyncSnapshot['config'][number]);
   assert.throws(() => parseSyncFile(serializeSnapshot(snap), STAMP), (err: unknown) => err instanceof SyncSchemaError && /Config config_u1/.test(err.message));
+});
+
+test('isUnreadableSyncFile recognizes a file that is not JSON, such as a stale SMB copy padded with zeros', () => {
+  const padded = `${serializeSnapshot(createEmptySnapshot({ now: NOW, writer: WRITER }))}\u0000\u0000\u0000`;
+  let caught: unknown;
+  try {
+    parseSyncFile(padded, { now: NOW, writer: WRITER });
+  } catch (err) {
+    caught = err;
+  }
+  assert.ok(caught instanceof SyncSchemaError);
+  assert.equal(isUnreadableSyncFile(caught), true);
+});
+
+test('isUnreadableSyncFile ignores other sync errors', () => {
+  let caught: unknown;
+  try {
+    parseSyncFile(JSON.stringify({ schemaVersion: 99 }), { now: NOW, writer: WRITER });
+  } catch (err) {
+    caught = err;
+  }
+  assert.ok(caught instanceof SyncSchemaError);
+  assert.equal(isUnreadableSyncFile(caught), false);
+  assert.equal(isUnreadableSyncFile(new Error('File di sync non è JSON valido')), false);
 });
