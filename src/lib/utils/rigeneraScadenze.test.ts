@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 
 import type { Scadenza, ScadenzaTipo } from '../../types';
 import { accontiUsatiDalPiano, rigeneraPreservandoPagate } from './rigeneraScadenze';
-import { risolviDeduzioneInps } from './deduzioneInps';
-import { DEFAULT_CONFIG } from '../constants/fiscali';
+import { sommaVersamentiInps } from './deduzioneInps';
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const DATE = ['2026-06-30', '2026-07-16', '2026-08-20', '2026-09-16', '2026-10-16', '2026-11-16'];
@@ -73,15 +72,15 @@ test('groups without payments are regenerated as is, other groups keep their pay
 });
 
 test('regenerating does not change the cash deduction of payments already made', () => {
-  const config = { ...DEFAULT_CONFIG, id: 'config_u1', userId: 'u1' };
   const esistenti = rate('saldo_inps', 'saldo-inps', 3000, 3, 'old');
   esistenti[0] = paga(esistenti[0], '2026-06-30');
-  const prima = risolviDeduzioneInps(config, 2026, esistenti).contributiVersati;
+  // Solo i versamenti effettivi (pagati con data), che la rigenerazione non deve toccare.
+  const prima = sommaVersamentiInps(esistenti, 2026).totale;
 
   const piano = rigeneraPreservandoPagate(esistenti, rate('saldo_inps', 'saldo-inps', 9000, 2, 'new'));
   const dopo = [...esistenti.filter(s => !piano.daEliminare.includes(s.id)), ...piano.daSalvare.map(s => ({ ...s, userId: 'u1' }))];
   assert.equal(prima, 1000);
-  assert.equal(risolviDeduzioneInps(config, 2026, dopo).contributiVersati, 1000);
+  assert.equal(sommaVersamentiInps(dopo, 2026).totale, 1000);
 });
 
 test('the remainder is split in whole cents, never negative, and zero-cent instalments are dropped', () => {

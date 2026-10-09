@@ -34,7 +34,7 @@ import { DeduzioneInpsInfo } from "../shared/DeduzioneInps";
 import { risolviDeduzioneInps } from "../../lib/utils/deduzioneInps";
 
 export function Simulatore() {
-  const { config, scadenze } = useApp();
+  const { config, scadenze, fatture } = useApp();
   const [fatturato, setFatturato] = useState<string>("");
 
   const annoCorrente = new Date().getFullYear();
@@ -72,7 +72,7 @@ export function Simulatore() {
 
   const fatturatoNum = parseCurrency(fatturato);
 
-  const deduzioneInps = useMemo(() => risolviDeduzioneInps(simulationConfig, annoCorrente, scadenze), [simulationConfig, annoCorrente, scadenze]);
+  const deduzioneInps = useMemo(() => risolviDeduzioneInps(simulationConfig, annoCorrente, scadenze, fatture), [simulationConfig, annoCorrente, scadenze, fatture]);
 
   const calculations = useMemo(() => {
     return calcolaFiscale(fatturatoNum, coefficienteMedio, aliquotaIrpef, inpsInput, deduzioneInps.contributiVersati);

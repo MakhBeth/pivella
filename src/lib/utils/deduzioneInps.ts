@@ -5,6 +5,8 @@
  * Nel forfettario i contributi si deducono per cassa (art. 1, comma 64,
  * L. 190/2014): conta ciò che è stato versato nell'anno, qualunque sia l'anno
  * di competenza (saldo dell'anno prima e acconti dell'anno in corso).
+ * Quando i versamenti non sono ancora confermati si usano quelli attesi (piano
+ * salvato o, in mancanza, saldo e acconti stimati dalle fatture), segnalati come stima.
  * "Competenza" deduce i dovuti stimati ed è solo una stima previsionale.
  * Le casse professionali restano sulla quota deducibile configurata.
  */
@@ -12,10 +14,11 @@ import type { Config, DeduzioneInpsModalita, Fattura, Scadenza } from '../../typ
 import { isIsoDate } from './dateHelpers';
 import { calcolaFiscale } from './calculations';
 import { calcolaCoefficienteMedioAteco, getInpsCalculationInput } from './forfettario';
+import { formatCurrency } from './formatting';
 
 export const DEDUZIONE_INPS_DEFAULT: DeduzioneInpsModalita = 'cassa';
 
-export type FonteDeduzioneInps = 'manuale' | 'scadenze' | 'nessun_versamento' | 'dovuti_stimati' | 'cassa_professionale';
+export type FonteDeduzioneInps = 'manuale' | 'scadenze' | 'stima' | 'nessun_versamento' | 'dovuti_stimati' | 'cassa_professionale';
 
 export interface DeduzioneInps {
   /** null per le casse professionali, che non usano questa scelta. */
@@ -25,13 +28,18 @@ export interface DeduzioneInps {
   contributiVersati: number | 'competenza' | undefined;
   /** Importo dedotto quando è noto prima del calcolo (cassa), altrimenti null. */
   importo: number | null;
+  /** Competenza: stima sui dovuti dell'anno, non valida ai fini fiscali. */
   previsionale: boolean;
+  /** Cassa, ma con versamenti attesi e non ancora confermati come pagati. */
+  stimato: boolean;
   versamentiConteggiati: number;
+  versamentiPrevisti: number;
   versamentiSenzaData: number;
   avvisi: string[];
 }
 
-type DeduzioneConfig = Pick<Config, 'userId' | 'gestionePrevidenziale' | 'deduzioneInpsModalita' | 'contributiInpsVersatiManuali'> & Partial<Pick<Config, 'annoApertura'>>;
+type StimaConfig = Pick<Config, 'userId' | 'annoApertura' | 'gestionePrevidenziale' | 'codiciAteco' | 'contributiInpsFissi' | 'riduzioneContributiva' | 'cassaOrdinistica' | 'contributiCassePerAnno' | 'inpsAnte1996' | 'gestioneSeparataAltraCopertura'>;
+type DeduzioneConfig = StimaConfig & Pick<Config, 'deduzioneInpsModalita' | 'contributiInpsVersatiManuali'>;
 
 const TIPI_INPS: ReadonlySet<Scadenza['tipo']> = new Set(['saldo_inps', 'acconto_inps']);
 const round2 = (value: number): number => Math.round(value * 100) / 100;
@@ -79,50 +87,80 @@ export function sommaVersamentiInps(scadenze: readonly Scadenza[], anno: number,
   return { totale: round2(totale), conteggiati, senzaData };
 }
 
+/** Scadenze INPS del piano da versare nell'anno e non ancora segnate come pagate. */
+export function versamentiInpsPrevisti(scadenze: readonly Scadenza[], anno: number, userId?: string) {
+  const previste = scadenze.filter(s => (!userId || s.userId === userId) && TIPI_INPS.has(s.tipo) && !s.pagato && s.annoVersamento === anno && isImporto(s.importo));
+  return { totale: round2(previste.reduce((sum, s) => sum + s.importo, 0)), numero: previste.length };
+}
+
 // Gestione Separata: i contributi dell'anno di apertura si versano dall'anno dopo.
 const primoAnnoGestioneSeparata = (config: Pick<Config, 'gestionePrevidenziale'> & Partial<Pick<Config, 'annoApertura'>>, anno: number): boolean =>
   config.gestionePrevidenziale === 'gestione_separata' && typeof config.annoApertura === 'number' && anno <= config.annoApertura;
 
-export function risolviDeduzioneInps(config: DeduzioneConfig, anno: number, scadenze: readonly Scadenza[]): DeduzioneInps {
+/**
+ * Deduzione INPS dell'anno. Per cassa, in ordine:
+ * 1. totale inserito a mano;
+ * 2. scadenze INPS: pagate con data nell'anno più quelle del piano dell'anno non ancora segnate;
+ * 3. senza piano, saldo dell'anno prima e acconti dell'anno stimati dalle fatture;
+ * 4. zero (nessun dato, o primo anno di Gestione Separata).
+ * I casi 2 con scadenze non pagate e 3 sono stime, segnalate come tali.
+ */
+export function risolviDeduzioneInps(config: DeduzioneConfig, anno: number, scadenze: readonly Scadenza[], fatture: readonly Fattura[] = []): DeduzioneInps {
+  const vuota = { previsionale: false, stimato: false, versamentiConteggiati: 0, versamentiPrevisti: 0, versamentiSenzaData: 0 };
   if (config.gestionePrevidenziale === 'cassa_ordinistica') {
-    return {
-      modalita: null, fonte: 'cassa_professionale', contributiVersati: undefined, importo: null,
-      previsionale: false, versamentiConteggiati: 0, versamentiSenzaData: 0, avvisi: [],
-    };
+    return { ...vuota, modalita: null, fonte: 'cassa_professionale', contributiVersati: undefined, importo: null, avvisi: [] };
   }
 
   const modalita = getDeduzioneInpsModalita(config);
   if (modalita === 'competenza') {
     return {
-      modalita, fonte: 'dovuti_stimati', contributiVersati: 'competenza', importo: null,
-      previsionale: true, versamentiConteggiati: 0, versamentiSenzaData: 0,
+      ...vuota, modalita, fonte: 'dovuti_stimati', contributiVersati: 'competenza', importo: null, previsionale: true,
       avvisi: [`Stima previsionale: la deduzione usa i contributi dovuti per il ${anno}, non quelli versati. Ai fini fiscali il forfettario deduce per cassa.`],
     };
   }
 
-  const versamenti = sommaVersamentiInps(scadenze, anno, config.userId || undefined);
-  const avvisoSenzaData = versamenti.senzaData > 0
-    ? `${versamenti.senzaData === 1 ? '1 versamento INPS segnato come pagato non ha' : `${versamenti.senzaData} versamenti INPS segnati come pagati non hanno`} la data di pagamento: non ${versamenti.senzaData === 1 ? 'è conteggiato' : 'sono conteggiati'}. Completa la data in Scadenze.`
-    : null;
-  const manuale = getContributiInpsManuali(config, anno);
-  const base = { modalita, previsionale: false, versamentiConteggiati: versamenti.conteggiati, versamentiSenzaData: versamenti.senzaData };
+  const userId = config.userId || undefined;
+  const versati = sommaVersamentiInps(scadenze, anno, userId);
+  const previsti = versamentiInpsPrevisti(scadenze, anno, userId);
+  const avvisoSenzaData = versati.senzaData > 0
+    ? [`${versati.senzaData === 1 ? '1 versamento INPS segnato come pagato non ha' : `${versati.senzaData} versamenti INPS segnati come pagati non hanno`} la data di pagamento: non ${versati.senzaData === 1 ? 'è conteggiato' : 'sono conteggiati'}. Completa la data in Scadenze.`]
+    : [];
+  const base = { modalita, previsionale: false, versamentiConteggiati: versati.conteggiati, versamentiPrevisti: previsti.numero, versamentiSenzaData: versati.senzaData };
 
+  const manuale = getContributiInpsManuali(config, anno);
   if (manuale !== undefined) {
-    return { ...base, fonte: 'manuale', contributiVersati: manuale, importo: manuale, avvisi: [] };
+    return { ...base, fonte: 'manuale', stimato: false, contributiVersati: manuale, importo: manuale, avvisi: [] };
   }
-  if (versamenti.conteggiati > 0) {
-    return { ...base, fonte: 'scadenze', contributiVersati: versamenti.totale, importo: versamenti.totale, avvisi: avvisoSenzaData ? [avvisoSenzaData] : [] };
+
+  if (versati.conteggiati > 0 || previsti.numero > 0) {
+    const importo = round2(versati.totale + previsti.totale);
+    return {
+      ...base, fonte: 'scadenze', stimato: previsti.numero > 0, contributiVersati: importo, importo,
+      avvisi: [
+        ...(previsti.numero > 0 ? [`Comprende ${formatCurrency(previsti.totale)} € di versamenti INPS previsti nel piano ${anno} e non ancora segnati come pagati: segnali in Scadenze quando paghi.`] : []),
+        ...avvisoSenzaData,
+      ],
+    };
   }
+
+  const stima = stimaVersamentiInps(config, anno, fatture);
+  if (stima) {
+    return {
+      ...base, fonte: 'stima', stimato: true, contributiVersati: stima.importo, importo: stima.importo,
+      avvisi: [`Stima: ${stima.descrizione}. Per confermarla salva il piano in Scadenze e segna i pagamenti, oppure inserisci il totale versato.`, ...avvisoSenzaData],
+    };
+  }
+
   return {
-    ...base, fonte: 'nessun_versamento', contributiVersati: 0, importo: 0,
+    ...base, fonte: 'nessun_versamento', stimato: false, contributiVersati: 0, importo: 0,
     avvisi: primoAnnoGestioneSeparata(config, anno) ? [
       `Primo anno di attività: nel ${anno} non si versano saldo né acconti INPS della Gestione Separata (si pagano dal ${anno + 1}), quindi non ci sono contributi da dedurre.`,
-      ...(avvisoSenzaData ? [avvisoSenzaData] : []),
+      ...avvisoSenzaData,
     ] : [
       config.gestionePrevidenziale === 'artigiani' || config.gestionePrevidenziale === 'commercianti'
         ? `Nessun versamento INPS noto nel ${anno}: la deduzione dei contributi è zero. I contributi di Artigiani e Commercianti non sono nel piano Scadenze: inserisci il totale versato nell'anno (fissi e a percentuale, dagli F24).`
-        : `Nessun versamento INPS con data di pagamento nel ${anno}: la deduzione dei contributi è zero. Segna le scadenze pagate o inserisci il totale versato nell'anno.`,
-      ...(avvisoSenzaData ? [avvisoSenzaData] : []),
+        : `Nessun versamento INPS noto nel ${anno}: la deduzione dei contributi è zero. Segna le scadenze pagate o inserisci il totale versato nell'anno.`,
+      ...avvisoSenzaData,
     ],
   };
 }
@@ -130,7 +168,13 @@ export function risolviDeduzioneInps(config: DeduzioneConfig, anno: number, scad
 export const descriviDeduzioneInps = (deduzione: DeduzioneInps, anno: number): string => {
   switch (deduzione.fonte) {
     case 'manuale': return `Per cassa: totale versato nel ${anno} inserito a mano`;
-    case 'scadenze': return `Per cassa: ${deduzione.versamentiConteggiati} ${deduzione.versamentiConteggiati === 1 ? 'versamento INPS pagato' : 'versamenti INPS pagati'} nel ${anno}`;
+    case 'scadenze': {
+      const pagati = `${deduzione.versamentiConteggiati} ${deduzione.versamentiConteggiati === 1 ? 'versamento INPS pagato' : 'versamenti INPS pagati'}`;
+      return deduzione.versamentiPrevisti > 0
+        ? `Per cassa: ${pagati} e ${deduzione.versamentiPrevisti} ${deduzione.versamentiPrevisti === 1 ? 'previsto' : 'previsti'} nel ${anno}`
+        : `Per cassa: ${pagati} nel ${anno}`;
+    }
+    case 'stima': return `Per cassa, stimati: saldo ${anno - 1} e acconti ${anno} calcolati dalle fatture`;
     case 'nessun_versamento': return `Per cassa: nessun versamento INPS noto nel ${anno}`;
     case 'dovuti_stimati': return 'Per competenza: contributi dovuti stimati (previsionale)';
     case 'cassa_professionale': return 'Quota deducibile della cassa professionale';
@@ -153,11 +197,8 @@ export function validaDeduzioneInpsConfig(record: Record<string, unknown>): stri
 
 export interface StimaVersamentiInps {
   importo: number;
-  fonte: 'piano' | 'fatture';
   descrizione: string;
 }
-
-type StimaConfig = Pick<Config, 'userId' | 'annoApertura' | 'gestionePrevidenziale' | 'codiciAteco' | 'contributiInpsFissi' | 'riduzioneContributiva' | 'cassaOrdinistica' | 'contributiCassePerAnno' | 'inpsAnte1996' | 'gestioneSeparataAltraCopertura'>;
 
 // Stessa regola della Dashboard: incassata se incassato !== false, anno di dataIncasso o data.
 const fatturatoIncassato = (fatture: readonly Fattura[], anno: number, userId?: string): { totale: number; numero: number } => {
@@ -166,31 +207,14 @@ const fatturatoIncassato = (fatture: readonly Fattura[], anno: number, userId?: 
 };
 
 /**
- * Stima dei contributi INPS versati nell'anno, da proporre come totale
- * manuale (non viene mai dedotta da sola). Solo Gestione Separata, l'unica con
- * saldo e acconti nel piano Scadenze. Nell'anno N si versano il saldo di N-1 e
- * gli acconti di N (40% + 40% del dovuto di N-1, metodo storico):
- * - se c'è un piano salvato per l'anno N, il capitale delle sue scadenze INPS;
- * - altrimenti dalle fatture incassate: saldo = dovuto(N-1) - 80% dovuto(N-2),
- *   acconti = 80% dovuto(N-1).
+ * Contributi INPS da versare nell'anno N stimati dalle fatture, quando manca un
+ * piano salvato. Solo Gestione Separata (saldo e acconti col metodo storico):
+ * nell'anno N si versano il saldo di N-1 e gli acconti di N (40% + 40% del
+ * dovuto di N-1): saldo = dovuto(N-1) - 80% dovuto(N-2), acconti = 80% dovuto(N-1).
  */
-export function stimaVersamentiInps(
-  config: StimaConfig,
-  anno: number,
-  fatture: readonly Fattura[],
-  scadenze: readonly Scadenza[],
-): StimaVersamentiInps | null {
+export function stimaVersamentiInps(config: StimaConfig, anno: number, fatture: readonly Fattura[]): StimaVersamentiInps | null {
   if (config.gestionePrevidenziale !== 'gestione_separata' || primoAnnoGestioneSeparata(config, anno)) return null;
   const userId = config.userId || undefined;
-
-  const delPiano = scadenze.filter(s => (!userId || s.userId === userId) && TIPI_INPS.has(s.tipo) && s.annoVersamento === anno && isImporto(s.importo));
-  if (delPiano.length > 0) {
-    const importo = round2(delPiano.reduce((sum, s) => sum + s.importo, 0));
-    return importo > 0
-      ? { importo, fonte: 'piano', descrizione: `capitale delle scadenze INPS del piano ${anno} (saldo ${anno - 1} e acconti ${anno})` }
-      : null;
-  }
-
   const coefficiente = calcolaCoefficienteMedioAteco(config.codiciAteco ?? []);
   const dovuto = (a: number) => {
     const { totale, numero } = fatturatoIncassato(fatture, a, userId);
@@ -203,14 +227,12 @@ export function stimaVersamentiInps(
   const anteprecedente = apertoNelPrecedente ? { inps: 0, numero: 0 } : dovuto(anno - 2);
   const saldo = Math.max(0, precedente.inps - 0.8 * anteprecedente.inps);
   const acconti = 0.8 * precedente.inps;
-  const importo = round2(saldo + acconti);
   return {
-    importo,
-    fonte: 'fatture',
+    importo: round2(saldo + acconti),
     descrizione: apertoNelPrecedente
-      ? `saldo ${anno - 1} e acconti ${anno} stimati dalle fatture incassate nel ${anno - 1}, primo anno di attività (nessun acconto versato prima)`
+      ? `saldo ${anno - 1} e acconti ${anno} calcolati dalle fatture incassate nel ${anno - 1}, primo anno di attività`
       : anteprecedente.numero > 0
-      ? `saldo ${anno - 1} e acconti ${anno} stimati dalle fatture incassate nel ${anno - 2} e nel ${anno - 1}`
-      : `saldo ${anno - 1} e acconti ${anno} stimati dalle fatture incassate nel ${anno - 1}; senza fatture del ${anno - 2} non si considerano acconti già versati`,
+      ? `saldo ${anno - 1} e acconti ${anno} calcolati dalle fatture incassate nel ${anno - 2} e nel ${anno - 1}`
+      : `saldo ${anno - 1} e acconti ${anno} calcolati dalle fatture incassate nel ${anno - 1}; senza fatture del ${anno - 2} non si considerano acconti già versati`,
   };
 }

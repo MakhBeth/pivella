@@ -10,7 +10,8 @@ import { anno as annoDi, defineTool, euro, isIncassata, round2, snapshotOf, user
 // la deduzione dei contributi segue la scelta del profilo.
 const NOTA_DEDUZIONE: Record<DeduzioneInps['fonte'], string> = {
   manuale: 'contributi INPS dedotti per cassa, dal totale versato inserito a mano',
-  scadenze: 'contributi INPS dedotti per cassa, dai versamenti pagati nell\'anno',
+  scadenze: 'contributi INPS dedotti per cassa, dalle scadenze INPS dell\'anno (pagate e, se indicato, previste)',
+  stima: 'contributi INPS dedotti per cassa, stimati dalle fatture (saldo dell\'anno prima e acconti dell\'anno): da confermare',
   nessun_versamento: 'contributi INPS dedotti per cassa: nessun versamento noto, deduzione zero',
   dovuti_stimati: 'contributi INPS dedotti per competenza sui dovuti stimati: stima solo previsionale, ai fini fiscali vale la cassa',
   cassa_professionale: 'contributi della cassa professionale dedotti per la quota deducibile configurata',
@@ -32,7 +33,7 @@ export const getRiepilogoAnno = defineTool({
     const fatturato = round2(incassate.reduce((sum, f) => sum + f.importo, 0));
     const coefficienteRedditivita = calcolaCoefficienteMedioAteco(config.codiciAteco ?? []);
     const aliquotaApplicata = getAliquotaImpostaSostitutiva({ annoApertura: config.annoApertura, annoImposta: anno, aliquotaOverride: config.aliquotaOverride });
-    const deduzione = risolviDeduzioneInps(config, anno, snap.scadenze);
+    const deduzione = risolviDeduzioneInps(config, anno, snap.scadenze, snap.fatture);
     const fiscale = calcolaFiscale(fatturato, coefficienteRedditivita, aliquotaApplicata, getInpsCalculationInput(config, anno), deduzione.contributiVersati);
     const acconti = calcolaAccontiForfettario({ gestionePrevidenziale: config.gestionePrevidenziale, impostaSostitutiva: fiscale.irpef, inps: fiscale.inps });
     const structured = {
@@ -48,6 +49,8 @@ export const getRiepilogoAnno = defineTool({
         criterio: deduzione.modalita,
         fonte: deduzione.fonte,
         previsionale: deduzione.previsionale,
+        stimato: deduzione.stimato,
+        versamentiPrevisti: deduzione.versamentiPrevisti,
         versamentiConteggiati: deduzione.versamentiConteggiati,
         versamentiSenzaData: deduzione.versamentiSenzaData,
         descrizione: descriviDeduzioneInps(deduzione, anno),

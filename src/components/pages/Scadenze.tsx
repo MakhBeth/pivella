@@ -6,7 +6,7 @@ import { calcolaFiscale } from '../../lib/utils/calculations';
 import { getCassaWarning, calcolaAccontiForfettario, calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, includeInpsInScadenze, usesFixedContributiPrevidenziali } from '../../lib/utils/forfettario';
 import { generatePaymentSchedule, calculateScheduleTotals } from '../../lib/utils/paymentScheduler';
 import { parseDateLocal, formatDateLong, formatDate, isIsoDate } from '../../lib/utils/dateHelpers';
-import { risolviDeduzioneInps, stimaVersamentiInps } from '../../lib/utils/deduzioneInps';
+import { risolviDeduzioneInps } from '../../lib/utils/deduzioneInps';
 import { accontiUsatiDalPiano, rigeneraPreservandoPagate } from '../../lib/utils/rigeneraScadenze';
 import { convertScheduleToScadenze } from '../../lib/utils/scheduleToScadenze';
 import { DeduzioneInpsInfo } from '../shared/DeduzioneInps';
@@ -82,8 +82,7 @@ export function Scadenze() {
   // INPS: deduzione per cassa (o previsionale) condivisa con Dashboard e Simulatore.
   const isCassaProfessionale = config.gestionePrevidenziale === 'cassa_ordinistica';
   const contributiInput = isCassaProfessionale ? parseOptionalContribution(manualContributiVersati) : { amount: undefined, invalid: false };
-  const deduzioneInps = risolviDeduzioneInps(config, annoRiferimento, scadenze);
-  const stimaVersamenti = useMemo(() => stimaVersamentiInps(config, annoRiferimento, fatture, scadenze), [config, annoRiferimento, fatture, scadenze]);
+  const deduzioneInps = risolviDeduzioneInps(config, annoRiferimento, scadenze, fatture);
 
   const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config, annoRiferimento), isCassaProfessionale ? contributiInput.amount : deduzioneInps.contributiVersati);
   const redditoImponibile = fiscale.imponibile;
@@ -375,7 +374,7 @@ export function Scadenze() {
           </div>
           ) : (
             <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-              <DeduzioneInpsInfo config={config} anno={annoRiferimento} deduzione={deduzioneInps} importoDedotto={fiscale.deduzioneContributi} updateConfig={updateConfig} stima={stimaVersamenti} />
+              <DeduzioneInpsInfo config={config} anno={annoRiferimento} deduzione={deduzioneInps} importoDedotto={fiscale.deduzioneContributi} updateConfig={updateConfig} />
             </div>
           )}
         </div>

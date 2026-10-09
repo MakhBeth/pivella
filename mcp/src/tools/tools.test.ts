@@ -475,12 +475,15 @@ test('get_riepilogo_anno deducts INPS on a cash basis with the same resolver as 
   const config = snapshot.config[0];
   const atteso = calcolaFiscale(1000, 67, 0.15, getInpsCalculationInput(config, 2026), risolviDeduzioneInps(config, 2026, snapshot.scadenze).contributiVersati);
   const cassa = await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2026 });
-  assert.equal(cassa.contributiDeducibili, 80);
+  // 80 versati nel 2026 (s2 e s4) + 90 previsti nel piano 2026 (s6, non ancora pagato).
+  assert.equal(cassa.contributiDeducibili, 170);
   assert.equal(cassa.impostaSostitutiva, atteso.irpef);
   assert.equal(cassa.contributiPrevidenziali, atteso.inps);
   const dettaglio = cassa.deduzioneContributi as Record<string, unknown>;
   assert.equal(dettaglio.fonte, 'scadenze');
   assert.equal(dettaglio.previsionale, false);
+  assert.equal(dettaglio.stimato, true);
+  assert.equal(dettaglio.versamentiPrevisti, 1);
   assert.equal(dettaglio.versamentiSenzaData, 1);
   assert.match((cassa.avvisi as string[]).join(' '), /data di pagamento/);
 
@@ -501,7 +504,7 @@ test('get_riepilogo_anno deducts INPS on a cash basis with the same resolver as 
   // Il criterio degli incassi resta per cassa; la nota descrive a parte la deduzione.
   assert.equal(cassa.criterio, 'cassa');
   assert.equal(competenza.criterio, 'cassa');
-  assert.match(cassa.nota as string, /fatturato calcolato per cassa.*dedotti per cassa, dai versamenti/);
+  assert.match(cassa.nota as string, /fatturato calcolato per cassa.*dedotti per cassa, dalle scadenze INPS/);
   assert.match(competenza.nota as string, /fatturato calcolato per cassa.*per competenza.*previsionale/);
   assert.doesNotMatch(competenza.nota as string, /dedotti per cassa/);
 });

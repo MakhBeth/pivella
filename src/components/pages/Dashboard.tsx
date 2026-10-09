@@ -288,7 +288,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
   const coefficienteMedio = calcolaCoefficienteMedioAteco(config.codiciAteco);
   const thresholdStatus = getRegimeThresholdStatus(totaleFatturato);
 
-  const deduzioneInps = risolviDeduzioneInps(config, annoSelezionato, scadenze);
+  const deduzioneInps = risolviDeduzioneInps(config, annoSelezionato, scadenze, fatture);
   const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config, annoSelezionato), deduzioneInps.contributiVersati);
   const { imponibile: redditoImponibile, irpef: irpefDovuta, inps: inpsDovuta, totaleTasse } = fiscale;
   const previdenzialeInfo = calcolaContributiPrevidenziali(redditoImponibile, config, annoSelezionato);
