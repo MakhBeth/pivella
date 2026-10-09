@@ -2,6 +2,7 @@ import { CassaWarning } from '../shared/CassaWarning';
 import { useState, useMemo, useEffect } from 'react';
 import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
+import { getHashParam } from '../../hooks/useRoute';
 import { calcolaFiscale } from '../../lib/utils/calculations';
 import { getCassaWarning, calcolaAccontiForfettario, calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, includeInpsInScadenze, usesFixedContributiPrevidenziali } from '../../lib/utils/forfettario';
 import { generatePaymentSchedule, calculateScheduleTotals } from '../../lib/utils/paymentScheduler';
@@ -20,7 +21,18 @@ export function Scadenze() {
   const { config, updateConfig, fatture, scadenze, getScadenzeByYear, getPaidAccontiForYear, bulkSaveScadenze, removeScadenza, removeScadenzeByYear, updateScadenza, showToast } = useApp();
 
   const annoCorrente = new Date().getFullYear();
-  const [annoRiferimento, setAnnoRiferimento] = useState(annoCorrente - 1);
+  // Dai link della Dashboard arriva l'anno da mostrare (#/scadenze?anno=2026),
+  // anche quando la pagina è già aperta.
+  const annoDalLink = () => {
+    const anno = Number(getHashParam('anno'));
+    return Number.isInteger(anno) && anno > annoCorrente - 5 && anno <= annoCorrente ? anno : null;
+  };
+  const [annoRiferimento, setAnnoRiferimento] = useState(() => annoDalLink() ?? annoCorrente - 1);
+  useEffect(() => {
+    const onHashChange = () => { const anno = annoDalLink(); if (anno !== null) setAnnoRiferimento(anno); };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
   const [numberOfTranches, setNumberOfTranches] = useState<NumberOfTranches>(1);
   
   const [manualFatturato, setManualFatturato] = useState<string>('');

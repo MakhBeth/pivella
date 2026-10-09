@@ -14,8 +14,14 @@ export const VALID_ROUTES = [
 export type Route = (typeof VALID_ROUTES)[number];
 
 function getRouteFromHash(): Route {
-  const hash = window.location.hash.replace(/^#\/?/, "") || "dashboard";
+  const hash = window.location.hash.replace(/^#\/?/, "").split("?")[0] || "dashboard";
   return VALID_ROUTES.includes(hash as Route) ? (hash as Route) : "dashboard";
+}
+
+/** Parametro dopo il "?" nell'hash, per esempio `anno` in `#/scadenze?anno=2026`. */
+export function getHashParam(name: string): string | null {
+  const query = window.location.hash.split("?")[1];
+  return query ? new URLSearchParams(query).get(name) : null;
 }
 
 export function useRoute() {

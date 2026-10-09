@@ -31,6 +31,7 @@ export function DeduzioneInpsInfo({ config, anno, deduzione, importoDedotto, upd
 
   // In sola lettura (Dashboard, Simulatore) gli avvisi diventano un'icona con tooltip che porta a Scadenze.
   const compatto = !updateConfig && linkScadenze === true;
+  const linkAnno = `#/scadenze?anno=${anno}`;
   const titoloAvviso = deduzione.avvisi.length === 0 ? null
     : deduzione.previsionale ? 'Stima previsionale: ai fini fiscali vale la cassa'
     : deduzione.fonte === 'stima' ? 'INPS stimato dalle fatture: conferma in Scadenze'
@@ -55,9 +56,11 @@ export function DeduzioneInpsInfo({ config, anno, deduzione, importoDedotto, upd
         )}
       </div>
       <div style={{ color: 'var(--text-muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-        {descriviDeduzioneInps(deduzione, anno)}
+        {compatto && deduzione.modalita === 'cassa'
+          ? <a href={linkAnno} style={{ color: 'inherit' }}>{descriviDeduzioneInps(deduzione, anno)}</a>
+          : descriviDeduzioneInps(deduzione, anno)}
         {compatto && titoloAvviso && (
-          <a href="#/scadenze" className="tooltip" data-tooltip={titoloAvviso}
+          <a href={linkAnno} className="tooltip" data-tooltip={titoloAvviso}
             aria-label={`${titoloAvviso}. ${deduzione.avvisi.join(' ')} Vai a Scadenze.`}
             style={{ display: 'inline-flex', color: '#fbbf24' }}>
             <Info size={16} aria-hidden="true" />

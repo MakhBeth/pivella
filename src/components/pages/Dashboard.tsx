@@ -431,6 +431,8 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
           <div>
             <h2 className="card-title">Totale da Accantonare</h2>
             <div className="stat-value" style={{ fontSize: '2.8rem' }}><Currency amount={accantonamento.totale} /></div>
+            <details style={{ marginTop: 8 }}>
+            <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Dettagli</summary>
             <table style={{ marginTop: 8, fontSize: '0.85rem', borderCollapse: 'collapse' }}>
               <caption style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Come si arriva al totale da accantonare per il {annoSelezionato}</caption>
               <tbody>
@@ -458,6 +460,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
             <div style={{ marginTop: 12 }}>
               <DeduzioneInpsInfo config={config} anno={annoSelezionato} deduzione={deduzioneInps} importoDedotto={fiscale.deduzioneContributi} linkScadenze />
             </div>
+            </details>
           </div>
           <div style={{ textAlign: 'center' }}>
             {percentualeLimite > 90 && (
