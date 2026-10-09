@@ -1,6 +1,6 @@
 import { CassaWarning } from '../shared/CassaWarning';
 import { Fragment, useState, useMemo, useEffect } from 'react';
-import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check } from '../shared/icons';
+import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check, Trash2 } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { getHashParam } from '../../hooks/useRoute';
 import { calcolaFiscale } from '../../lib/utils/calculations';
@@ -198,6 +198,23 @@ export function Scadenze() {
       else showToast(`Scadenze ${annoVersamento} rigenerate, rate pagate invariate.`);
     } catch (error) {
       showToast('Errore rigenerazione scadenze', 'error');
+    }
+  };
+
+  const [confermaElimina, setConfermaElimina] = useState(false);
+  useEffect(() => { setConfermaElimina(false); }, [annoVersamento]);
+  const ratePagate = savedScadenze.filter(s => s.pagato);
+  const handleEliminaPiano = async (soloNonPagate: boolean) => {
+    try {
+      if (soloNonPagate) {
+        for (const s of savedScadenze.filter(s => !s.pagato)) await removeScadenza(s.id);
+      } else {
+        await removeScadenzeByYear(annoVersamento);
+      }
+      setConfermaElimina(false);
+      showToast(soloNonPagate ? `Rate non pagate del piano ${annoVersamento} eliminate` : `Piano ${annoVersamento} eliminato`);
+    } catch (error) {
+      showToast('Errore eliminazione piano', 'error');
     }
   };
 
@@ -603,9 +620,14 @@ export function Scadenze() {
           <h2 className="card-title" style={{ margin: 0 }}>Piano dei Pagamenti {annoVersamento}</h2>
           <div style={{ display: 'flex', gap: 8 }}>
             {hasSavedScadenze ? (
-              <button className="btn btn-secondary" onClick={handleRegenerateScadenze}>
-                <RefreshCw size={16} /> Rigenera
-              </button>
+              <>
+                <button className="btn btn-secondary" onClick={() => setConfermaElimina(true)} aria-expanded={confermaElimina}>
+                  <Trash2 size={16} /> Elimina piano
+                </button>
+                <button className="btn btn-secondary" onClick={handleRegenerateScadenze}>
+                  <RefreshCw size={16} /> Rigenera
+                </button>
+              </>
             ) : (
               <button className="btn btn-primary" onClick={handleSaveScadenze}>
                 <Save size={16} /> Salva Scadenze
@@ -617,6 +639,27 @@ export function Scadenze() {
         {previewDiffers && (
           <div role="status" style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 12, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             Anteprima con i dati attuali: capitale <Currency amount={totals.totalPrincipal} />, interessi <Currency amount={totals.totalInterest} />. È un piano ipotetico: con <strong>Rigenera</strong> le rate già pagate restano invariate e si ripianifica solo il residuo, quindi i totali salvati possono differire.
+          </div>
+        )}
+
+        {hasSavedScadenze && confermaElimina && (
+          <div role="alert" style={{ marginBottom: 16, padding: '12px 16px', border: '1px solid var(--accent-red)', borderRadius: 12, fontSize: '0.85rem' }}>
+            <p style={{ margin: '0 0 8px', fontWeight: 600 }}>Eliminare il piano {annoVersamento}?</p>
+            <p style={{ margin: '0 0 12px', color: 'var(--text-secondary)' }}>
+              Contiene {savedScadenze.length} {savedScadenze.length === 1 ? 'scadenza' : 'scadenze'}
+              {ratePagate.length > 0
+                ? <>, di cui {ratePagate.length} segnate come pagate (<Currency amount={round2(ratePagate.reduce((sum, s) => sum + s.importo, 0))} />). Se elimini anche quelle, i pagamenti non conteranno più per la deduzione INPS e per gli acconti.</>
+                : '. Nessuna è segnata come pagata.'}
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {ratePagate.length > 0 && (
+                <button className="btn btn-secondary" onClick={() => handleEliminaPiano(true)}>Elimina solo le non pagate</button>
+              )}
+              <button className="btn btn-secondary" style={{ color: 'var(--accent-red)' }} onClick={() => handleEliminaPiano(false)}>
+                {ratePagate.length > 0 ? 'Elimina tutto, pagate comprese' : 'Elimina il piano'}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setConfermaElimina(false)}>Annulla</button>
+            </div>
           </div>
         )}
 
