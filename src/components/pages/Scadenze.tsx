@@ -1,5 +1,5 @@
 import { CassaWarning } from '../shared/CassaWarning';
-import { useState, useMemo, useEffect } from 'react';
+import { Fragment, useState, useMemo, useEffect } from 'react';
 import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
 import { getHashParam } from '../../hooks/useRoute';
@@ -12,6 +12,7 @@ import { accontiUsatiDalPiano, rigeneraPreservandoPagate } from '../../lib/utils
 import { convertScheduleToScadenze } from '../../lib/utils/scheduleToScadenze';
 import { BadgeStima, ContributiInpsManuale } from '../shared/DeduzioneInps';
 import { calcolaAccantonamento } from '../../lib/utils/accantonamento';
+import { creditoDaCompensare, ripartisciCredito } from '../../lib/utils/creditoF24';
 import { parseOptionalContribution, parseCurrency, formatCurrency } from '../../lib/utils/formatting';
 import { Currency } from '../ui/Currency';
 import type { PaymentScheduleInput, PaymentScheduleItem, Scadenza, ScadenzaTipo } from '../../types';
@@ -228,6 +229,25 @@ export function Scadenze() {
   }, {} as Record<string, Scadenza[]>);
 
   const sortedDates = Object.keys(groupedByDate).sort();
+
+  // Acconti versati oltre il dovuto: credito che si compensa nell'F24, dalla prima scadenza in poi.
+  // I debiti restano interi (servono per acconti e deduzione degli anni dopo).
+  const creditoF24 = creditoDaCompensare([
+    { accontiPagati: taxAmounts.accontiIrpefPagati, dovuto: taxAmounts.taxSaldoLordo },
+    ...(includeInpsSchedule ? [{ accontiPagati: taxAmounts.accontiInpsPagati, dovuto: taxAmounts.inpsSaldoLordo }] : []),
+  ]);
+  const creditoPerVoce = ripartisciCredito(schedule.map(item => item.totalAmount), creditoF24);
+  const creditoPerData = ripartisciCredito(sortedDates.map(date => groupedByDate[date].reduce((sum, s) => sum + s.totale, 0)), creditoF24);
+  const creditoUsato = round2((hasSavedScadenze ? creditoPerData : creditoPerVoce).reduce((sum, c) => sum + c, 0));
+  const rigaCredito = (importo: number, colonnePrima: number, colonneDopo: number) => (
+    <tr style={{ background: 'rgba(4, 120, 87, 0.06)' }}>
+      {Array.from({ length: colonnePrima }, (_, i) => <td key={i} />)}
+      <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Credito {annoRiferimento} compensato nell’F24 (acconti versati oltre il dovuto)</td>
+      <td colSpan={2} />
+      <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--accent-green)', whiteSpace: 'nowrap' }}>−<Currency amount={importo} tabular /></td>
+      {Array.from({ length: colonneDopo }, (_, i) => <td key={i} />)}
+    </tr>
+  );
 
   const getTipoColor = (tipo: ScadenzaTipo) => {
     switch (tipo) {
@@ -549,8 +569,11 @@ export function Scadenze() {
         </div>
         <div className="card" style={{ background: 'linear-gradient(135deg, var(--bg-card) 0%, rgba(239,68,68,0.1) 100%)' }}>
           <h2 className="card-title"><CalendarClock size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Totale da Versare</h2>
-          <div className="stat-value" style={{ fontSize: '2rem', color: 'var(--accent-red)' }}><Currency amount={shownTotals.grandTotal} /></div>
-          <div className="stat-label">Principale + interessi{hasSavedScadenze ? ', rate pagate comprese' : ''}</div>
+          <div className="stat-value" style={{ fontSize: '2rem', color: 'var(--accent-red)' }}><Currency amount={round2(shownTotals.grandTotal - creditoUsato)} /></div>
+          <div className="stat-label">
+            Principale + interessi{hasSavedScadenze ? ', rate pagate comprese' : ''}
+            {creditoUsato > 0 && <>, meno <Currency amount={creditoUsato} /> di credito compensato</>}
+          </div>
         </div>
       </div>
 
@@ -600,8 +623,9 @@ export function Scadenze() {
                 </tr>
               </thead>
               <tbody>
-                {sortedDates.map(date => (
-                  groupedByDate[date].map((scadenza, idx) => {
+                {sortedDates.map((date, indiceData) => (
+                  <Fragment key={date}>
+                  {groupedByDate[date].map((scadenza, idx) => {
                     const upcoming = isUpcoming(scadenza.date);
                     const past = isPast(scadenza.date);
                     return (
@@ -675,7 +699,9 @@ export function Scadenze() {
                         </td>
                       </tr>
                     );
-                  })
+                  })}
+                  {creditoPerData[indiceData] > 0 && rigaCredito(creditoPerData[indiceData], 2, 1)}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -698,7 +724,8 @@ export function Scadenze() {
                     const upcoming = isUpcoming(item.date);
                     const past = isPast(item.date);
                     return (
-                      <tr key={index} style={{ background: upcoming ? 'rgba(251, 191, 36, 0.1)' : past ? 'var(--bg-secondary)' : undefined, opacity: past ? 0.6 : 1 }}>
+                      <Fragment key={index}>
+                      <tr style={{ background: upcoming ? 'rgba(251, 191, 36, 0.1)' : past ? 'var(--bg-secondary)' : undefined, opacity: past ? 0.6 : 1 }}>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {upcoming && <span style={{ background: '#fbbf24', color: '#000', fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>PROSSIMA</span>}
@@ -720,6 +747,8 @@ export function Scadenze() {
                         </td>
                         <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--accent-orange)' }}><Currency amount={item.totalAmount} tabular /></td>
                       </tr>
+                      {creditoPerVoce[index] > 0 && rigaCredito(creditoPerVoce[index], 1, 0)}
+                      </Fragment>
                     );
                   })}
                 </tbody>
