@@ -508,3 +508,12 @@ test('get_riepilogo_anno deducts INPS on a cash basis with the same resolver as 
   assert.match(competenza.nota as string, /fatturato calcolato per cassa.*per competenza.*previsionale/);
   assert.doesNotMatch(competenza.nota as string, /dedotti per cassa/);
 });
+
+test('get_riepilogo_anno reports the cash set-aside with the same function as the Dashboard', async () => {
+  const { ctx } = await setup();
+  const out = await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2026 });
+  const a = out.accantonamento as { dovuto: { totale: number }; acconti: { totale: number }; saldo: { totale: number }; accontiSuccessivi: { totale: number }; totale: number };
+  assert.equal(a.dovuto.totale, out.totaleStimato);
+  assert.equal(a.saldo.totale, Math.round((a.dovuto.totale - a.acconti.totale) * 100) / 100);
+  assert.equal(a.totale, Math.round((a.saldo.totale + a.accontiSuccessivi.totale) * 100) / 100);
+});

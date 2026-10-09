@@ -31,7 +31,7 @@ const PAGE_SECTIONS: PageSection[] = [
     icon: LayoutDashboard,
     color: "var(--accent-primary)",
     title: "Dashboard",
-    text: "Il colpo d'occhio sull'anno: quanto hai fatturato, quanto hai incassato, quanto sei vicino alla soglia dei 85.000€ del forfettario e una stima di tasse e contributi da accantonare. I contributi INPS si deducono per cassa, cioè quelli versati nell'anno: Pivella li prende dalle scadenze (pagate o in programma), li stima dal fatturato degli anni prima se non hai ancora un piano, oppure usa il totale che inserisci tu. È la pagina da guardare quando ti chiedi \"come sto andando?\".",
+    text: "Il colpo d'occhio sull'anno: quanto hai fatturato, quanto hai incassato, quanto sei vicino alla soglia dei 85.000€ del forfettario e quanto accantonare: il dovuto dell'anno, meno gli acconti già versati, più gli acconti dell'anno dopo che paghi insieme al saldo. Per questo il primo anno si accantona quasi il doppio e gli anni dopo si parte già in parte coperti. I contributi INPS si deducono per cassa, cioè quelli versati nell'anno: Pivella li prende dalle scadenze (pagate o in programma), li stima dal fatturato degli anni prima se non hai ancora un piano, oppure usa il totale che inserisci tu. È la pagina da guardare quando ti chiedi \"come sto andando?\".",
   },
   {
     icon: FileText,

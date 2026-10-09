@@ -8,6 +8,7 @@ import { calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliqu
 import { Currency } from '../ui/Currency';
 import { DeduzioneInpsInfo } from '../shared/DeduzioneInps';
 import { risolviDeduzioneInps } from '../../lib/utils/deduzioneInps';
+import { calcolaAccantonamento } from '../../lib/utils/accantonamento';
 
 // Accessible patterns for colorblind users
 const PATTERNS = [
@@ -290,7 +291,9 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
 
   const deduzioneInps = risolviDeduzioneInps(config, annoSelezionato, scadenze, fatture);
   const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config, annoSelezionato), deduzioneInps.contributiVersati);
-  const { imponibile: redditoImponibile, irpef: irpefDovuta, inps: inpsDovuta, totaleTasse } = fiscale;
+  const { imponibile: redditoImponibile, irpef: irpefDovuta, inps: inpsDovuta } = fiscale;
+  // Per cassa: dovuto dell'anno meno acconti già versati, più gli acconti dell'anno dopo.
+  const accantonamento = calcolaAccantonamento(config, annoSelezionato, fiscale, fatture, scadenze);
   const previdenzialeInfo = calcolaContributiPrevidenziali(redditoImponibile, config, annoSelezionato);
 
   const fatturatoPerCliente = clienti.map(cliente => {
@@ -391,7 +394,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
         </div>
 
         <div className="card">
-          <h2 className="card-title">Imposta sostitutiva da accantonare</h2>
+          <h2 className="card-title">Imposta sostitutiva dovuta</h2>
           <div className="stat-value" style={{ color: 'var(--accent-orange)' }}><Currency amount={irpefDovuta} /></div>
           <div className="stat-label">
             Aliquota {(aliquotaIrpef * 100).toFixed(2)}%
@@ -401,7 +404,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
         </div>
 
         <div className="card">
-          <h2 className="card-title">Contributi da accantonare</h2>
+          <h2 className="card-title">Contributi dovuti</h2>
           <div className="stat-value" style={{ color: 'var(--accent-orange)' }}><Currency amount={inpsDovuta} /></div>
           <div className="stat-label">
             {previdenzialeInfo.usesFixedAmount
@@ -427,8 +430,31 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
         <div className="grid-3" style={{ alignItems: 'center' }}>
           <div>
             <h2 className="card-title">Totale da Accantonare</h2>
-            <div className="stat-value" style={{ fontSize: '2.8rem' }}><Currency amount={totaleTasse} /></div>
-            <div className="stat-label">Reddito imponibile <Currency amount={redditoImponibile} /> (coeff. {coefficienteMedio}%) − contributi deducibili <Currency amount={fiscale.deduzioneContributi} /> = <Currency amount={Math.max(0, redditoImponibile - fiscale.deduzioneContributi)} /></div>
+            <div className="stat-value" style={{ fontSize: '2.8rem' }}><Currency amount={accantonamento.totale} /></div>
+            <table style={{ marginTop: 8, fontSize: '0.85rem', borderCollapse: 'collapse' }}>
+              <caption style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Come si arriva al totale da accantonare per il {annoSelezionato}</caption>
+              <tbody>
+                {([
+                  ['', `Dovuto ${annoSelezionato} (imposta + contributi)`, accantonamento.dovuto.totale, false],
+                  ['−', `Acconti ${annoSelezionato} già versati o previsti`, accantonamento.acconti.totale, accantonamento.acconti.stimato],
+                  ['=', accantonamento.saldo.totale < 0 ? `Saldo ${annoSelezionato}: credito da usare a giugno ${annoSelezionato + 1}` : `Saldo ${annoSelezionato} (giugno ${annoSelezionato + 1})`, accantonamento.saldo.totale, false],
+                  ['+', `Acconti ${annoSelezionato + 1} (giugno e novembre ${annoSelezionato + 1})`, accantonamento.accontiSuccessivi.totale, false],
+                ] as const).map(([segno, voce, importo, stimato]) => (
+                  <tr key={voce}>
+                    <td style={{ width: 16, color: 'var(--text-muted)', fontFamily: 'Space Mono, monospace' }}>{segno}</td>
+                    <td style={{ color: 'var(--text-secondary)', paddingRight: 16 }}>
+                      {voce}
+                      {stimato && (
+                        <span className="tooltip" data-tooltip={accantonamento.acconti.fonte === 'piano' ? 'Dal piano in Scadenze, non ancora tutti pagati' : `Stimati dal dovuto ${annoSelezionato - 1}`}
+                          style={{ marginLeft: 6, border: '1px solid var(--border)', fontSize: '0.65rem', padding: '0 4px', borderRadius: 4, fontWeight: 600 }}>STIMA</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: segno === '=' ? 700 : 400, whiteSpace: 'nowrap' }}>{importo < 0 && '−'}<Currency amount={Math.abs(importo)} tabular /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="stat-label" style={{ marginTop: 8 }}>Reddito imponibile <Currency amount={redditoImponibile} /> (coeff. {coefficienteMedio}%) − contributi deducibili <Currency amount={fiscale.deduzioneContributi} /> = <Currency amount={Math.max(0, redditoImponibile - fiscale.deduzioneContributi)} /></div>
             <div style={{ marginTop: 12 }}>
               <DeduzioneInpsInfo config={config} anno={annoSelezionato} deduzione={deduzioneInps} importoDedotto={fiscale.deduzioneContributi} linkScadenze />
             </div>
@@ -450,8 +476,9 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
           <div style={{ textAlign: 'right' }}>
             <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Netto stimato</div>
             <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--accent-green)' }}>
-              <Currency amount={totaleFatturato - totaleTasse} />
+              <Currency amount={totaleFatturato - accantonamento.totale} />
             </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>dopo tasse, contributi e acconti</div>
           </div>
         </div>
       </div>

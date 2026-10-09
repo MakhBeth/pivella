@@ -4,6 +4,7 @@ import { DEFAULT_CONFIG, LIMITE_FATTURATO } from '../../../src/lib/constants/fis
 import { calcolaFiscale } from '../../../src/lib/utils/calculations';
 import { getCassaWarning, calcolaContributiPrevidenziali, calcolaAccontiForfettario, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, getRegimeThresholdStatus } from '../../../src/lib/utils/forfettario';
 import { descriviDeduzioneInps, risolviDeduzioneInps, type DeduzioneInps } from '../../../src/lib/utils/deduzioneInps';
+import { calcolaAccantonamento } from '../../../src/lib/utils/accantonamento';
 import { anno as annoDi, defineTool, euro, isIncassata, round2, snapshotOf, userIdSchema } from './shared';
 
 // Due criteri distinti: il fatturato è sempre per cassa (data di incasso);
@@ -23,7 +24,7 @@ export const notaRiepilogo = (deduzione: DeduzioneInps): string =>
 export const getRiepilogoAnno = defineTool({
   name: 'get_riepilogo_anno',
   title: 'Riepilogo fiscale annuale',
-  description: 'Fatturato incassato nell\'anno (principio di cassa: conta la data di incasso, le fatture da incassare sono escluse) e stima di imponibile, imposta sostitutiva, contributi, acconti e soglia del regime forfettario, con gli stessi calcoli della Dashboard. I contributi INPS si deducono per cassa (versamenti con data di pagamento nell\'anno, o totale manuale del profilo); deduzioneContributi dice la fonte e se la stima è previsionale. Risponde a "quanto ho incassato".',
+  description: 'Fatturato incassato nell\'anno (principio di cassa: conta la data di incasso, le fatture da incassare sono escluse) e stima di imponibile, imposta sostitutiva, contributi, acconti e soglia del regime forfettario, con gli stessi calcoli della Dashboard. I contributi INPS si deducono per cassa (versamenti con data di pagamento nell\'anno, o totale manuale del profilo); deduzioneContributi dice la fonte e se la stima è previsionale. accantonamento dice quanto mettere da parte per cassa: dovuto meno acconti dell\'anno già versati o previsti (saldo, negativo se credito) più gli acconti dell\'anno dopo. Risponde a "quanto ho incassato".',
   input: { userId: userIdSchema, anno: z.number().int().describe('Anno di imposta') },
   readOnly: true,
   async handler(ctx, { userId, anno }) {
@@ -35,6 +36,7 @@ export const getRiepilogoAnno = defineTool({
     const aliquotaApplicata = getAliquotaImpostaSostitutiva({ annoApertura: config.annoApertura, annoImposta: anno, aliquotaOverride: config.aliquotaOverride });
     const deduzione = risolviDeduzioneInps(config, anno, snap.scadenze, snap.fatture);
     const fiscale = calcolaFiscale(fatturato, coefficienteRedditivita, aliquotaApplicata, getInpsCalculationInput(config, anno), deduzione.contributiVersati);
+    const accantonamento = calcolaAccantonamento(config, anno, fiscale, snap.fatture, snap.scadenze);
     const acconti = calcolaAccontiForfettario({ gestionePrevidenziale: config.gestionePrevidenziale, impostaSostitutiva: fiscale.irpef, inps: fiscale.inps });
     const structured = {
       anno,
@@ -70,6 +72,7 @@ export const getRiepilogoAnno = defineTool({
         irpef: round2(acconti.tax1stAcconto + acconti.tax2ndAcconto),
         inps: round2(acconti.inps1stAcconto + acconti.inps2ndAcconto),
       },
+      accantonamento,
       nota: notaRiepilogo(deduzione),
     };
     const text = `${anno}, per cassa: incassato ${euro(fatturato)} su ${incassate.length} fatture; imponibile ${euro(fiscale.imponibile)}, imposta ${euro(fiscale.irpef)}, contributi ${euro(fiscale.inps)}, totale stimato ${euro(fiscale.totaleTasse)}; deduzione contributi ${euro(fiscale.deduzioneContributi)} (${structured.deduzioneContributi.descrizione}); ${structured.entePrevidenziale}; ${structured.avvisi.join(" ")}; soglia ${structured.soglia.percentuale}% (${structured.soglia.stato})`;
