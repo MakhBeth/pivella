@@ -30,6 +30,13 @@ test('clienteXMLData maps the anagrafica and falls back to the saved name', () =
   assert.deepEqual(clienteXMLData(undefined, 'Cliente sparito'), { denominazione: 'Cliente sparito', nazione: 'IT' });
 });
 
+test('CodiceDestinatario uses the cliente SDI code, 0000000 without it', () => {
+  const conSdi = generateFatturaXML(buildFatturaXMLData(conRighe, { ...cliente, codiceDestinatario: 'abc1234' }, config));
+  assert.match(conSdi, /<CodiceDestinatario>ABC1234<\/CodiceDestinatario>/);
+  const senzaSdi = generateFatturaXML(buildFatturaXMLData(conRighe, cliente, config));
+  assert.match(senzaSdi, /<CodiceDestinatario>0000000<\/CodiceDestinatario>/);
+});
+
 test('emittenteMancante lists the missing fields', () => {
   assert.deepEqual(emittenteMancante(config), []);
   assert.deepEqual(emittenteMancante({ ...config, partitaIva: '', emittente: { ...config.emittente!, codiceFiscale: '', comune: '' } }), ['partitaIva', 'emittente.codiceFiscale', 'emittente.comune']);

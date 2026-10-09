@@ -33,6 +33,10 @@ export function AddClienteModal({ isOpen, onClose, newCliente, setNewCliente, on
           <label className="input-label">Email</label>
           <input type="email" className="input-field" value={newCliente.email || ''} onChange={(e) => setNewCliente({ ...newCliente, email: e.target.value })} />
         </div>
+        <div className="input-group">
+          <label className="input-label">Codice destinatario SDI</label>
+          <input type="text" className="input-field" value={newCliente.codiceDestinatario || ''} onChange={(e) => setNewCliente({ ...newCliente, codiceDestinatario: e.target.value.toUpperCase() })} placeholder="0000000" maxLength={7} />
+        </div>
 
         {/* Indirizzo per fatturazione */}
         <div className="grid-2">

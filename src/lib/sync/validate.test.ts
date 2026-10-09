@@ -134,6 +134,11 @@ test('cliente: accepts a new name and defaults nazione to IT', () => {
   assert.deepEqual(out, { nome: 'Beta Spa', rate: 400, billingUnit: 'giornata', nazione: 'IT' });
 });
 
+test('cliente: keeps the codice destinatario SDI', () => {
+  const out = validateProposalPayload('cliente', { nome: 'Beta Spa', codiceDestinatario: 'ABC1234' }, ctx);
+  assert.equal(out.codiceDestinatario, 'ABC1234');
+});
+
 test('cliente: rejects a duplicate name ignoring case and spaces, with the existing id', () => {
   try {
     validateProposalPayload('cliente', { nome: ' acme  SRL ' }, ctx);
