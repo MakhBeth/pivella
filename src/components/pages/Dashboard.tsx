@@ -261,7 +261,7 @@ interface DashboardProps {
 }
 
 export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProps) {
-  const { config, updateConfig, clienti, fatture, scadenze } = useApp();
+  const { config, clienti, fatture, scadenze } = useApp();
 
   // Calcoli
   const annoCorrente = new Date().getFullYear();
@@ -430,7 +430,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
             <div className="stat-value" style={{ fontSize: '2.8rem' }}><Currency amount={totaleTasse} /></div>
             <div className="stat-label">Reddito imponibile <Currency amount={redditoImponibile} /> (coeff. {coefficienteMedio}%) − contributi deducibili <Currency amount={fiscale.deduzioneContributi} /> = <Currency amount={Math.max(0, redditoImponibile - fiscale.deduzioneContributi)} /></div>
             <div style={{ marginTop: 12 }}>
-              <DeduzioneInpsInfo config={config} anno={annoSelezionato} deduzione={deduzioneInps} importoDedotto={fiscale.deduzioneContributi} updateConfig={updateConfig} />
+              <DeduzioneInpsInfo config={config} anno={annoSelezionato} deduzione={deduzioneInps} importoDedotto={fiscale.deduzioneContributi} linkScadenze />
             </div>
           </div>
           <div style={{ textAlign: 'center' }}>

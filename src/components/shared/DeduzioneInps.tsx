@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { Config } from '../../types';
-import { descriviDeduzioneInps, getContributiInpsManuali, setContributiInpsManuali, type DeduzioneInps } from '../../lib/utils/deduzioneInps';
+import { descriviDeduzioneInps, getContributiInpsManuali, setContributiInpsManuali, type DeduzioneInps, type StimaVersamentiInps } from '../../lib/utils/deduzioneInps';
+import { formatCurrency } from '../../lib/utils/formatting';
 import { parseOptionalContribution } from '../../lib/utils/formatting';
 import { Currency } from '../ui/Currency';
 
@@ -12,12 +13,16 @@ interface DeduzioneInpsInfoProps {
   importoDedotto: number;
   /** Con updateConfig il totale manuale dell'anno è modificabile qui. */
   updateConfig?: (updates: Partial<Config>) => void;
+  /** Stima dei versamenti da proporre (mai applicata senza conferma). */
+  stima?: StimaVersamentiInps | null;
+  /** In sola lettura: rimanda a Scadenze per inserire i versamenti. */
+  linkScadenze?: boolean;
 }
 
 const toInput = (value: number | undefined): string => value === undefined ? '' : String(value).replace('.', ',');
 
 /** Deduzione INPS applicata, con fonte, avvisi e (se modificabile) il totale manuale dell'anno. */
-export function DeduzioneInpsInfo({ config, anno, deduzione, importoDedotto, updateConfig }: DeduzioneInpsInfoProps) {
+export function DeduzioneInpsInfo({ config, anno, deduzione, importoDedotto, updateConfig, stima, linkScadenze }: DeduzioneInpsInfoProps) {
   const id = useId();
   const manuale = getContributiInpsManuali(config, anno);
   const [testo, setTesto] = useState(toInput(manuale));
@@ -29,6 +34,11 @@ export function DeduzioneInpsInfo({ config, anno, deduzione, importoDedotto, upd
   const salva = () => {
     if (!updateConfig || parsed.invalid || parsed.amount === manuale) return;
     updateConfig({ contributiInpsVersatiManuali: setContributiInpsManuali(config, anno, parsed.amount) });
+  };
+  const usaStima = (importo: number) => {
+    if (!updateConfig) return;
+    setTesto(toInput(importo));
+    updateConfig({ contributiInpsVersatiManuali: setContributiInpsManuali(config, anno, importo) });
   };
 
   return (
@@ -44,6 +54,25 @@ export function DeduzioneInpsInfo({ config, anno, deduzione, importoDedotto, upd
       {deduzione.avvisi.map(avviso => (
         <p key={avviso} role="status" style={{ color: 'var(--accent-orange)', margin: '6px 0 0' }}>{avviso}</p>
       ))}
+      {!updateConfig && linkScadenze && deduzione.modalita === 'cassa' && (
+        <p style={{ margin: '6px 0 0' }}>
+          <a href="#/scadenze">Inserisci o correggi i versamenti INPS in Scadenze</a>
+        </p>
+      )}
+      {updateConfig && deduzione.modalita === 'cassa' && deduzione.fonte === 'nessun_versamento' && stima && (
+        <div role="status" style={{ marginTop: 12, padding: '10px 12px', border: '1px dashed var(--border)', borderRadius: 8 }}>
+          <div>
+            Stima dei versamenti INPS nel {anno}: <strong><Currency amount={stima.importo} /></strong>
+          </div>
+          <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>
+            Calcolata dal {stima.descrizione}. È una proposta: controlla gli F24 effettivamente pagati prima di usarla.
+          </div>
+          <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} onClick={() => usaStima(stima.importo)}
+            aria-label={`Usa la stima di ${formatCurrency(stima.importo)} euro come totale versato nel ${anno}`}>
+            Usa la stima
+          </button>
+        </div>
+      )}
       {updateConfig && deduzione.modalita === 'cassa' && (
         <div style={{ marginTop: 12 }}>
           <label htmlFor={`${id}-manuale`} style={{ display: 'block', marginBottom: 6, color: 'var(--text-secondary)' }}>

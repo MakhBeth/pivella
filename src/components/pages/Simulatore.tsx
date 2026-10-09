@@ -376,7 +376,7 @@ export function Simulatore() {
           </div>
             <div className="stat-label">{(aliquotaIrpef * 100).toFixed(0)}% di (imponibile − contributi deducibili)</div>
             <div style={{ marginTop: 8 }}>
-              <DeduzioneInpsInfo config={simulationConfig} anno={annoCorrente} deduzione={deduzioneInps} importoDedotto={calculations.deduzioneContributi} />
+              <DeduzioneInpsInfo config={simulationConfig} anno={annoCorrente} deduzione={deduzioneInps} importoDedotto={calculations.deduzioneContributi} linkScadenze />
             </div>
         </div>
 

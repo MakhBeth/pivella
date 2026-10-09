@@ -8,8 +8,10 @@
  * "Competenza" deduce i dovuti stimati ed è solo una stima previsionale.
  * Le casse professionali restano sulla quota deducibile configurata.
  */
-import type { Config, DeduzioneInpsModalita, Scadenza } from '../../types';
+import type { Config, DeduzioneInpsModalita, Fattura, Scadenza } from '../../types';
 import { isIsoDate } from './dateHelpers';
+import { calcolaFiscale } from './calculations';
+import { calcolaCoefficienteMedioAteco, getInpsCalculationInput } from './forfettario';
 
 export const DEDUZIONE_INPS_DEFAULT: DeduzioneInpsModalita = 'cassa';
 
@@ -29,7 +31,7 @@ export interface DeduzioneInps {
   avvisi: string[];
 }
 
-type DeduzioneConfig = Pick<Config, 'userId' | 'gestionePrevidenziale' | 'deduzioneInpsModalita' | 'contributiInpsVersatiManuali'>;
+type DeduzioneConfig = Pick<Config, 'userId' | 'gestionePrevidenziale' | 'deduzioneInpsModalita' | 'contributiInpsVersatiManuali'> & Partial<Pick<Config, 'annoApertura'>>;
 
 const TIPI_INPS: ReadonlySet<Scadenza['tipo']> = new Set(['saldo_inps', 'acconto_inps']);
 const round2 = (value: number): number => Math.round(value * 100) / 100;
@@ -77,6 +79,10 @@ export function sommaVersamentiInps(scadenze: readonly Scadenza[], anno: number,
   return { totale: round2(totale), conteggiati, senzaData };
 }
 
+// Gestione Separata: i contributi dell'anno di apertura si versano dall'anno dopo.
+const primoAnnoGestioneSeparata = (config: Pick<Config, 'gestionePrevidenziale'> & Partial<Pick<Config, 'annoApertura'>>, anno: number): boolean =>
+  config.gestionePrevidenziale === 'gestione_separata' && typeof config.annoApertura === 'number' && anno <= config.annoApertura;
+
 export function risolviDeduzioneInps(config: DeduzioneConfig, anno: number, scadenze: readonly Scadenza[]): DeduzioneInps {
   if (config.gestionePrevidenziale === 'cassa_ordinistica') {
     return {
@@ -109,7 +115,10 @@ export function risolviDeduzioneInps(config: DeduzioneConfig, anno: number, scad
   }
   return {
     ...base, fonte: 'nessun_versamento', contributiVersati: 0, importo: 0,
-    avvisi: [
+    avvisi: primoAnnoGestioneSeparata(config, anno) ? [
+      `Primo anno di attività: nel ${anno} non si versano saldo né acconti INPS della Gestione Separata (si pagano dal ${anno + 1}), quindi non ci sono contributi da dedurre.`,
+      ...(avvisoSenzaData ? [avvisoSenzaData] : []),
+    ] : [
       config.gestionePrevidenziale === 'artigiani' || config.gestionePrevidenziale === 'commercianti'
         ? `Nessun versamento INPS noto nel ${anno}: la deduzione dei contributi è zero. I contributi di Artigiani e Commercianti non sono nel piano Scadenze: inserisci il totale versato nell'anno (fissi e a percentuale, dagli F24).`
         : `Nessun versamento INPS con data di pagamento nel ${anno}: la deduzione dei contributi è zero. Segna le scadenze pagate o inserisci il totale versato nell'anno.`,
@@ -140,4 +149,68 @@ export function validaDeduzioneInpsConfig(record: Record<string, unknown>): stri
     if (!isImporto(importo)) return `contributiInpsVersatiManuali: importo del ${anno} non valido`;
   }
   return null;
+}
+
+export interface StimaVersamentiInps {
+  importo: number;
+  fonte: 'piano' | 'fatture';
+  descrizione: string;
+}
+
+type StimaConfig = Pick<Config, 'userId' | 'annoApertura' | 'gestionePrevidenziale' | 'codiciAteco' | 'contributiInpsFissi' | 'riduzioneContributiva' | 'cassaOrdinistica' | 'contributiCassePerAnno' | 'inpsAnte1996' | 'gestioneSeparataAltraCopertura'>;
+
+// Stessa regola della Dashboard: incassata se incassato !== false, anno di dataIncasso o data.
+const fatturatoIncassato = (fatture: readonly Fattura[], anno: number, userId?: string): { totale: number; numero: number } => {
+  const incassate = fatture.filter(f => (!userId || f.userId === userId) && f.incassato !== false && new Date(f.dataIncasso || f.data).getFullYear() === anno);
+  return { totale: incassate.reduce((sum, f) => sum + f.importo, 0), numero: incassate.length };
+};
+
+/**
+ * Stima dei contributi INPS versati nell'anno, da proporre come totale
+ * manuale (non viene mai dedotta da sola). Solo Gestione Separata, l'unica con
+ * saldo e acconti nel piano Scadenze. Nell'anno N si versano il saldo di N-1 e
+ * gli acconti di N (40% + 40% del dovuto di N-1, metodo storico):
+ * - se c'è un piano salvato per l'anno N, il capitale delle sue scadenze INPS;
+ * - altrimenti dalle fatture incassate: saldo = dovuto(N-1) - 80% dovuto(N-2),
+ *   acconti = 80% dovuto(N-1).
+ */
+export function stimaVersamentiInps(
+  config: StimaConfig,
+  anno: number,
+  fatture: readonly Fattura[],
+  scadenze: readonly Scadenza[],
+): StimaVersamentiInps | null {
+  if (config.gestionePrevidenziale !== 'gestione_separata' || primoAnnoGestioneSeparata(config, anno)) return null;
+  const userId = config.userId || undefined;
+
+  const delPiano = scadenze.filter(s => (!userId || s.userId === userId) && TIPI_INPS.has(s.tipo) && s.annoVersamento === anno && isImporto(s.importo));
+  if (delPiano.length > 0) {
+    const importo = round2(delPiano.reduce((sum, s) => sum + s.importo, 0));
+    return importo > 0
+      ? { importo, fonte: 'piano', descrizione: `capitale delle scadenze INPS del piano ${anno} (saldo ${anno - 1} e acconti ${anno})` }
+      : null;
+  }
+
+  const coefficiente = calcolaCoefficienteMedioAteco(config.codiciAteco ?? []);
+  const dovuto = (a: number) => {
+    const { totale, numero } = fatturatoIncassato(fatture, a, userId);
+    return { inps: numero > 0 ? calcolaFiscale(totale, coefficiente, 0, getInpsCalculationInput(config, a)).inps : 0, numero };
+  };
+  const precedente = dovuto(anno - 1);
+  if (precedente.numero === 0 || precedente.inps <= 0) return null;
+  // Se N-1 è l'anno di apertura, nel N-1 non si sono versati acconti.
+  const apertoNelPrecedente = config.annoApertura === anno - 1;
+  const anteprecedente = apertoNelPrecedente ? { inps: 0, numero: 0 } : dovuto(anno - 2);
+  const saldo = Math.max(0, precedente.inps - 0.8 * anteprecedente.inps);
+  const acconti = 0.8 * precedente.inps;
+  const importo = round2(saldo + acconti);
+  return {
+    importo,
+    fonte: 'fatture',
+    descrizione: apertoNelPrecedente
+      ? `saldo ${anno - 1} e acconti ${anno} stimati dalle fatture incassate nel ${anno - 1}, primo anno di attività (nessun acconto versato prima)`
+      : anteprecedente.numero > 0
+      ? `saldo ${anno - 1} e acconti ${anno} stimati dalle fatture incassate nel ${anno - 2} e nel ${anno - 1}`
+      : `saldo ${anno - 1} e acconti ${anno} stimati dalle fatture incassate nel ${anno - 1}; senza fatture del ${anno - 2} non si considerano acconti già versati`,
+  };
 }

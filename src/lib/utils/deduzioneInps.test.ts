@@ -10,10 +10,12 @@ import {
   risolviDeduzioneInps,
   setContributiInpsManuali,
   sommaVersamentiInps,
+  stimaVersamentiInps,
   validaDeduzioneInpsConfig,
 } from './deduzioneInps';
+import type { Fattura } from '../../types';
 
-const config = (overrides: Partial<Config> = {}): Config => ({ ...DEFAULT_CONFIG, id: 'config_u1', userId: 'u1', ...overrides });
+const config = (overrides: Partial<Config> = {}): Config => ({ ...DEFAULT_CONFIG, id: 'config_u1', userId: 'u1', annoApertura: 2020, ...overrides });
 
 let seq = 0;
 const scadenza = (overrides: Partial<Scadenza>): Scadenza => ({
@@ -177,4 +179,66 @@ test('artigiani and commercianti are told their contributions are not in the Sca
     assert.match(deduzione.avvisi[0], /non sono nel piano Scadenze: inserisci il totale versato/);
   }
   assert.doesNotMatch(risolviDeduzioneInps(config(), 2026, []).avvisi[0], /Artigiani/);
+});
+
+const fattura = (data: string, importo: number, overrides: Partial<Fattura> = {}): Fattura =>
+  ({ id: `f${++seq}`, userId: 'u1', clienteId: 'c1', clienteNome: 'Acme', data, importo, ...overrides });
+// ATECO 70.22 → coefficiente 78%; Gestione Separata 26,07%.
+const cfg = config({ codiciAteco: ['70.22'] });
+
+test('estimate from invoices: saldo of N-1 net of acconti paid in N-1, plus acconti of N', () => {
+  const fatture = [fattura('2024-03-01', 50000), fattura('2023-03-01', 40000), fattura('2024-12-20', 999, { incassato: false })];
+  const stima = stimaVersamentiInps(cfg, 2025, fatture, [])!;
+  const d2024 = 50000 * 0.78 * 0.2607; // 10.167,30
+  const d2023 = 40000 * 0.78 * 0.2607; // 8.133,84
+  assert.equal(stima.fonte, 'fatture');
+  assert.equal(stima.importo, Math.round(((d2024 - 0.8 * d2023) + 0.8 * d2024) * 100) / 100);
+  assert.match(stima.descrizione, /2023 e nel 2024/);
+});
+
+test('estimate without invoices two years back assumes no acconti already paid, and says so', () => {
+  const stima = stimaVersamentiInps(cfg, 2025, [fattura('2024-03-01', 50000)], [])!;
+  assert.equal(stima.importo, 18301.14); // 10.167,30 × 1,8
+  assert.match(stima.descrizione, /senza fatture del 2023/);
+});
+
+test('a saved plan for the year wins over invoices and counts INPS capital only', () => {
+  const piano = [
+    scadenza({ tipo: 'saldo_inps', annoVersamento: 2025, importo: 1200, interessi: 10, pagato: false, dataPagamento: undefined }),
+    scadenza({ tipo: 'acconto_inps', annoVersamento: 2025, importo: 800, pagato: false, dataPagamento: undefined }),
+    scadenza({ tipo: 'saldo_irpef', annoVersamento: 2025, importo: 5000, pagato: false, dataPagamento: undefined }),
+    scadenza({ tipo: 'acconto_inps', annoVersamento: 2026, importo: 9999, pagato: false, dataPagamento: undefined }),
+  ];
+  const stima = stimaVersamentiInps(cfg, 2025, [fattura('2024-03-01', 50000)], piano)!;
+  assert.deepEqual([stima.fonte, stima.importo], ['piano', 2000]);
+});
+
+test('no estimate without data, for other profiles, or outside Gestione Separata', () => {
+  assert.equal(stimaVersamentiInps(cfg, 2025, [], []), null);
+  assert.equal(stimaVersamentiInps(cfg, 2025, [fattura('2024-03-01', 50000, { userId: 'u2' })], []), null);
+  assert.equal(stimaVersamentiInps(config({ gestionePrevidenziale: 'artigiani', contributiInpsFissi: 4500 }), 2025, [fattura('2024-03-01', 50000)], []), null);
+  assert.equal(stimaVersamentiInps(config({ gestionePrevidenziale: 'cassa_ordinistica' }), 2025, [fattura('2024-03-01', 50000)], []), null);
+});
+
+test('the estimate is never deducted on its own: the resolver still reports no payments', () => {
+  const fatture = [fattura('2024-03-01', 50000)];
+  assert.ok(stimaVersamentiInps(cfg, 2025, fatture, []));
+  const deduzione = risolviDeduzioneInps(cfg, 2025, []);
+  assert.equal(deduzione.contributiVersati, 0);
+  assert.equal(deduzione.fonte, 'nessun_versamento');
+});
+
+test('first year of Gestione Separata: no scary warning and no estimate, because nothing is paid that year', () => {
+  const nuovo = config({ annoApertura: 2025, codiciAteco: ['70.22'] });
+  const deduzione = risolviDeduzioneInps(nuovo, 2025, []);
+  assert.equal(deduzione.contributiVersati, 0);
+  assert.match(deduzione.avvisi[0], /Primo anno di attività: nel 2025 non si versano/);
+  assert.doesNotMatch(deduzione.avvisi.join(' '), /Nessun versamento/);
+  assert.equal(stimaVersamentiInps(nuovo, 2025, [fattura('2025-03-01', 50000)], []), null);
+
+  // L'anno dopo: saldo del primo anno più acconti, senza acconti già versati.
+  const stima = stimaVersamentiInps(nuovo, 2026, [fattura('2025-03-01', 50000), fattura('2024-03-01', 99999)], [])!;
+  assert.equal(stima.importo, 18301.14);
+  assert.match(stima.descrizione, /primo anno di attività/);
+  assert.match(risolviDeduzioneInps(nuovo, 2026, []).avvisi[0], /Nessun versamento/);
 });
