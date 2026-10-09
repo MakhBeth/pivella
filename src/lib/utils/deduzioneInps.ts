@@ -110,7 +110,9 @@ export function risolviDeduzioneInps(config: DeduzioneConfig, anno: number, scad
   return {
     ...base, fonte: 'nessun_versamento', contributiVersati: 0, importo: 0,
     avvisi: [
-      `Nessun versamento INPS con data di pagamento nel ${anno}: la deduzione dei contributi è zero. Segna le scadenze pagate o inserisci il totale versato nell'anno.`,
+      config.gestionePrevidenziale === 'artigiani' || config.gestionePrevidenziale === 'commercianti'
+        ? `Nessun versamento INPS noto nel ${anno}: la deduzione dei contributi è zero. I contributi di Artigiani e Commercianti non sono nel piano Scadenze: inserisci il totale versato nell'anno (fissi e a percentuale, dagli F24).`
+        : `Nessun versamento INPS con data di pagamento nel ${anno}: la deduzione dei contributi è zero. Segna le scadenze pagate o inserisci il totale versato nell'anno.`,
       ...(avvisoSenzaData ? [avvisoSenzaData] : []),
     ],
   };

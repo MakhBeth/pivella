@@ -169,3 +169,12 @@ test('validaDeduzioneInpsConfig accepts legacy and well-formed data, rejects mal
   assert.match(validaDeduzioneInpsConfig({ contributiInpsVersatiManuali: { 2026: '10' } })!, /2026/);
   assert.match(validaDeduzioneInpsConfig({ contributiInpsVersatiManuali: { anno: 10 } })!, /anno/);
 });
+
+test('artigiani and commercianti are told their contributions are not in the Scadenze plan', () => {
+  for (const gestionePrevidenziale of ['artigiani', 'commercianti'] as const) {
+    const deduzione = risolviDeduzioneInps(config({ gestionePrevidenziale, contributiInpsFissi: 4500 }), 2026, []);
+    assert.equal(deduzione.contributiVersati, 0);
+    assert.match(deduzione.avvisi[0], /non sono nel piano Scadenze: inserisci il totale versato/);
+  }
+  assert.doesNotMatch(risolviDeduzioneInps(config(), 2026, []).avvisi[0], /Artigiani/);
+});

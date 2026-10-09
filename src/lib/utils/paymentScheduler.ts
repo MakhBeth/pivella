@@ -11,10 +11,15 @@ const roundToTwoDecimals = (value: number): number => {
   return Math.round(value * 100) / 100;
 };
 
-// Quota per rata in centesimi interi, arrotondata per difetto: l'ultima rata
-// assorbe il resto e non può mai diventare negativa.
-const quotaPerRata = (total: number, numberOfTranches: number): number =>
-  Math.floor(Math.round(total * 100) / numberOfTranches) / 100;
+// Quota per rata arrotondata al centesimo, con l'ultima rata che assorbe il
+// resto come sempre. Solo quando l'arrotondamento in su renderebbe negativa
+// l'ultima rata (importi di pochi centesimi) si arrotonda per difetto.
+const quotaPerRata = (total: number, numberOfTranches: number): number => {
+  const quota = roundToTwoDecimals(total / numberOfTranches);
+  return total - quota * (numberOfTranches - 1) < 0
+    ? Math.floor(Math.round(total * 100) / numberOfTranches) / 100
+    : quota;
+};
 
 const distributeComponents = (
   taxSaldo: number,
