@@ -541,7 +541,7 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
         {config.gestionePrevidenziale === 'cassa_ordinistica' && <CassaHelp cassa={config.cassaOrdinistica} anno={annoCassa} showLink={false} />}
 
         {config.gestionePrevidenziale !== 'cassa_ordinistica' && (
-          <div className="previdenza-field" style={{ marginTop: 16, maxWidth: 420 }}>
+          <div className="previdenza-field" style={{ marginTop: 16 }}>
             <label className="input-label" htmlFor="deduzione-inps">Deduzione contributi INPS</label>
             <select
               id="deduzione-inps"
@@ -554,7 +554,7 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
               <option value="competenza">Per competenza: solo stima previsionale</option>
             </select>
             <p id="deduzione-inps-nota" style={{ margin: '6px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Nel forfettario i contributi si deducono nell’anno in cui li versi (art. 1, comma 64, L. 190/2014): conta la data di pagamento delle scadenze INPS, o il totale inserito a mano in Scadenze o Dashboard. La competenza usa i contributi dovuti stimati e serve solo come previsione, non per la dichiarazione.
+              Nel forfettario i contributi si deducono nell’anno in cui li versi (art. 1, comma 64, L. 190/2014): contano le scadenze INPS dell’anno (pagate o in programma), stimate dalle fatture se non hai un piano, oppure il totale inserito a mano in Scadenze. La competenza usa i contributi dovuti stimati e serve solo come previsione, non per la dichiarazione.
             </p>
           </div>
         )}
