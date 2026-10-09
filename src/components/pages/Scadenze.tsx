@@ -97,6 +97,9 @@ export function Scadenze() {
   const accantonamento = calcolaAccantonamento(config, annoRiferimento, fiscale, fatture, scadenze);
   const accontiCalcolati = savedAccontiFromScadenze ?? { irpef: accantonamento.acconti.imposta, inps: accantonamento.acconti.inps };
   const accontiStimati = !savedAccontiFromScadenze && accantonamento.acconti.stimato;
+  // Piano dell'anno (versato nell'anno, generato da Scadenze dell'anno prima) già salvato?
+  const pianoAnnoSalvato = accantonamento.acconti.fonte === 'piano';
+  const accontiDaPiano = Boolean(savedAccontiFromScadenze) || pianoAnnoSalvato;
   useEffect(() => { setUseManualAcconti(false); }, [annoRiferimento]);
   useEffect(() => {
     if (useManualAcconti) return;
@@ -269,7 +272,14 @@ export function Scadenze() {
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h2 className="card-title">Configurazione</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+          <h2 className="card-title" style={{ margin: 0 }}>Configurazione</h2>
+          {hasSavedScadenze ? (
+            <button className="btn btn-secondary" onClick={handleRegenerateScadenze}><RefreshCw size={16} /> Rigenera piano {annoVersamento}</button>
+          ) : (
+            <button className="btn btn-primary" onClick={handleSaveScadenze}><Save size={16} /> Salva piano {annoVersamento}</button>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 200px' }}>
             <label style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
@@ -410,7 +420,7 @@ export function Scadenze() {
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h2 className="card-title">Versamenti nel {annoRiferimento}</h2>
+        <h2 className="card-title">Versamenti del {annoRiferimento}</h2>
         {primoAnnoSenzaVersamenti ? (
           <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', margin: 0 }}>
             Primo anno di attività: nel {annoRiferimento} non si versano saldo né acconti. I primi arrivano a giugno {annoRiferimento + 1}, nel piano qui sotto.
@@ -418,7 +428,10 @@ export function Scadenze() {
         ) : (
           <>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 12px' }}>
-              Quanto hai versato (o versi) nel {annoRiferimento}: gli acconti si scalano dal saldo {annoRiferimento}, l’INPS versato si deduce dall’imponibile.
+              {pianoAnnoSalvato
+                ? <>Dal piano {annoRiferimento} salvato in Scadenze {annoRiferimento - 1}{accantonamento.acconti.stimato ? ': le rate non ancora segnate come pagate sono stimate' : ''}.</>
+                : <>Stimati dalle fatture {annoRiferimento - 1}: il piano {annoRiferimento} non è salvato. <a href={`#/scadenze?anno=${annoRiferimento - 1}`}>Apri Scadenze {annoRiferimento - 1} e salva il piano {annoRiferimento}</a>, poi segna i pagamenti.</>}
+              {' '}Gli acconti si scalano dal saldo {annoRiferimento}, l’INPS versato si deduce dall’imponibile.
             </p>
             <table style={{ fontSize: '0.9rem', borderCollapse: 'collapse' }}>
               <tbody>
@@ -453,10 +466,10 @@ export function Scadenze() {
                 </tr>
               </tbody>
             </table>
-            {!isCassaProfessionale && (
+            {!isCassaProfessionale && deduzioneInps.fonte === 'manuale' && (
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '8px 0 0' }}>{descriviDeduzioneInps(deduzioneInps, annoRiferimento)}</p>
             )}
-            {!isCassaProfessionale && deduzioneInps.avvisi.map(avviso => (
+            {!isCassaProfessionale && deduzioneInps.fonte !== 'stima' && deduzioneInps.avvisi.map(avviso => (
               <p key={avviso} role="status" style={{ fontSize: '0.85rem', fontWeight: 600, margin: '6px 0 0' }}>{avviso}</p>
             ))}
           </>
@@ -468,6 +481,12 @@ export function Scadenze() {
             {!isCassaProfessionale && deduzioneInps.modalita === 'cassa' && (
               <ContributiInpsManuale config={config} anno={annoRiferimento} updateConfig={updateConfig} />
             )}
+            {accontiDaPiano && !useManualAcconti ? (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                Gli acconti vengono dal piano salvato: per cambiarli rigenera il piano da cui provengono.
+              </p>
+            ) : (
+            <>
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div style={{ flex: '1 1 200px' }}>
                 <label htmlFor="acconti-imposta-input" style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
@@ -512,6 +531,8 @@ export function Scadenze() {
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
               Le correzioni degli acconti valgono per questa pagina e finiscono nel piano quando salvi o rigeneri; il totale INPS si salva per l’anno.
             </p>
+            </>
+            )}
           </div>
         </details>
 
