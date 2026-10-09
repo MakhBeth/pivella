@@ -1,11 +1,18 @@
 import { CassaWarning } from '../shared/CassaWarning';
-import { useState, useMemo, useEffect } from 'react';
-import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check } from '../shared/icons';
+import { Fragment, useState, useMemo, useEffect } from 'react';
+import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check, Trash2 } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
+import { getHashParam } from '../../hooks/useRoute';
 import { calcolaFiscale } from '../../lib/utils/calculations';
 import { getCassaWarning, calcolaAccontiForfettario, calcolaContributiPrevidenziali, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, includeInpsInScadenze, usesFixedContributiPrevidenziali } from '../../lib/utils/forfettario';
 import { generatePaymentSchedule, calculateScheduleTotals } from '../../lib/utils/paymentScheduler';
-import { parseDateLocal, formatDateLong } from '../../lib/utils/dateHelpers';
+import { parseDateLocal, formatDateLong, formatDate, isIsoDate } from '../../lib/utils/dateHelpers';
+import { descriviDeduzioneInps, risolviDeduzioneInps } from '../../lib/utils/deduzioneInps';
+import { accontiUsatiDalPiano, rigeneraPreservandoPagate } from '../../lib/utils/rigeneraScadenze';
+import { convertScheduleToScadenze } from '../../lib/utils/scheduleToScadenze';
+import { BadgeStima, ContributiInpsManuale } from '../shared/DeduzioneInps';
+import { calcolaAccantonamento } from '../../lib/utils/accantonamento';
+import { creditoDaCompensare, ripartisciCredito } from '../../lib/utils/creditoF24';
 import { parseOptionalContribution, parseCurrency, formatCurrency } from '../../lib/utils/formatting';
 import { Currency } from '../ui/Currency';
 import type { PaymentScheduleInput, PaymentScheduleItem, Scadenza, ScadenzaTipo } from '../../types';
@@ -13,10 +20,21 @@ import type { PaymentScheduleInput, PaymentScheduleItem, Scadenza, ScadenzaTipo 
 type NumberOfTranches = 1 | 2 | 3 | 4 | 5 | 6;
 
 export function Scadenze() {
-  const { config, fatture, scadenze, getScadenzeByYear, getPaidAccontiForYear, bulkSaveScadenze, removeScadenzeByYear, updateScadenza, showToast } = useApp();
+  const { config, updateConfig, fatture, scadenze, getScadenzeByYear, bulkSaveScadenze, removeScadenza, removeScadenzeByYear, updateScadenza, showToast } = useApp();
 
   const annoCorrente = new Date().getFullYear();
-  const [annoRiferimento, setAnnoRiferimento] = useState(annoCorrente - 1);
+  // Dai link della Dashboard arriva l'anno da mostrare (#/scadenze?anno=2026),
+  // anche quando la pagina è già aperta.
+  const annoDalLink = () => {
+    const anno = Number(getHashParam('anno'));
+    return Number.isInteger(anno) && anno > annoCorrente - 5 && anno <= annoCorrente ? anno : null;
+  };
+  const [annoRiferimento, setAnnoRiferimento] = useState(() => annoDalLink() ?? annoCorrente - 1);
+  useEffect(() => {
+    const onHashChange = () => { const anno = annoDalLink(); if (anno !== null) setAnnoRiferimento(anno); };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
   const [numberOfTranches, setNumberOfTranches] = useState<NumberOfTranches>(1);
   
   const [manualFatturato, setManualFatturato] = useState<string>('');
@@ -34,31 +52,7 @@ export function Scadenze() {
   const savedScadenze = getScadenzeByYear(annoVersamento);
   const hasSavedScadenze = savedScadenze.length > 0;
 
-  const paidAccontiFromDb = getPaidAccontiForYear(annoRiferimento);
-
-  const savedAccontiFromScadenze = useMemo(() => {
-    if (savedScadenze.length === 0) return null;
-    const first = savedScadenze[0];
-    if (first.accontiIrpefUsed !== undefined || first.accontiInpsUsed !== undefined) {
-      return {
-        irpef: first.accontiIrpefUsed ?? 0,
-        inps: first.accontiInpsUsed ?? 0,
-      };
-    }
-    return null;
-  }, [savedScadenze]);
-
-  useEffect(() => {
-    if (!useManualAcconti) {
-      if (savedAccontiFromScadenze) {
-        setManualAccontiIrpef(savedAccontiFromScadenze.irpef > 0 ? savedAccontiFromScadenze.irpef.toString() : '');
-        setManualAccontiInps(savedAccontiFromScadenze.inps > 0 ? savedAccontiFromScadenze.inps.toString() : '');
-      } else {
-        setManualAccontiIrpef(paidAccontiFromDb.irpefPaid > 0 ? paidAccontiFromDb.irpefPaid.toString() : '');
-        setManualAccontiInps(paidAccontiFromDb.inpsPaid > 0 ? paidAccontiFromDb.inpsPaid.toString() : '');
-      }
-    }
-  }, [paidAccontiFromDb.irpefPaid, paidAccontiFromDb.inpsPaid, useManualAcconti, annoRiferimento, savedAccontiFromScadenze]);
+  const savedAccontiFromScadenze = useMemo(() => accontiUsatiDalPiano(savedScadenze), [savedScadenze]);
 
   const aliquotaIrpef = getAliquotaImpostaSostitutiva({
     annoApertura: config.annoApertura,
@@ -84,15 +78,36 @@ export function Scadenze() {
   
   const parsedAccontiIrpef = parseCurrency(manualAccontiIrpef);
   const parsedAccontiInps = parseCurrency(manualAccontiInps);
-  const contributiInput = parseOptionalContribution(manualContributiVersati);
+  // Casse professionali: importo deducibile inserito qui per la sola stima, come prima.
+  // INPS: deduzione per cassa (o previsionale) condivisa con Dashboard e Simulatore.
+  const isCassaProfessionale = config.gestionePrevidenziale === 'cassa_ordinistica';
+  const contributiInput = isCassaProfessionale ? parseOptionalContribution(manualContributiVersati) : { amount: undefined, invalid: false };
+  const deduzioneInps = risolviDeduzioneInps(config, annoRiferimento, scadenze, fatture);
 
-  const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config, annoRiferimento), contributiInput.amount);
+  const fiscale = calcolaFiscale(totaleFatturato, coefficienteMedio, aliquotaIrpef, getInpsCalculationInput(config, annoRiferimento), isCassaProfessionale ? contributiInput.amount : deduzioneInps.contributiVersati);
   const redditoImponibile = fiscale.imponibile;
   const irpefTotale = fiscale.irpef;
   const inpsTotale = fiscale.inps;
   const previdenzialeInfo = calcolaContributiPrevidenziali(redditoImponibile, config, annoRiferimento);
   const includeInpsSchedule = includeInpsInScadenze(config.gestionePrevidenziale);
   const usesFixedInps = usesFixedContributiPrevidenziali(config.gestionePrevidenziale);
+
+  // Acconti dell'anno da scalare dal saldo: quelli usati per il piano già salvato,
+  // altrimenti gli stessi della Dashboard (piano dell'anno o stima dall'anno prima).
+  const accantonamento = calcolaAccantonamento(config, annoRiferimento, fiscale, fatture, scadenze);
+  const accontiCalcolati = savedAccontiFromScadenze ?? { irpef: accantonamento.acconti.imposta, inps: accantonamento.acconti.inps };
+  const accontiStimati = !savedAccontiFromScadenze && accantonamento.acconti.stimato;
+  // Piano dell'anno (versato nell'anno, generato da Scadenze dell'anno prima) già salvato?
+  const pianoAnnoSalvato = accantonamento.acconti.fonte === 'piano';
+  const accontiDaPiano = Boolean(savedAccontiFromScadenze) || pianoAnnoSalvato;
+  useEffect(() => { setUseManualAcconti(false); }, [annoRiferimento]);
+  useEffect(() => {
+    if (useManualAcconti) return;
+    setManualAccontiIrpef(accontiCalcolati.irpef > 0 ? accontiCalcolati.irpef.toString().replace('.', ',') : '');
+    setManualAccontiInps(accontiCalcolati.inps > 0 ? accontiCalcolati.inps.toString().replace('.', ',') : '');
+  }, [accontiCalcolati.irpef, accontiCalcolati.inps, useManualAcconti]);
+  const inpsVersato = isCassaProfessionale ? 0 : fiscale.deduzioneContributi;
+  const primoAnnoSenzaVersamenti = annoRiferimento <= config.annoApertura && deduzioneInps.fonte === 'nessun_versamento' && parsedAccontiIrpef === 0 && parsedAccontiInps === 0;
 
   const taxAmounts = useMemo(() => {
     return calcolaAccontiForfettario({
@@ -117,6 +132,16 @@ export function Scadenze() {
 
   const schedule = useMemo(() => generatePaymentSchedule(scheduleInput), [scheduleInput]);
   const totals = useMemo(() => calculateScheduleTotals(schedule), [schedule]);
+  // Con un piano salvato i riepiloghi seguono le scadenze registrate (rate pagate
+  // comprese), non il piano ipotetico ricalcolato dai dati attuali.
+  const round2 = (v: number) => Math.round(v * 100) / 100;
+  const savedTotals = useMemo(() => {
+    const totalPrincipal = round2(savedScadenze.reduce((sum, s) => sum + s.importo, 0));
+    const totalInterest = round2(savedScadenze.reduce((sum, s) => sum + s.interessi, 0));
+    return { totalPrincipal, totalInterest, grandTotal: round2(totalPrincipal + totalInterest) };
+  }, [savedScadenze]);
+  const shownTotals = hasSavedScadenze ? savedTotals : totals;
+  const previewDiffers = hasSavedScadenze && (savedTotals.totalPrincipal !== totals.totalPrincipal || savedTotals.totalInterest !== totals.totalInterest);
 
   const isUpcoming = (dateStr: string) => {
     const date = parseDateLocal(dateStr);
@@ -134,144 +159,13 @@ export function Scadenze() {
     return date < today;
   };
 
-  const round2 = (v: number) => Math.round(v * 100) / 100;
-
-  const convertScheduleToScadenze = (scheduleItems: PaymentScheduleItem[], accontiIrpef: number, accontiInps: number): Array<Omit<Scadenza, 'userId'>> => {
-    const result: Array<Omit<Scadenza, 'userId'>> = [];
-    let idCounter = Date.now();
-
-    for (const item of scheduleItems) {
-      const isSummerBundle = item.label.includes('Saldo') || item.label.includes('Rata');
-      const trancheMatch = item.label.match(/Rata (\d+)\/(\d+)/);
-      const trancheIndex = trancheMatch ? parseInt(trancheMatch[1]) - 1 : 0;
-      const totalTranches = trancheMatch ? parseInt(trancheMatch[2]) : 1;
-
-      // Compute interest shares for each active component, rounded to 2 decimals.
-      // The last active component absorbs the rounding remainder so the sum
-      // of per-component interest equals item.interestAmount exactly.
-      const activeComponents: { key: string; principal: number }[] = [];
-      if (item.components.taxSaldo > 0) activeComponents.push({ key: 'taxSaldo', principal: item.components.taxSaldo });
-      if (item.components.taxAcconto > 0) activeComponents.push({ key: 'taxAcconto', principal: item.components.taxAcconto });
-      if (item.components.inpsSaldo > 0) activeComponents.push({ key: 'inpsSaldo', principal: item.components.inpsSaldo });
-      if (item.components.inpsAcconto > 0) activeComponents.push({ key: 'inpsAcconto', principal: item.components.inpsAcconto });
-
-      const interestByKey: Record<string, number> = {};
-      if (item.principalAmount > 0 && item.interestAmount > 0 && activeComponents.length > 0) {
-        let allocated = 0;
-        for (let ci = 0; ci < activeComponents.length; ci++) {
-          const comp = activeComponents[ci];
-          if (ci === activeComponents.length - 1) {
-            // Last component gets the remainder to avoid cent drift
-            interestByKey[comp.key] = round2(item.interestAmount - allocated);
-          } else {
-            const share = round2(item.interestAmount * (comp.principal / item.principalAmount));
-            interestByKey[comp.key] = share;
-            allocated = round2(allocated + share);
-          }
-        }
-      }
-
-      if (item.components.taxSaldo > 0) {
-        const interessi = interestByKey['taxSaldo'] ?? 0;
-        result.push({
-          id: `${idCounter++}`,
-          visibleId: `${annoVersamento}-saldo-irpef-${trancheIndex}`,
-          annoRiferimento,
-          annoVersamento,
-          date: item.date,
-          tipo: 'saldo_irpef',
-          label: isSummerBundle && totalTranches > 1 ? `Saldo imposta sostitutiva (${trancheIndex + 1}/${totalTranches})` : 'Saldo imposta sostitutiva',
-          importo: item.components.taxSaldo,
-          interessi,
-          totale: round2(item.components.taxSaldo + interessi),
-          pagato: false,
-          trancheIndex,
-          totalTranches,
-          accontiIrpefUsed: accontiIrpef,
-          accontiInpsUsed: accontiInps,
-        });
-      }
-
-      if (item.components.taxAcconto > 0) {
-        const isSecondAcconto = item.label.includes('Secondo');
-        const interessi = interestByKey['taxAcconto'] ?? 0;
-        result.push({
-          id: `${idCounter++}`,
-          visibleId: `${annoVersamento}-acconto-irpef-${isSecondAcconto ? '2' : '1'}-${trancheIndex}`,
-          annoRiferimento,
-          annoVersamento,
-          date: item.date,
-          tipo: 'acconto_irpef',
-          label: isSecondAcconto 
-            ? 'Secondo acconto imposta sostitutiva' 
-            : (isSummerBundle && totalTranches > 1 ? `Primo acconto imposta sostitutiva (${trancheIndex + 1}/${totalTranches})` : 'Primo acconto imposta sostitutiva'),
-          importo: item.components.taxAcconto,
-          interessi,
-          totale: round2(item.components.taxAcconto + interessi),
-          pagato: false,
-          trancheIndex: isSecondAcconto ? 0 : trancheIndex,
-          totalTranches: isSecondAcconto ? 1 : totalTranches,
-          accontiIrpefUsed: accontiIrpef,
-          accontiInpsUsed: accontiInps,
-        });
-      }
-
-      if (item.components.inpsSaldo > 0) {
-        const interessi = interestByKey['inpsSaldo'] ?? 0;
-        result.push({
-          id: `${idCounter++}`,
-          visibleId: `${annoVersamento}-saldo-inps-${trancheIndex}`,
-          annoRiferimento,
-          annoVersamento,
-          date: item.date,
-          tipo: 'saldo_inps',
-          label: isSummerBundle && totalTranches > 1 ? `Saldo INPS (${trancheIndex + 1}/${totalTranches})` : 'Saldo INPS',
-          importo: item.components.inpsSaldo,
-          interessi,
-          totale: round2(item.components.inpsSaldo + interessi),
-          pagato: false,
-          trancheIndex,
-          totalTranches,
-          accontiIrpefUsed: accontiIrpef,
-          accontiInpsUsed: accontiInps,
-        });
-      }
-
-      if (item.components.inpsAcconto > 0) {
-        const isSecondAcconto = item.label.includes('Secondo');
-        const interessi = interestByKey['inpsAcconto'] ?? 0;
-        result.push({
-          id: `${idCounter++}`,
-          visibleId: `${annoVersamento}-acconto-inps-${isSecondAcconto ? '2' : '1'}-${trancheIndex}`,
-          annoRiferimento,
-          annoVersamento,
-          date: item.date,
-          tipo: 'acconto_inps',
-          label: isSecondAcconto 
-            ? 'Secondo Acconto INPS' 
-            : (isSummerBundle && totalTranches > 1 ? `Primo Acconto INPS (${trancheIndex + 1}/${totalTranches})` : 'Primo Acconto INPS'),
-          importo: item.components.inpsAcconto,
-          interessi,
-          totale: round2(item.components.inpsAcconto + interessi),
-          pagato: false,
-          trancheIndex: isSecondAcconto ? 0 : trancheIndex,
-          totalTranches: isSecondAcconto ? 1 : totalTranches,
-          accontiIrpefUsed: accontiIrpef,
-          accontiInpsUsed: accontiInps,
-        });
-      }
-    }
-
-    return result;
-  };
-
   const handleSaveScadenze = async () => {
     if (contributiInput.invalid || getCassaWarning(config, annoRiferimento)) {
       showToast(contributiInput.invalid ? 'Correggi l’importo dei contributi versati prima di salvare.' : 'Completa i contributi della cassa per l’anno selezionato in Impostazioni.', 'error');
       return;
     }
     try {
-      const newScadenze = convertScheduleToScadenze(schedule, parsedAccontiIrpef, parsedAccontiInps);
+      const newScadenze = convertScheduleToScadenze(schedule, { annoRiferimento, annoVersamento, accontiIrpef: parsedAccontiIrpef, accontiInps: parsedAccontiInps });
       await removeScadenzeByYear(annoVersamento);
       await bulkSaveScadenze(newScadenze);
       showToast(`Scadenze ${annoVersamento} salvate!`);
@@ -286,24 +180,41 @@ export function Scadenze() {
       return;
     }
     try {
-      const newScadenze = convertScheduleToScadenze(schedule, parsedAccontiIrpef, parsedAccontiInps);
-      const existingPaidStatus = new Map(
-        savedScadenze.map(s => [s.visibleId, { pagato: s.pagato, dataPagamento: s.dataPagamento }])
+      // Le scadenze pagate non si eliminano né si ricalcolano: sono versamenti
+      // avvenuti e alimentano la deduzione per cassa.
+      const piano = rigeneraPreservandoPagate(
+        savedScadenze,
+        convertScheduleToScadenze(schedule, { annoRiferimento, annoVersamento, accontiIrpef: parsedAccontiIrpef, accontiInps: parsedAccontiInps }),
+        { accontiIrpefUsed: parsedAccontiIrpef, accontiInpsUsed: parsedAccontiInps },
       );
-      
-      const mergedScadenze = newScadenze.map(s => {
-        const existing = existingPaidStatus.get(s.visibleId);
-        if (existing) {
-          return { ...s, pagato: existing.pagato, dataPagamento: existing.dataPagamento };
-        }
-        return s;
-      });
-
-      await removeScadenzeByYear(annoVersamento);
-      await bulkSaveScadenze(mergedScadenze);
-      showToast(`Scadenze ${annoVersamento} rigenerate!`);
+      if (piano.blocchi.length > 0) {
+        showToast(`Rigenerazione annullata, nessuna scadenza modificata. ${piano.blocchi.join(' ')}`, 'error');
+        return;
+      }
+      for (const id of piano.daEliminare) await removeScadenza(id);
+      await bulkSaveScadenze(piano.daSalvare);
+      for (const pagata of piano.pagateDaAggiornare) await updateScadenza(pagata);
+      if (piano.avvisi.length > 0) showToast(`Scadenze ${annoVersamento} rigenerate, rate pagate invariate. ${piano.avvisi.join(' ')}`, 'error');
+      else showToast(`Scadenze ${annoVersamento} rigenerate, rate pagate invariate.`);
     } catch (error) {
       showToast('Errore rigenerazione scadenze', 'error');
+    }
+  };
+
+  const [confermaElimina, setConfermaElimina] = useState(false);
+  useEffect(() => { setConfermaElimina(false); }, [annoVersamento]);
+  const ratePagate = savedScadenze.filter(s => s.pagato);
+  const handleEliminaPiano = async (soloNonPagate: boolean) => {
+    try {
+      if (soloNonPagate) {
+        for (const s of savedScadenze.filter(s => !s.pagato)) await removeScadenza(s.id);
+      } else {
+        await removeScadenzeByYear(annoVersamento);
+      }
+      setConfermaElimina(false);
+      showToast(soloNonPagate ? `Rate non pagate del piano ${annoVersamento} eliminate` : `Piano ${annoVersamento} eliminato`);
+    } catch (error) {
+      showToast('Errore eliminazione piano', 'error');
     }
   };
 
@@ -312,11 +223,21 @@ export function Scadenze() {
       const updated: Scadenza = {
         ...scadenza,
         pagato: !scadenza.pagato,
-        dataPagamento: !scadenza.pagato ? new Date().toISOString().split('T')[0] : undefined,
+        dataPagamento: !scadenza.pagato ? formatDate(new Date()) : undefined,
       };
       await updateScadenza(updated);
     } catch (error) {
       showToast('Errore aggiornamento scadenza', 'error');
+    }
+  };
+
+  // Data effettiva del versamento: decide l'anno della deduzione per cassa.
+  const handleChangeDataPagamento = async (scadenza: Scadenza, value: string) => {
+    if (!isIsoDate(value) || value === scadenza.dataPagamento) return;
+    try {
+      await updateScadenza({ ...scadenza, dataPagamento: value });
+    } catch (error) {
+      showToast('Errore aggiornamento data di pagamento', 'error');
     }
   };
 
@@ -328,6 +249,25 @@ export function Scadenze() {
   }, {} as Record<string, Scadenza[]>);
 
   const sortedDates = Object.keys(groupedByDate).sort();
+
+  // Acconti versati oltre il dovuto: credito che si compensa nell'F24, dalla prima scadenza in poi.
+  // I debiti restano interi (servono per acconti e deduzione degli anni dopo).
+  const creditoF24 = creditoDaCompensare([
+    { accontiPagati: taxAmounts.accontiIrpefPagati, dovuto: taxAmounts.taxSaldoLordo },
+    ...(includeInpsSchedule ? [{ accontiPagati: taxAmounts.accontiInpsPagati, dovuto: taxAmounts.inpsSaldoLordo }] : []),
+  ]);
+  const creditoPerVoce = ripartisciCredito(schedule.map(item => item.totalAmount), creditoF24);
+  const creditoPerData = ripartisciCredito(sortedDates.map(date => groupedByDate[date].reduce((sum, s) => sum + s.totale, 0)), creditoF24);
+  const creditoUsato = round2((hasSavedScadenze ? creditoPerData : creditoPerVoce).reduce((sum, c) => sum + c, 0));
+  const rigaCredito = (importo: number, colonnePrima: number, colonneDopo: number) => (
+    <tr style={{ background: 'rgba(4, 120, 87, 0.06)' }}>
+      {Array.from({ length: colonnePrima }, (_, i) => <td key={i} />)}
+      <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Credito {annoRiferimento} compensato nell’F24 (acconti versati oltre il dovuto)</td>
+      <td colSpan={2} />
+      <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--accent-green)', whiteSpace: 'nowrap' }}>−<Currency amount={importo} tabular /></td>
+      {Array.from({ length: colonneDopo }, (_, i) => <td key={i} />)}
+    </tr>
+  );
 
   const getTipoColor = (tipo: ScadenzaTipo) => {
     switch (tipo) {
@@ -349,7 +289,14 @@ export function Scadenze() {
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h2 className="card-title">Configurazione</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+          <h2 className="card-title" style={{ margin: 0 }}>Configurazione</h2>
+          {hasSavedScadenze ? (
+            <button className="btn btn-secondary" onClick={handleRegenerateScadenze}><RefreshCw size={16} /> Rigenera piano {annoVersamento}</button>
+          ) : (
+            <button className="btn btn-primary" onClick={handleSaveScadenze}><Save size={16} /> Salva piano {annoVersamento}</button>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 200px' }}>
             <label style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
@@ -450,6 +397,7 @@ export function Scadenze() {
             </div>
           </div>
 
+          {isCassaProfessionale ? (
           <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div style={{ flex: '1 1 250px' }}>
@@ -478,77 +426,133 @@ export function Scadenze() {
                 {contributiInput.invalid && <p id="contributi-versati-errore" role="alert">Inserisci un importo valido, per esempio 1.000,50. Finché non lo correggi, la stima usa la deduzione configurata.</p>}
                 {contributiInput.amount === undefined && (
                   <span style={{ display: 'block', marginTop: 4, color: 'var(--accent-orange)' }}>
-                    Se non specificato, si usa la deduzione configurata (per INPS, il totale stimato).
+                    Se non specificato, si usa la quota deducibile configurata in Impostazioni.
                   </span>
                 )}
               </div>
             </div>
           </div>
+          ) : null}
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h2 className="card-title">Versamenti già registrati (anno precedente)</h2>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 16 }}>
-          {paidAccontiFromDb.irpefPaid > 0 || paidAccontiFromDb.inpsPaid > 0 
-            ? 'Acconti calcolati dalle scadenze marcate come pagate. Puoi sovrascrivere manualmente.'
-            : usesFixedInps
-              ? 'Inserisci gli acconti di imposta sostitutiva e gli eventuali contributi previdenziali già versati per stimare il residuo annuo.'
-              : 'Inserisci gli acconti di imposta sostitutiva e INPS già versati per calcolare il saldo netto.'
-          }
-        </p>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={useManualAcconti}
-              onChange={(e) => setUseManualAcconti(e.target.checked)}
-              style={{ width: 18, height: 18 }}
-            />
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Modifica manualmente
-            </span>
-          </label>
-        </div>
+        <h2 className="card-title">Versamenti del {annoRiferimento}</h2>
+        {primoAnnoSenzaVersamenti ? (
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', margin: 0 }}>
+            Primo anno di attività: nel {annoRiferimento} non si versano saldo né acconti. I primi arrivano a giugno {annoRiferimento + 1}, nel piano qui sotto.
+          </p>
+        ) : (
+          <>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 12px' }}>
+              {pianoAnnoSalvato
+                ? <>Dal piano {annoRiferimento} salvato in Scadenze {annoRiferimento - 1}{accantonamento.acconti.stimato ? ': le rate non ancora segnate come pagate sono stimate' : ''}.</>
+                : <>Stimati dalle fatture {annoRiferimento - 1}: il piano {annoRiferimento} non è salvato. <a href={`#/scadenze?anno=${annoRiferimento - 1}`}>Apri Scadenze {annoRiferimento - 1} e salva il piano {annoRiferimento}</a>, poi segna i pagamenti.</>}
+              {' '}Gli acconti si scalano dal saldo {annoRiferimento}, l’INPS versato si deduce dall’imponibile.
+            </p>
+            <table style={{ fontSize: '0.9rem', borderCollapse: 'collapse' }}>
+              <tbody>
+                {includeInpsSchedule && (
+                  <>
+                    <tr>
+                      <td style={{ width: 16 }} />
+                      <td style={{ paddingRight: 24, color: 'var(--text-secondary)' }}>Saldo INPS {annoRiferimento - 1}</td>
+                      <td style={{ textAlign: 'right' }}><Currency amount={Math.max(0, Math.round((inpsVersato - parsedAccontiInps) * 100) / 100)} tabular /></td>
+                    </tr>
+                    <tr>
+                      <td style={{ color: 'var(--text-muted)', fontFamily: 'Space Mono, monospace' }}>+</td>
+                      <td style={{ paddingRight: 24, color: 'var(--text-secondary)' }}>Acconti INPS {annoRiferimento}{accontiStimati && !useManualAcconti && <BadgeStima />}</td>
+                      <td style={{ textAlign: 'right' }}><Currency amount={parsedAccontiInps} tabular /></td>
+                    </tr>
+                  </>
+                )}
+                {!isCassaProfessionale && (
+                  <tr>
+                    <td style={{ color: 'var(--text-muted)', fontFamily: 'Space Mono, monospace' }}>{includeInpsSchedule ? '=' : ''}</td>
+                    <td style={{ paddingRight: 24, fontWeight: 600 }}>
+                      INPS versato nel {annoRiferimento}, dedotto dall’imponibile
+                      {(deduzioneInps.stimato || deduzioneInps.previsionale) && <BadgeStima testo={deduzioneInps.previsionale ? 'PREVISIONALE' : 'STIMA'} />}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 600 }}><Currency amount={inpsVersato} tabular /></td>
+                  </tr>
+                )}
+                <tr>
+                  <td />
+                  <td style={{ paddingRight: 24, paddingTop: 8, color: 'var(--text-secondary)' }}>Acconti imposta sostitutiva {annoRiferimento}{accontiStimati && !useManualAcconti && <BadgeStima />}</td>
+                  <td style={{ textAlign: 'right', paddingTop: 8 }}><Currency amount={parsedAccontiIrpef} tabular /></td>
+                </tr>
+              </tbody>
+            </table>
+            {!isCassaProfessionale && deduzioneInps.fonte === 'manuale' && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '8px 0 0' }}>{descriviDeduzioneInps(deduzioneInps, annoRiferimento)}</p>
+            )}
+            {!isCassaProfessionale && deduzioneInps.fonte !== 'stima' && deduzioneInps.avvisi.map(avviso => (
+              <p key={avviso} role="status" style={{ fontSize: '0.85rem', fontWeight: 600, margin: '6px 0 0' }}>{avviso}</p>
+            ))}
+          </>
+        )}
 
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 200px' }}>
-            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Acconti imposta sostitutiva già pagati
-            </label>
-            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                className="input-field"
-                placeholder="0"
-                value={manualAccontiIrpef}
-                onChange={(e) => { setManualAccontiIrpef(e.target.value); setUseManualAcconti(true); }}
-                style={{ paddingLeft: 32, fontFamily: 'Space Mono, monospace' }}
-              />
+        <details style={{ marginTop: 16 }}>
+          <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Correggi a mano</summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
+            {!isCassaProfessionale && deduzioneInps.modalita === 'cassa' && (
+              <ContributiInpsManuale config={config} anno={annoRiferimento} updateConfig={updateConfig} />
+            )}
+            {accontiDaPiano && !useManualAcconti ? (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                Gli acconti vengono dal piano salvato: per cambiarli rigenera il piano da cui provengono.
+              </p>
+            ) : (
+            <>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ flex: '1 1 200px' }}>
+                <label htmlFor="acconti-imposta-input" style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Acconti imposta sostitutiva {annoRiferimento}
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
+                  <input
+                    id="acconti-imposta-input"
+                    type="text"
+                    inputMode="decimal"
+                    className="input-field"
+                    placeholder="0"
+                    value={manualAccontiIrpef}
+                    onChange={(e) => { setManualAccontiIrpef(e.target.value); setUseManualAcconti(true); }}
+                    style={{ paddingLeft: 32, fontFamily: 'Space Mono, monospace' }}
+                  />
+                </div>
+              </div>
+              <div style={{ flex: '1 1 200px' }}>
+                <label htmlFor="acconti-inps-input" style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  {usesFixedInps ? `Contributi ${annoRiferimento} già pagati` : `Acconti INPS ${annoRiferimento}`}
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
+                  <input
+                    id="acconti-inps-input"
+                    type="text"
+                    inputMode="decimal"
+                    className="input-field"
+                    placeholder="0"
+                    value={manualAccontiInps}
+                    onChange={(e) => { setManualAccontiInps(e.target.value); setUseManualAcconti(true); }}
+                    style={{ paddingLeft: 32, fontFamily: 'Space Mono, monospace' }}
+                  />
+                </div>
+              </div>
+              {useManualAcconti && (
+                <button type="button" className="btn btn-secondary" onClick={() => setUseManualAcconti(false)}>Usa gli acconti calcolati</button>
+              )}
             </div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+              Le correzioni degli acconti valgono per questa pagina e finiscono nel piano quando salvi o rigeneri; il totale INPS si salva per l’anno.
+            </p>
+            </>
+            )}
           </div>
-          <div style={{ flex: '1 1 200px' }}>
-            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              {usesFixedInps ? 'Contributi già pagati' : 'Acconti INPS già pagati'}
-            </label>
-            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>€</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                className="input-field"
-                placeholder="0"
-                value={manualAccontiInps}
-                onChange={(e) => { setManualAccontiInps(e.target.value); setUseManualAcconti(true); }}
-                style={{ paddingLeft: 32, fontFamily: 'Space Mono, monospace' }}
-              />
-            </div>
-          </div>
-        </div>
-        
+        </details>
+
         {(taxAmounts.accontiIrpefPagati > 0 || taxAmounts.accontiInpsPagati > 0) && (
           <div style={{ marginTop: 16, padding: '12px 16px', background: 'rgba(4, 120, 87, 0.1)', border: '1px solid rgba(4, 120, 87, 0.3)', borderRadius: 12, fontSize: '0.85rem' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 24px' }}>
@@ -557,6 +561,11 @@ export function Scadenze() {
                   <span style={{ color: 'var(--text-muted)' }}>Saldo imposta sostitutiva: </span>
                   <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}><Currency amount={taxAmounts.taxSaldoLordo} /></span>
                   <span style={{ color: 'var(--accent-green)', fontWeight: 600, marginLeft: 8 }}><Currency amount={taxAmounts.taxSaldo} /></span>
+                  {taxAmounts.accontiIrpefPagati > taxAmounts.taxSaldoLordo && (
+                    <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>
+                      credito di <Currency amount={Math.round((taxAmounts.accontiIrpefPagati - taxAmounts.taxSaldoLordo) * 100) / 100} />, compensabile nell’F24 di giugno {annoVersamento}
+                    </span>
+                  )}
                 </div>
               )}
               {taxAmounts.accontiInpsPagati > 0 && (
@@ -564,6 +573,11 @@ export function Scadenze() {
                   <span style={{ color: 'var(--text-muted)' }}>Saldo contributi: </span>
                   <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}><Currency amount={taxAmounts.inpsSaldoLordo} /></span>
                   <span style={{ color: 'var(--accent-green)', fontWeight: 600, marginLeft: 8 }}><Currency amount={taxAmounts.inpsSaldo} /></span>
+                  {taxAmounts.accontiInpsPagati > taxAmounts.inpsSaldoLordo && (
+                    <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>
+                      credito di <Currency amount={Math.round((taxAmounts.accontiInpsPagati - taxAmounts.inpsSaldoLordo) * 100) / 100} />, compensabile nell’F24 di giugno {annoVersamento}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -583,18 +597,21 @@ export function Scadenze() {
       <div className="grid-3" style={{ marginBottom: 24 }}>
         <div className="card">
           <h2 className="card-title"><Euro size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Totale Principale</h2>
-          <div className="stat-value" style={{ color: 'var(--accent-orange)' }}><Currency amount={totals.totalPrincipal} /></div>
-          <div className="stat-label">Capitale da versare</div>
+          <div className="stat-value" style={{ color: 'var(--accent-orange)' }}><Currency amount={shownTotals.totalPrincipal} /></div>
+          <div className="stat-label">{hasSavedScadenze ? 'Capitale del piano salvato' : 'Capitale da versare'}</div>
         </div>
         <div className="card">
           <h2 className="card-title"><Percent size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Interessi Rateizzazione</h2>
-          <div className="stat-value" style={{ color: numberOfTranches > 1 ? 'var(--accent-red)' : 'var(--text-muted)' }}><Currency amount={totals.totalInterest} /></div>
+          <div className="stat-value" style={{ color: shownTotals.totalInterest > 0 ? 'var(--accent-red)' : 'var(--text-muted)' }}><Currency amount={shownTotals.totalInterest} /></div>
           <div className="stat-label">0.33% mensile dalla 2ª rata</div>
         </div>
         <div className="card" style={{ background: 'linear-gradient(135deg, var(--bg-card) 0%, rgba(239,68,68,0.1) 100%)' }}>
           <h2 className="card-title"><CalendarClock size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Totale da Versare</h2>
-          <div className="stat-value" style={{ fontSize: '2rem', color: 'var(--accent-red)' }}><Currency amount={totals.grandTotal} /></div>
-          <div className="stat-label">Principale + interessi</div>
+          <div className="stat-value" style={{ fontSize: '2rem', color: 'var(--accent-red)' }}><Currency amount={round2(shownTotals.grandTotal - creditoUsato)} /></div>
+          <div className="stat-label">
+            Principale + interessi{hasSavedScadenze ? ', rate pagate comprese' : ''}
+            {creditoUsato > 0 && <>, meno <Currency amount={creditoUsato} /> di credito compensato</>}
+          </div>
         </div>
       </div>
 
@@ -603,9 +620,14 @@ export function Scadenze() {
           <h2 className="card-title" style={{ margin: 0 }}>Piano dei Pagamenti {annoVersamento}</h2>
           <div style={{ display: 'flex', gap: 8 }}>
             {hasSavedScadenze ? (
-              <button className="btn btn-secondary" onClick={handleRegenerateScadenze}>
-                <RefreshCw size={16} /> Rigenera
-              </button>
+              <>
+                <button className="btn btn-secondary" onClick={() => setConfermaElimina(true)} aria-expanded={confermaElimina}>
+                  <Trash2 size={16} /> Elimina piano
+                </button>
+                <button className="btn btn-secondary" onClick={handleRegenerateScadenze}>
+                  <RefreshCw size={16} /> Rigenera
+                </button>
+              </>
             ) : (
               <button className="btn btn-primary" onClick={handleSaveScadenze}>
                 <Save size={16} /> Salva Scadenze
@@ -614,7 +636,34 @@ export function Scadenze() {
           </div>
         </div>
 
-        {numberOfTranches > 1 && (
+        {previewDiffers && (
+          <div role="status" style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 12, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            Anteprima con i dati attuali: capitale <Currency amount={totals.totalPrincipal} />, interessi <Currency amount={totals.totalInterest} />. È un piano ipotetico: con <strong>Rigenera</strong> le rate già pagate restano invariate e si ripianifica solo il residuo, quindi i totali salvati possono differire.
+          </div>
+        )}
+
+        {hasSavedScadenze && confermaElimina && (
+          <div role="alert" style={{ marginBottom: 16, padding: '12px 16px', border: '1px solid var(--accent-red)', borderRadius: 12, fontSize: '0.85rem' }}>
+            <p style={{ margin: '0 0 8px', fontWeight: 600 }}>Eliminare il piano {annoVersamento}?</p>
+            <p style={{ margin: '0 0 12px', color: 'var(--text-secondary)' }}>
+              Contiene {savedScadenze.length} {savedScadenze.length === 1 ? 'scadenza' : 'scadenze'}
+              {ratePagate.length > 0
+                ? <>, di cui {ratePagate.length} segnate come pagate (<Currency amount={round2(ratePagate.reduce((sum, s) => sum + s.importo, 0))} />). Se elimini anche quelle, i pagamenti non conteranno più per la deduzione INPS e per gli acconti.</>
+                : '. Nessuna è segnata come pagata.'}
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {ratePagate.length > 0 && (
+                <button className="btn btn-secondary" onClick={() => handleEliminaPiano(true)}>Elimina solo le non pagate</button>
+              )}
+              <button className="btn btn-secondary" style={{ color: 'var(--accent-red)' }} onClick={() => handleEliminaPiano(false)}>
+                {ratePagate.length > 0 ? 'Elimina tutto, pagate comprese' : 'Elimina il piano'}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setConfermaElimina(false)}>Annulla</button>
+            </div>
+          </div>
+        )}
+
+        {numberOfTranches > 1 && !hasSavedScadenze && (
           <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <Info size={18} style={{ color: '#fbbf24', flexShrink: 0 }} />
             <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
@@ -634,11 +683,13 @@ export function Scadenze() {
                   <th style={{ textAlign: 'right' }}>Importo</th>
                   <th style={{ textAlign: 'right' }}>Interessi</th>
                   <th style={{ textAlign: 'right' }}>Totale</th>
+                  <th>Pagato il</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedDates.map(date => (
-                  groupedByDate[date].map((scadenza, idx) => {
+                {sortedDates.map((date, indiceData) => (
+                  <Fragment key={date}>
+                  {groupedByDate[date].map((scadenza, idx) => {
                     const upcoming = isUpcoming(scadenza.date);
                     const past = isPast(scadenza.date);
                     return (
@@ -692,9 +743,29 @@ export function Scadenze() {
                         <td style={{ textAlign: 'right', fontWeight: 600, color: scadenza.pagato ? 'var(--accent-green)' : 'var(--accent-orange)' }}>
                           <Currency amount={scadenza.totale} tabular />
                         </td>
+                        <td>
+                          {scadenza.pagato && (
+                            <>
+                              <input
+                                type="date"
+                                className="input-field"
+                                aria-label={`Data di pagamento: ${scadenza.label}`}
+                                aria-invalid={!isIsoDate(scadenza.dataPagamento)}
+                                value={scadenza.dataPagamento ?? ''}
+                                onChange={(e) => handleChangeDataPagamento(scadenza, e.target.value)}
+                                style={{ padding: '4px 8px', fontSize: '0.8rem', width: 'auto' }}
+                              />
+                              {!isIsoDate(scadenza.dataPagamento) && (
+                                <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--accent-orange)' }}>Data mancante</span>
+                              )}
+                            </>
+                          )}
+                        </td>
                       </tr>
                     );
-                  })
+                  })}
+                  {creditoPerData[indiceData] > 0 && rigaCredito(creditoPerData[indiceData], 2, 1)}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -717,7 +788,8 @@ export function Scadenze() {
                     const upcoming = isUpcoming(item.date);
                     const past = isPast(item.date);
                     return (
-                      <tr key={index} style={{ background: upcoming ? 'rgba(251, 191, 36, 0.1)' : past ? 'var(--bg-secondary)' : undefined, opacity: past ? 0.6 : 1 }}>
+                      <Fragment key={index}>
+                      <tr style={{ background: upcoming ? 'rgba(251, 191, 36, 0.1)' : past ? 'var(--bg-secondary)' : undefined, opacity: past ? 0.6 : 1 }}>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {upcoming && <span style={{ background: '#fbbf24', color: '#000', fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>PROSSIMA</span>}
@@ -739,6 +811,8 @@ export function Scadenze() {
                         </td>
                         <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--accent-orange)' }}><Currency amount={item.totalAmount} tabular /></td>
                       </tr>
+                      {creditoPerVoce[index] > 0 && rigaCredito(creditoPerVoce[index], 1, 0)}
+                      </Fragment>
                     );
                   })}
                 </tbody>

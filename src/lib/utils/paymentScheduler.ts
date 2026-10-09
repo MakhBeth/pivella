@@ -11,6 +11,16 @@ const roundToTwoDecimals = (value: number): number => {
   return Math.round(value * 100) / 100;
 };
 
+// Quota per rata arrotondata al centesimo, con l'ultima rata che assorbe il
+// resto come sempre. Solo quando l'arrotondamento in su renderebbe negativa
+// l'ultima rata (importi di pochi centesimi) si arrotonda per difetto.
+const quotaPerRata = (total: number, numberOfTranches: number): number => {
+  const quota = roundToTwoDecimals(total / numberOfTranches);
+  return total - quota * (numberOfTranches - 1) < 0
+    ? Math.floor(Math.round(total * 100) / numberOfTranches) / 100
+    : quota;
+};
+
 const distributeComponents = (
   taxSaldo: number,
   taxAcconto: number,
@@ -20,27 +30,15 @@ const distributeComponents = (
   trancheIndex: number
 ): PaymentComponents => {
   const isLastTranche = trancheIndex === numberOfTranches - 1;
-  
-  if (isLastTranche) {
-    const previousTranches = trancheIndex;
-    const taxSaldoPerTranche = roundToTwoDecimals(taxSaldo / numberOfTranches);
-    const taxAccontoPerTranche = roundToTwoDecimals(taxAcconto / numberOfTranches);
-    const inpsSaldoPerTranche = roundToTwoDecimals(inpsSaldo / numberOfTranches);
-    const inpsAccontoPerTranche = roundToTwoDecimals(inpsAcconto / numberOfTranches);
-    
-    return {
-      taxSaldo: roundToTwoDecimals(taxSaldo - taxSaldoPerTranche * previousTranches),
-      taxAcconto: roundToTwoDecimals(taxAcconto - taxAccontoPerTranche * previousTranches),
-      inpsSaldo: roundToTwoDecimals(inpsSaldo - inpsSaldoPerTranche * previousTranches),
-      inpsAcconto: roundToTwoDecimals(inpsAcconto - inpsAccontoPerTranche * previousTranches),
-    };
-  }
-  
+  const quota = (total: number): number => isLastTranche
+    ? roundToTwoDecimals(total - quotaPerRata(total, numberOfTranches) * trancheIndex)
+    : quotaPerRata(total, numberOfTranches);
+
   return {
-    taxSaldo: roundToTwoDecimals(taxSaldo / numberOfTranches),
-    taxAcconto: roundToTwoDecimals(taxAcconto / numberOfTranches),
-    inpsSaldo: roundToTwoDecimals(inpsSaldo / numberOfTranches),
-    inpsAcconto: roundToTwoDecimals(inpsAcconto / numberOfTranches),
+    taxSaldo: quota(taxSaldo),
+    taxAcconto: quota(taxAcconto),
+    inpsSaldo: quota(inpsSaldo),
+    inpsAcconto: quota(inpsAcconto),
   };
 };
 

@@ -261,6 +261,25 @@ test('parseSyncFile rejects a malformed client tariff history', () => {
   }
 });
 
+test('INPS deduction settings round-trip through the sync file; legacy configs stay readable', () => {
+  const snap = createEmptySnapshot(STAMP);
+  snap.config.push(
+    { id: 'config_u1', userId: 'u1', deduzioneInpsModalita: 'competenza', contributiInpsVersatiManuali: { 2025: 0, 2026: 1234.5 } } as unknown as SyncSnapshot['config'][number],
+    { id: 'config_u2', userId: 'u2', coefficiente: 78 } as unknown as SyncSnapshot['config'][number],
+  );
+  const { snapshot } = parseSyncFile(serializeSnapshot(snap), STAMP);
+  assert.deepEqual(snapshot.config[0].contributiInpsVersatiManuali, { 2025: 0, 2026: 1234.5 });
+  assert.equal(snapshot.config[0].deduzioneInpsModalita, 'competenza');
+  assert.equal('deduzioneInpsModalita' in snapshot.config[1], false);
+  assert.ok(snapshotsEquivalent(snap, snapshot));
+});
+
+test('a config with malformed INPS deduction settings is not merged', () => {
+  const snap = createEmptySnapshot(STAMP);
+  snap.config.push({ id: 'config_u1', userId: 'u1', contributiInpsVersatiManuali: { 2026: -5 } } as unknown as SyncSnapshot['config'][number]);
+  assert.throws(() => parseSyncFile(serializeSnapshot(snap), STAMP), (err: unknown) => err instanceof SyncSchemaError && /Config config_u1/.test(err.message));
+});
+
 test('isUnreadableSyncFile recognizes a file that is not JSON, such as a stale SMB copy padded with zeros', () => {
   const padded = `${serializeSnapshot(createEmptySnapshot({ now: NOW, writer: WRITER }))}\u0000\u0000\u0000`;
   let caught: unknown;

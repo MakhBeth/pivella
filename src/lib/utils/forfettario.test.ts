@@ -118,8 +118,8 @@ test('applies 35 percent reduction to fixed artigiani contributions', () => {
   assert.equal(result.reductionApplied, true);
 });
 
-test('uses fixed INPS amount as deductible contribution in fiscal calculation', () => {
-  const result = calcolaFiscale(50000, 67, 0.15, { annualAmount: 2938.88 });
+test('uses fixed INPS amount as deductible contribution in a competenza estimate', () => {
+  const result = calcolaFiscale(50000, 67, 0.15, { annualAmount: 2938.88 }, 'competenza');
 
   assert.equal(result.imponibile, 33500);
   assert.equal(result.inps, 2938.88);
@@ -150,12 +150,22 @@ test('deduces only contributi versati (not full INPS) when provided', () => {
   assert.equal(result.irpef, 7274.22);
 });
 
-test('deduces full INPS when contributiVersati is omitted', () => {
-  const result = calcolaFiscale(78343.02, 67, 0.15, 0.2607);
+test('deduces full INPS due only for a competenza estimate', () => {
+  const result = calcolaFiscale(78343.02, 67, 0.15, 0.2607, 'competenza');
 
   assert.equal(result.imponibile, 52489.82);
   assert.equal(result.inps, 13684.10);
   assert.equal(result.irpef, 5820.86);
+});
+
+test('never deduces INPS due when contributiVersati is omitted (cash basis)', () => {
+  const separata = calcolaFiscale(78343.02, 67, 0.15, 0.2607);
+  assert.equal(separata.deduzioneContributi, 0);
+  assert.equal(separata.inps, 13684.10);
+  assert.equal(separata.irpef, 7873.47);
+  const artigiani = calcolaFiscale(50000, 67, 0.15, { annualAmount: 2938.88 });
+  assert.equal(artigiani.deduzioneContributi, 0);
+  assert.equal(artigiani.inps, 2938.88);
 });
 
 test('returns readable labels for previdenziale management types', () => {

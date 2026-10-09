@@ -22,6 +22,7 @@ import { UserSelector } from "./shared/UserSelector";
 import { parseFatturaXML, extractXmlFromZip } from "../lib/utils/xmlParsing";
 import { processBatchXmlFiles } from "../lib/utils/batchImport";
 import { conStoricoTariffe, getStoricoTariffe } from "../lib/utils/tariffe";
+import { validaDeduzioneInpsConfig } from "../lib/utils/deduzioneInps";
 import {
   extractEmittenteFromXml,
   autoPopulateConfig,
@@ -379,6 +380,13 @@ function ForfettarioAppInner() {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
+      const erroreConfig = Array.isArray(data?.config)
+        ? data.config.map((c: unknown) => typeof c === 'object' && c !== null ? validaDeduzioneInpsConfig(c as Record<string, unknown>) : 'config non valida').find(Boolean)
+        : null;
+      if (erroreConfig) {
+        showToast(`Backup non valido: ${erroreConfig}`, "error");
+        return;
+      }
       await importData(data);
       setShowModal(null);
     } catch (error) {
