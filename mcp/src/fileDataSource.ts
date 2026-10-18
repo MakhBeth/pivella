@@ -132,6 +132,8 @@ export class FileDataSource implements DataSource {
       fatture: own(snapshot.fatture),
       workLogs: own(snapshot.workLogs),
       scadenze: own(snapshot.scadenze),
+      bankFormats: own(snapshot.bankFormats),
+      bankTransactions: own(snapshot.bankTransactions),
       readAt,
     };
   }

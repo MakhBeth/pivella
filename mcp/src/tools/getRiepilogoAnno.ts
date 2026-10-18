@@ -1,3 +1,4 @@
+import { collectedInvoices } from '../../../src/lib/utils/receipts';
 import { z } from 'zod';
 
 import { DEFAULT_CONFIG, LIMITE_FATTURATO } from '../../../src/lib/constants/fiscali';
@@ -5,7 +6,7 @@ import { calcolaFiscale } from '../../../src/lib/utils/calculations';
 import { getCassaWarning, calcolaContributiPrevidenziali, calcolaAccontiForfettario, calcolaCoefficienteMedioAteco, getAliquotaImpostaSostitutiva, getInpsCalculationInput, getRegimeThresholdStatus } from '../../../src/lib/utils/forfettario';
 import { descriviDeduzioneInps, risolviDeduzioneInps, type DeduzioneInps } from '../../../src/lib/utils/deduzioneInps';
 import { calcolaAccantonamento } from '../../../src/lib/utils/accantonamento';
-import { anno as annoDi, defineTool, euro, isIncassata, round2, snapshotOf, userIdSchema } from './shared';
+import { defineTool, euro, round2, snapshotOf, userIdSchema } from './shared';
 
 // Due criteri distinti: il fatturato è sempre per cassa (data di incasso);
 // la deduzione dei contributi segue la scelta del profilo.
@@ -30,7 +31,7 @@ export const getRiepilogoAnno = defineTool({
   async handler(ctx, { userId, anno }) {
     const snap = await snapshotOf(ctx, userId);
     const config = snap.config ?? { ...DEFAULT_CONFIG, userId };
-    const incassate = snap.fatture.filter((f) => isIncassata(f) && annoDi(f.dataIncasso || f.data) === anno);
+    const incassate = collectedInvoices(snap.fatture, anno);
     const fatturato = round2(incassate.reduce((sum, f) => sum + f.importo, 0));
     const coefficienteRedditivita = calcolaCoefficienteMedioAteco(config.codiciAteco ?? []);
     const aliquotaApplicata = getAliquotaImpostaSostitutiva({ annoApertura: config.annoApertura, annoImposta: anno, aliquotaOverride: config.aliquotaOverride });

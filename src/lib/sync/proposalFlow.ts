@@ -9,8 +9,9 @@
  */
 import type { IndexedDBManager } from '../db/IndexedDBManager';
 import { STORES } from '../constants/fiscali';
-import type { StoreName } from '../../types';
-import { finishProposal, planProposal, type ProposalPlan } from './applyProposal';
+import { importBankRows } from '../db/importBankRows';
+import type { BankTransaction, StoreName } from '../../types';
+import { finishProposal, planProposal, planBankImport, type ProposalPlan } from './applyProposal';
 import { mergeSnapshots, type MergeResult } from './merge';
 import { isPending, ProposalNotPendingError } from './proposals';
 import type { Proposal, SyncSnapshot, Writer } from './schema';
@@ -78,23 +79,32 @@ export async function decideProposal(options: DecideProposalOptions): Promise<De
       // Rivalidazione sui dati fusi, che dopo mergeIntoDb coincidono con il database.
       const userId = current.userId;
       const own = <T extends { userId: string }>(records: T[]) => records.filter((r) => r.userId === userId);
-      plan = planProposal(current, {
+      const context = {
         userId,
         config: merged.config.find((c) => c.id === `config_${userId}`) ?? merged.config.find((c) => c.userId === userId) ?? null,
         clienti: own(merged.clienti),
         fatture: own(merged.fatture),
         scadenze: own(merged.scadenze),
+        bankFormats: own(merged.bankFormats),
+        bankTransactions: own(merged.bankTransactions),
         today: nowIso.slice(0, 10),
         now: nowIso,
         newId,
-      });
+      };
+      plan = current.kind === 'bankImport' ? await planBankImport(current, context) : planProposal(current, context);
 
       // Prima il database, poi il file: se l'app muore nel mezzo i record
       // restano e la proposta torna in attesa, e la rivalidazione al giro
       // successivo la rifiuta (cliente duplicato, fattura già incassata) o
       // al peggio la ripropone all'utente.
       const changes = emptyChanges();
-      for (const { store, record } of plan.puts) {
+      if (current.kind === 'bankImport') {
+        const saved = await importBankRows(db, userId, plan.puts.map(p => p.record as BankTransaction));
+        plan.result.skipped = (plan.result.skipped ?? 0) + plan.puts.length - saved.length;
+        plan.result.imported = saved.length;
+        plan.puts = saved.map(record => ({ store: 'bankTransactions', record }));
+        changes.bankTransactions.upserted = saved.map(record => record.id);
+      } else for (const { store, record } of plan.puts) {
         await db.put(store, db.stamp(record));
         changes[store as StoreName].upserted.push(record.id);
       }

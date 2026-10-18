@@ -94,7 +94,7 @@ export async function check(dir: string, writerId: string, version: string): Pro
   const s = read.snapshot;
   log(`file ${read.source === 'legacy' ? 'forfettino-sync.json (v1, verrà migrato alla prima proposta)' : 'pivella-sync.json'}${read.upgradedFromV1 ? ' formato v1' : ` formato v${s.schemaVersion}`}, ultima scrittura ${s.updatedAt} da ${s.writer.id} (${s.writer.kind})`);
   log(`profili: ${s.users.map((u) => `${u.nome} [${u.id}]`).join(', ') || 'nessuno'}`);
-  log(`record: ${s.clienti.length} clienti, ${s.fatture.length} fatture, ${s.workLogs.length} giornate, ${s.scadenze.length} scadenze, ${s.tombstones.length} tombstone, ${s.proposals.length} proposte`);
+  log(`record: ${s.clienti.length} clienti, ${s.fatture.length} fatture, ${s.workLogs.length} giornate, ${s.scadenze.length} scadenze, ${s.bankFormats.length} formati CSV bancari, ${s.bankTransactions.length} movimenti bancari, ${s.tombstones.length} tombstone, ${s.proposals.length} proposte`);
   const backups = await listBackups(fs);
   log(`backup in ${BACKUP_DIR}: ${backups.length}${backups[0] ? `, ultimo ${backups[0].name}` : ''}`);
   log(`writer id: ${writerId}`);

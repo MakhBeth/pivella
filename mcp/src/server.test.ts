@@ -28,13 +28,18 @@ async function connect() {
   return { fs, client, server };
 }
 
-test('the server lists the nineteen tools with input schemas and read-only annotations', async () => {
+test('the server lists the twenty-four tools with input schemas and read-only annotations', async () => {
   const { client, server } = await connect();
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 19);
+  assert.equal(tools.length, 24);
   const byName = new Map(tools.map((t) => [t.name, t]));
   assert.equal(byName.get('list_fatture')?.inputSchema.type, 'object');
   assert.ok(byName.get('list_fatture')?.inputSchema.properties && 'userId' in byName.get('list_fatture')!.inputSchema.properties!);
+  assert.equal(byName.get('list_bank_formats')?.annotations?.readOnlyHint, true);
+  assert.equal(byName.get('list_bank_transactions')?.annotations?.readOnlyHint, true);
+  assert.equal(byName.get('preview_bank_import')?.annotations?.readOnlyHint, true);
+  assert.equal(byName.get('propose_bank_import')?.annotations?.readOnlyHint, false);
+  assert.equal(byName.get('propose_bank_format')?.annotations?.readOnlyHint, false);
   assert.equal(byName.get('list_users')?.annotations?.readOnlyHint, true);
   assert.equal(byName.get('propose_cliente')?.annotations?.readOnlyHint, false);
   await server.close();

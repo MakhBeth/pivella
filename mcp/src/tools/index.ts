@@ -1,4 +1,5 @@
-/** Registro dei 19 tool nell'ordine del contratto (13.1). */
+import { listBankFormats, listBankTransactions, previewBankImport, proposeBankFormat, proposeBankImport } from './banking';
+/** Registro dei 24 tool nell'ordine del contratto (13.1). */
 import { generaFatturaCortesia } from './generaFatturaCortesia';
 import { generaFatturaXml } from './generaFatturaXml';
 import { getConfig } from './getConfig';
@@ -23,6 +24,11 @@ import type { ToolDef } from './shared';
 export { runTool, type ToolContext, type ToolDef, type ToolOutcome, type ToolError } from './shared';
 
 export const TOOLS: ToolDef[] = [
+  listBankFormats,
+  listBankTransactions,
+  previewBankImport,
+  proposeBankFormat,
+  proposeBankImport,
   listUsers,
   getConfig,
   listClienti,

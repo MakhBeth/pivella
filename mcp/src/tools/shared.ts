@@ -1,3 +1,4 @@
+import { remainingCents, receivedCents } from '../../../src/lib/utils/receipts';
 /**
  * Base comune dei tool (13.1): definizione, esecuzione, mappatura errori,
  * schemi ricorrenti e risoluzione dei nomi cliente. I tool vedono solo
@@ -128,10 +129,10 @@ export function withClienteNome<T extends { clienteId: string }>(records: T[], r
 
 /** Semantica dell'app: `incassato` assente vale incassata, solo `false` è da incassare. */
 export function isIncassata(f: Fattura): boolean {
-  return f.incassato !== false;
+  return remainingCents(f) === 0;
 }
 
-export type FatturaOut = Fattura & { clienteNome: string; incassata: boolean; dataIncassoEffettiva: string | null; haRighe: boolean };
+export type FatturaOut = Fattura & { clienteNome: string; incassata: boolean; dataIncassoEffettiva: string | null; haRighe: boolean; incassatoEuro: number; residuoEuro: number };
 
 /**
  * Fattura come esce dai tool: nome cliente risolto e semantica di incasso
@@ -142,7 +143,7 @@ export type FatturaOut = Fattura & { clienteNome: string; incassata: boolean; da
  */
 export function decorateFattura(f: Fattura, resolve: (id: string) => string): FatturaOut {
   const incassata = isIncassata(f);
-  return { ...f, clienteNome: resolve(f.clienteId), incassata, dataIncassoEffettiva: incassata ? f.dataIncasso || f.data : null, haRighe: Boolean(f.righe?.length) };
+  return { ...f, incassatoEuro: receivedCents(f) / 100, residuoEuro: remainingCents(f) / 100, clienteNome: resolve(f.clienteId), incassata, dataIncassoEffettiva: incassata ? f.dataIncasso || f.data : null, haRighe: Boolean(f.righe?.length) };
 }
 
 export function anno(date: string): number {

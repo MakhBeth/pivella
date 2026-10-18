@@ -1,3 +1,4 @@
+import { collectedInvoices } from '../../lib/utils/receipts';
 import { CassaWarning } from '../shared/CassaWarning';
 import { Fragment, useState, useMemo, useEffect } from 'react';
 import { CalendarClock, Euro, Percent, Info, Save, RefreshCw, Check, Trash2 } from '../shared/icons';
@@ -65,11 +66,7 @@ export function Scadenze() {
   }, [config.codiciAteco]);
 
   const fattureAnnoRiferimento = useMemo(() => {
-    return fatture.filter(f => {
-      if (f.incassato === false) return false;
-      const dataRiferimento = f.dataIncasso || f.data;
-      return new Date(dataRiferimento).getFullYear() === annoRiferimento;
-    });
+    return collectedInvoices(fatture, annoRiferimento);
   }, [fatture, annoRiferimento]);
 
   const fatturatoFromRecords = fattureAnnoRiferimento.reduce((sum, f) => sum + f.importo, 0);

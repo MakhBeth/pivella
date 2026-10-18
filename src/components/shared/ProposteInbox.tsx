@@ -1,3 +1,5 @@
+import { bankImportRows, bankTotals, validateBankFormatPayload, type BankImportPayload } from '../../lib/sync/bankProposals';
+import { Currency } from '../ui/Currency';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Sparkles, X } from './icons';
 import { useApp } from '../../context/AppContext';
@@ -29,9 +31,12 @@ const KIND_LABEL: Record<Proposal['kind'], string> = {
   cliente: 'Cliente',
   incasso: 'Incasso',
   scadenzaPagata: 'Scadenza pagata',
+  bankFormat: 'Formato CSV bancario',
+  bankImport: 'Importazione bancaria',
 };
 
 function Dettagli({ proposal }: { proposal: Proposal }) {
+  if (proposal.kind === 'bankFormat' || proposal.kind === 'bankImport') return <BankDetails proposal={proposal} />;
   if (proposal.kind !== 'fattura') return null;
   const p = proposal.payload as unknown as FatturaPayload;
   const preview = fatturaPreview({ righe: p.righe ?? [], valuta: p.valuta ?? 'EUR', tassoCambio: p.tassoCambio });
@@ -62,6 +67,39 @@ function Dettagli({ proposal }: { proposal: Proposal }) {
       <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 6 }}>Il numero della fattura viene assegnato alla conferma, progressivo per l'anno della fattura.</p>
     </div>
   );
+}
+
+function BankDetails({ proposal }: { proposal: Proposal }) {
+  const { bankTransactions } = useApp();
+  const [visibleCount, setVisibleCount] = useState(20);
+  try {
+    if (proposal.kind === 'bankFormat') {
+      const f = validateBankFormatPayload(proposal.payload);
+      const labels: Record<string, string> = { date: 'Data movimento', description: 'Descrizione', amount: 'Importo', credit: 'Entrate', debit: 'Uscite', valueDate: 'Data valuta', reference: 'Riferimento univoco' };
+      return <div>
+        <p>Separatore: {f.delimiter === '\t' ? 'tabulazione' : f.delimiter} · Codifica: {f.encoding} · Intestazioni: riga {f.headerRow}</p>
+        <p>Date: {f.dateFormat} · Decimali: {f.decimalSeparator} · {f.amountMode === 'signed' ? 'Importo con segno' : 'Entrate e uscite separate'}</p>
+        <ul>{Object.entries(f.columns).map(([key, value]) => <li key={key}>{labels[key]} → {value}</li>)}</ul>
+      </div>;
+    }
+    const p = proposal.payload as unknown as BankImportPayload;
+    const rows = bankImportRows(p, proposal.userId);
+    const keys = new Set(bankTransactions.map(t => t.importKey));
+    const fresh = rows.filter(row => !keys.has(row.importKey));
+    const totals = bankTotals(fresh);
+    return <div>
+      <p>Formato: {p.format.name} · Conto: {p.account} · Documento: {p.sourceFile}</p>
+      <p>{fresh.length} nuovi movimenti, {rows.length - fresh.length} già importati. Entrate <Currency amount={totals.entrate} />, uscite <Currency amount={totals.uscite} />, netto <Currency amount={totals.netto} />.</p>
+      <div className="table-wrapper"><table className="table">
+        <thead><tr><th>Data</th><th>Descrizione</th><th>Importo</th><th>Stato</th></tr></thead>
+        <tbody>{rows.slice(0, visibleCount).map((row, i) => <tr key={i}><td>{row.date}</td><td style={{ whiteSpace: 'pre-wrap' }}>{row.description}</td><td><Currency amount={row.amountCents / 100} /></td><td>{keys.has(row.importKey) ? 'Già importato' : 'Nuovo'}</td></tr>)}</tbody>
+      </table></div>
+      {visibleCount < rows.length && <button type="button" className="btn btn-ghost" onClick={() => setVisibleCount(n => n + 50)}>Mostra altri movimenti ({rows.length - visibleCount})</button>}
+      <p className="stat-label">I duplicati vengono ricontrollati alla conferma. Le fatture non vengono modificate.</p>
+    </div>;
+  } catch (error) {
+    return <p role="alert">Proposta non valida: {(error as Error).message}</p>;
+  }
 }
 
 /**
@@ -110,6 +148,8 @@ export function ProposteInbox() {
           const why = err instanceof Error ? err.message : String(err);
           showToast(`Fattura n. ${fattura?.numero ?? '?'} creata, ma l'XML non è stato generato: ${why}. Puoi scaricarlo dalla lista fatture.`, 'error');
         }
+      } else if (done.kind === 'bankImport') {
+        showToast(`${done.result?.imported ?? 0} movimenti importati, ${done.result?.skipped ?? 0} già presenti.`);
       } else {
         const numero = done.result?.numero ? ` Numero ${done.result.numero}.` : '';
         showToast(`Proposta confermata.${numero}`);

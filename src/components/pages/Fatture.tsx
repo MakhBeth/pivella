@@ -1,3 +1,4 @@
+import { collectedInvoices, remainingCents, receivedCents } from '../../lib/utils/receipts';
 import { useState } from 'react';
 import { Upload, FileText, Trash2, Edit, FileArchive, FilePlus, Landmark, ChevronDown, Code } from '../shared/icons';
 import { useApp } from '../../context/AppContext';
@@ -70,8 +71,10 @@ export function FatturePage({ setShowModal, setEditingFattura, onOpenCortesia }:
     }
   });
 
-  // Riepilogo degli incassi nel periodo selezionato
-  const fattureIncassateFiltrate = fattureFiltrate.filter(f => f.incassato !== false);
+  // Riepilogo degli incassi nel periodo selezionato, comprese le quote parziali.
+  const fattureIncassateFiltrate = filtroAnnoFatture === 'tutte'
+    ? fatture.filter(f => receivedCents(f) > 0).map(f => ({ ...f, importo: receivedCents(f) / 100 }))
+    : collectedInvoices(fatture, Number(filtroAnnoFatture));
 
   const fatturatoPerCliente = clienti.map(cliente => {
     const fattureCliente = fattureIncassateFiltrate.filter(f => f.clienteId === cliente.id);
@@ -221,7 +224,7 @@ export function FatturePage({ setShowModal, setEditingFattura, onOpenCortesia }:
                 const dataEmissioneDate = new Date(f.data);
                 const isDiversa = f.dataIncasso && f.dataIncasso !== f.data;
 
-                const isNonIncassata = f.incassato === false;
+                const isNonIncassata = remainingCents(f) > 0;
 
                 return (
                   <tr key={f.id} style={isNonIncassata ? { opacity: 0.7 } : undefined}>
@@ -230,7 +233,7 @@ export function FatturePage({ setShowModal, setEditingFattura, onOpenCortesia }:
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {isNonIncassata
-                          ? <span style={{ fontSize: '0.75rem', color: 'var(--accent-red)', fontWeight: 600 }}>da incassare</span>
+                          ? <span style={{ fontSize: '0.75rem', color: 'var(--accent-red)', fontWeight: 600 }}>{receivedCents(f) > 0 ? 'Incasso parziale' : 'Da incassare'} · residuo <Currency amount={remainingCents(f) / 100} /></span>
                           : <>
                               {dataIncassoDate.toLocaleDateString('it-IT')}
                               {isDiversa && (

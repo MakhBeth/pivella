@@ -1,3 +1,5 @@
+import { invoiceReceipts, remainingCents } from '../../lib/utils/receipts';
+import { Currency } from '../ui/Currency';
 import { X, Check } from '../shared/icons';
 import { useDialog } from '../../hooks/useDialog';
 import type { Fattura } from '../../types';
@@ -14,6 +16,8 @@ export function EditDataIncassoModal({ isOpen, onClose, fattura, setFattura, onU
   const { dialogRef, handleClick, handleMouseDown } = useDialog(isOpen, onClose);
 
   if (!isOpen || !fattura) return null;
+
+  const hasReceipts = !!fattura.bankTransactionId || !!fattura.receipts?.length;
 
   return (
     <dialog ref={dialogRef} className="modal" onClose={onClose} onClick={handleClick} onMouseDown={handleMouseDown} aria-labelledby="edit-incasso-title">
@@ -32,26 +36,31 @@ export function EditDataIncassoModal({ isOpen, onClose, fattura, setFattura, onU
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
             <input
               type="checkbox"
+              disabled={hasReceipts}
               checked={fattura.incassato === false}
-              onChange={(e) => setFattura({ ...fattura, incassato: e.target.checked ? false : undefined })}
+              onChange={(e) => setFattura({ ...fattura, receipts: undefined, incassato: e.target.checked ? false : undefined })}
               style={{ width: 18, height: 18, cursor: 'pointer' }}
             />
             <span style={{ fontSize: '0.9rem', fontWeight: 500, color: fattura.incassato === false ? 'var(--accent-red)' : 'var(--text-primary)' }}>
               Non ancora incassata
             </span>
           </label>
+          {hasReceipts && <div><p>Incassi registrati per quota. Modifica le ripartizioni bancarie in Flussi di cassa.</p>{invoiceReceipts(fattura).map((r, i) => <p key={i}>{r.date}: <Currency amount={r.amountCents / 100} /></p>)}<p>Residuo: <Currency amount={remainingCents(fattura) / 100} /></p></div>}
+          {fattura.incassato === false && <label className="input-label">Data prevista incasso
+            <input type="date" className="input-field" value={fattura.dataIncassoPrevista || ''} onChange={e => setFattura({ ...fattura, dataIncassoPrevista: e.target.value || undefined })} />
+          </label>}
           <label className="input-label">Data Incasso (Principio di Cassa)</label>
           <input
             type="date"
             className="input-field"
             value={fattura.dataIncasso || fattura.data}
             onChange={(e) => setFattura({ ...fattura, dataIncasso: e.target.value })}
-            disabled={fattura.incassato === false}
+            disabled={fattura.incassato === false || hasReceipts}
             style={fattura.incassato === false ? { opacity: 0.5 } : undefined}
           />
           <div style={{ marginTop: 8, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
             {fattura.incassato === false
-              ? 'Questa fattura non verrà conteggiata nel fatturato fino a quando non sarà incassata.'
+              ? 'Solo le quote già incassate entrano nel fatturato, ciascuna alla propria data. Il residuo resta da incassare.'
               : 'Per il regime forfettario, il fatturato si conta quando viene effettivamente incassato (principio di cassa).'
             }
           </div>

@@ -1,3 +1,6 @@
+import { invoiceReceipts, remainingCents, withReceipts } from '../utils/receipts';
+import { bankTransactionId } from '../db/importBankRows';
+import { bankImportRows } from './bankProposals';
 /**
  * Applicazione di una proposta nell'app (13.4, `applyProposal` lato app):
  * rivalida il payload con le stesse regole del server, poi traduce la
@@ -20,7 +23,7 @@ export interface PlanContext extends ValidationContext {
 
 export interface ProposalPlan {
   puts: Array<{ store: StoreName; record: SyncRecord }>;
-  result: { recordId: string; numero?: string };
+  result: NonNullable<Proposal['result']>;
 }
 
 /**
@@ -111,6 +114,11 @@ export function planProposal(proposal: Proposal, ctx: PlanContext): ProposalPlan
     throw new ProposalValidationError('VALIDATION', [{ field: 'userId', reason: 'la proposta appartiene a un altro profilo' }]);
   }
   switch (proposal.kind) {
+    case 'bankFormat': {
+      const p = validateProposalPayload('bankFormat', proposal.payload, ctx);
+      const record = { ...p, id: `bank-format_${proposal.id}`, userId: ctx.userId };
+      return { puts: [{ store: 'bankFormats', record }], result: { recordId: record.id } };
+    }
     case 'workLog': {
       const p = validateProposalPayload('workLog', proposal.payload, ctx) as WorkLogPayload;
       const record: WorkLog = { id: ctx.newId(), userId: ctx.userId, ...p };
@@ -124,7 +132,7 @@ export function planProposal(proposal: Proposal, ctx: PlanContext): ProposalPlan
     case 'incasso': {
       const p = validateProposalPayload('incasso', proposal.payload, ctx);
       const fattura = ctx.fatture.find((f) => f.id === p.fatturaId)!;
-      const record: Fattura = { ...fattura, incassato: true, dataIncasso: p.dataIncasso };
+      const record: Fattura = fattura.receipts ? withReceipts(fattura, [...invoiceReceipts(fattura), { amountCents: remainingCents(fattura), date: p.dataIncasso }]) : { ...fattura, incassato: true, dataIncasso: p.dataIncasso };
       return { puts: [{ store: 'fatture', record }], result: { recordId: record.id } };
     }
     case 'scadenzaPagata': {
@@ -140,8 +148,24 @@ export function planProposal(proposal: Proposal, ctx: PlanContext): ProposalPlan
   }
 }
 
+/** Banking imports use the same stable identities as manual CSV imports. */
+export async function planBankImport(proposal: Proposal, ctx: PlanContext): Promise<ProposalPlan> {
+  if (proposal.userId !== ctx.userId || proposal.kind !== 'bankImport') {
+    throw new ProposalValidationError('VALIDATION', [{ field: 'userId', reason: 'proposta bancaria di un altro profilo' }]);
+  }
+  const p = validateProposalPayload('bankImport', proposal.payload, ctx);
+  const rows = bankImportRows(p, ctx.userId);
+  const existing = new Map((ctx.bankTransactions ?? []).map(t => [t.importKey, t]));
+  const fresh = rows.filter(row => !existing.has(row.importKey));
+  const records = await Promise.all(fresh.map(async row => ({ ...row, id: await bankTransactionId(ctx.userId, row.importKey), userId: ctx.userId })));
+  return {
+    puts: records.map(record => ({ store: 'bankTransactions', record })),
+    result: { recordId: records[0]?.id ?? existing.get(rows[0].importKey)!.id, imported: records.length, skipped: rows.length - records.length },
+  };
+}
+
 export type ProposalDecision =
-  | { status: 'applied'; result: { recordId: string; numero?: string } }
+  | { status: 'applied'; result: NonNullable<Proposal['result']> }
   | { status: 'rejected'; rejectReason: string | null };
 
 /** Transizione da `pending` a `applied` o `rejected` (13.2): gli stati terminali non cambiano più. */
@@ -162,6 +186,10 @@ export function proposalTitle(proposal: Proposal, resolveCliente: (id: string) =
   const p = proposal.payload as Record<string, unknown>;
   const str = (k: string) => (typeof p[k] === 'string' ? (p[k] as string) : '');
   switch (proposal.kind) {
+    case 'bankFormat':
+      return `Nuovo formato CSV: ${str('name')}`;
+    case 'bankImport':
+      return `Importazione bancaria: ${str('sourceFile')} → ${str('account')}`;
     case 'workLog': {
       const q = typeof p.quantita === 'number' ? p.quantita : 0;
       const ore = p.tipo === 'ore';

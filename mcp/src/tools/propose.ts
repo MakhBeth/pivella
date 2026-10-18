@@ -33,7 +33,7 @@ export function proposeTool<K extends ProposalKind, Shape extends AnyShape>(spec
     async handler(ctx: ToolContext, args) {
       const { userId, motivazione, ...payload } = args as { userId: string; motivazione?: string } & Record<string, unknown>;
       const snap = await snapshotOf(ctx, userId);
-      const vctx: ValidationContext = { config: snap.config, clienti: snap.clienti, fatture: snap.fatture, scadenze: snap.scadenze, today: ctx.now().toISOString().slice(0, 10) };
+      const vctx: ValidationContext = { config: snap.config, clienti: snap.clienti, fatture: snap.fatture, scadenze: snap.scadenze, bankFormats: snap.bankFormats, bankTransactions: snap.bankTransactions, today: ctx.now().toISOString().slice(0, 10) };
       const validated = validateProposalPayload(spec.kind, payload, vctx);
       const proposal = await ctx.ds.addProposal(ctx.principal, {
         userId,

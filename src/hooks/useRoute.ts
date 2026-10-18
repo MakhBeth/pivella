@@ -6,6 +6,7 @@ export const VALID_ROUTES = [
   "calendario",
   "fattura-cortesia",
   "scadenze",
+  "flussi-cassa",
   "simulatore",
   "impostazioni",
   "guida",

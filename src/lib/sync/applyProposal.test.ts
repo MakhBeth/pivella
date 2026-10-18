@@ -150,3 +150,14 @@ test('proposalTitle describes each kind in Italian with client names resolved', 
   assert.equal(proposalTitle(proposal('scadenzaPagata', { scadenzaId: 's1', dataPagamento: '2026-06-30' }), resolve, fatture, scadenze), 'Scadenza Saldo pagata il 30/06/2026');
   assert.equal(proposalTitle(proposal('fattura', { clienteId: 'c1', data: '2026-09-10', righe: [{ descrizione: 'a', quantita: 2, prezzoUnitario: 500 }], valuta: 'EUR' }), resolve), 'Fattura a Acme del 10/09/2026: 1000.00 EUR');
 });
+
+test('incasso proposal settles only the residual and keeps previous receipt dates', () => {
+  const partial: Fattura = { ...fatture[1], receipts: [{ amountCents: 20000, date: '2026-03-10', bankTransactionId: 'bank' }] };
+  const plan = planProposal(proposal('incasso', { fatturaId: 'f2', dataIncasso: '2026-09-10' }), { ...ctx, fatture: [partial] });
+  const result = plan.puts[0].record as Fattura;
+  assert.equal(result.incassato, true);
+  assert.deepEqual(result.receipts, [
+    { amountCents: 20000, date: '2026-03-10', bankTransactionId: 'bank' },
+    { amountCents: 30000, date: '2026-09-10' },
+  ]);
+});

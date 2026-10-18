@@ -1,3 +1,4 @@
+import { receivedCents } from '../../../src/lib/utils/receipts';
 import { z } from 'zod';
 
 import { paginate } from '../datasource';
@@ -30,7 +31,7 @@ export const listFatture = defineTool({
         (a === undefined || f.data <= a),
     );
     const importo = round2(filtered.reduce((sum, f) => sum + f.importo, 0));
-    const incassato = round2(filtered.filter(isIncassata).reduce((sum, f) => sum + f.importo, 0));
+    const incassato = round2(filtered.reduce((sum, f) => sum + receivedCents(f) / 100, 0));
     const totali = { importo, incassato, daIncassare: round2(importo - incassato) };
     const resolve = clienteNameResolver(snap.clienti);
     const { items, total, hasMore } = paginate(filtered.map((f) => decorateFattura(f, resolve)), limit, offset);

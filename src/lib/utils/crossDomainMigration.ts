@@ -73,7 +73,7 @@ function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
 // a lone auto-created user must not block the clean-copy path (clearing it is
 // exactly what avoids a duplicate default user after migration).
 async function isPristine(db: IDBDatabase): Promise<boolean> {
-  const guardedStores = ['clienti', 'fatture', 'workLogs', 'scadenze', 'config'];
+  const guardedStores = ['clienti', 'fatture', 'workLogs', 'scadenze', 'config', 'bankFormats', 'bankTransactions'];
   for (const store of guardedStores) {
     const count = await requestToPromise(db.transaction(store).objectStore(store).count());
     if (count > 0) return false;
