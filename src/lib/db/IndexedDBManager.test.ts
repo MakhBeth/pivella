@@ -128,6 +128,55 @@ function mergeAgainstLocal(local: ReturnType<typeof createEmptySnapshot>, remote
   return mergeSnapshots(local, remote, { now: NOW, writer: { id: 'app-test', kind: 'app' } });
 }
 
+for (const store of ['clienti', 'fatture', 'workLogs', 'scadenze'] as const) {
+  test(`manual backup import keeps ${store} after restart and sync with previous deletions`, async () => {
+    const { factory, db } = manager();
+    await db.init();
+    const future = '2026-10-01T00:00:00.000Z';
+    const backup = [
+      { id: 'old', userId: 'u1', updatedAt: T0, updatedBy: 'app-old' },
+      { id: 'legacy', userId: 'u1' },
+      { id: 'future', userId: 'u1', updatedAt: future, updatedBy: 'app-old' },
+    ];
+    for (const record of [...backup, { id: 'removed', userId: 'u1' }, { id: 'other-user', userId: 'u2' }]) {
+      await db.put(store, record);
+    }
+    // Stesso percorso dell'import del backup: cancella i dati del profilo e li reinserisce.
+    for (const record of await db.getAllForUser(store, 'u1')) await db.delete(store, record.id);
+    const beforeImport = await db.exportSnapshot();
+    await db.importRecords(store, backup);
+    const writer = db.writerId;
+    db.close();
+
+    const reopened = new IndexedDBManager({ factory, now: () => NOW });
+    await reopened.init();
+    assert.deepEqual((await reopened.getAllForUser(store, 'u1')).map(r => r.id).sort(), ['future', 'legacy', 'old']);
+    assert.equal((await reopened.get(store, 'other-user')).userId, 'u2');
+    for (const record of await reopened.getAllForUser(store, 'u1')) {
+      const tombstone = beforeImport.tombstones.find(t => t.store === store && t.id === record.id)!;
+      assert.ok(Date.parse(record.updatedAt) > Date.parse(tombstone.deletedAt));
+      assert.equal(record.updatedBy, writer);
+    }
+    const local = await reopened.exportSnapshot();
+    const merged = mergeAgainstLocal(local, beforeImport);
+    await reopened.mergeIntoDb(merged, local);
+    assert.deepEqual((await reopened.getAllForUser(store, 'u1')).map(r => r.id).sort(), ['future', 'legacy', 'old']);
+    reopened.close();
+  });
+}
+
+test('manual import refreshes config metadata and commits the whole batch', async () => {
+  const { db } = manager();
+  await db.init();
+  await db.importRecords('config', [{ id: 'config_u1', userId: 'u1', updatedAt: T0, updatedBy: 'app-old' }]);
+  const saved = await db.get('config', 'config_u1');
+  assert.equal(saved.updatedAt, NOW);
+  assert.equal(saved.updatedBy, db.writerId);
+  await assert.rejects(db.importRecords('clienti', [cliente('valid', 'Valido'), { nome: 'Senza id' }]));
+  assert.equal(await db.get('clienti', 'valid'), undefined);
+  db.close();
+});
+
 test('mergeIntoDb archives losers, applies upserts and deletes across stores, and stores the merged tombstones', async () => {
   const { factory, db } = manager();
   await db.init();
