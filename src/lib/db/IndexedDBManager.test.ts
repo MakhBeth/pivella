@@ -24,7 +24,7 @@ function manager(now = NOW) {
 
 const cliente = (id: string, nome: string, extra: Record<string, unknown> = {}) => ({ id, userId: 'u1', nome, ...extra });
 
-test('init opens ForfettarioDB version 3 and PivellaSyncMeta, and exposes a writer id', async () => {
+test('init opens ForfettarioDB version 5 and PivellaSyncMeta, and exposes a writer id', async () => {
   const { factory, db } = manager();
   await db.init();
   assert.equal(db.db?.name, DB_NAME);
@@ -207,7 +207,7 @@ test('exportSnapshot builds the local v2 snapshot from every store plus the loca
   meta.close();
 
   const snapshot = await db.exportSnapshot();
-  assert.equal(snapshot.schemaVersion, 3);
+  assert.equal(snapshot.schemaVersion, 4);
   assert.equal(snapshot.updatedAt, NOW);
   assert.deepEqual(snapshot.writer, { id: db.writerId, kind: 'app' });
   assert.deepEqual(snapshot.clienti.map((c) => c.id), ['c1']);
@@ -371,4 +371,33 @@ test('restoreFromSnapshot never loses a record written between the archive and t
   assert.ok(archive.some((a) => a.id === 'in-corsa'), 'il record scritto durante il ripristino è in archivio');
   assert.ok(archive.some((a) => a.id === 'prima'));
   assert.deepEqual((await db.getAll('clienti')).map((c) => c.id), ['dalBackup']);
+});
+
+test('upgrade from WebMCP v4 preserves data and creates bank stores', async () => {
+  const { factory, db } = manager();
+  await new Promise<void>((resolve, reject) => {
+    const request = factory.open(DB_NAME, 4);
+    request.onupgradeneeded = () => {
+      const old = request.result;
+      for (const store of ['config', 'clienti', 'fatture', 'workLogs', 'scadenze', 'users', 'webmcpProposals']) {
+        old.createObjectStore(store, { keyPath: 'id' });
+      }
+      request.transaction!.objectStore('clienti').put(cliente('c1', 'Preservato'));
+      request.transaction!.objectStore('webmcpProposals').put({ id: 'p1', state: 'pending' });
+    };
+    request.onsuccess = () => { request.result.close(); resolve(); };
+    request.onerror = () => reject(request.error);
+  });
+  await db.init();
+  assert.equal(db.db?.version, 5);
+  assert.equal((await db.get('clienti', 'c1')).nome, 'Preservato');
+  assert.ok(db.db!.objectStoreNames.contains('bankFormats'));
+  assert.ok(db.db!.objectStoreNames.contains('bankTransactions'));
+  const proposal = await new Promise<any>((resolve, reject) => {
+    const request = db.db!.transaction('webmcpProposals').objectStore('webmcpProposals').get('p1');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  assert.equal(proposal.state, 'pending');
+  db.close();
 });

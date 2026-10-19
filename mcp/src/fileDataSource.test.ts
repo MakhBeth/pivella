@@ -175,3 +175,38 @@ test('a malformed sync file surfaces as SOURCE_UNAVAILABLE with details', async 
   const ds = new FileDataSource(fs, { writerId: 'mcp-1' });
   await assert.rejects(ds.listUsers(P), (e: unknown) => rejectsWith('SOURCE_UNAVAILABLE')(e) && typeof (e as DataSourceError).details?.reason === 'string');
 });
+
+test('v4 proposal writes and withdrawals preserve banking stores and their backups', async () => {
+  const { fs, ds } = await setup();
+  const initial = seed();
+  initial.bankFormats.push({ id: 'bank-format', userId: 'u1', name: 'Banca', delimiter: ';', encoding: 'utf-8', headerRow: 1, dateFormat: 'DD/MM/YYYY', decimalSeparator: ',', amountMode: 'signed', columns: { date: 'Data', description: 'Descrizione', amount: 'Importo' } });
+  initial.bankTransactions.push({ id: 'bank-transaction', userId: 'u1', account: 'Conto', date: '2026-09-01', description: 'Bonifico', amountCents: 123456, importKey: 'bank-key', sourceFile: 'conto.csv', formatId: 'bank-format' });
+  await fs.write(SYNC_FILENAME, text(JSON.stringify(initial)));
+  const proposal = await ds.addProposal(P, { userId: 'u1', kind: 'cliente', payload: { nome: 'Nuovo cliente' } });
+  await ds.withdrawProposal(P, proposal.id);
+  const after = parsed(fs).snapshot;
+  assert.equal(after.schemaVersion, 4);
+  assert.deepEqual(after.bankFormats, initial.bankFormats);
+  assert.deepEqual(after.bankTransactions, initial.bankTransactions);
+  const backups = (await fs.list(BACKUP_DIR)).filter(name => name.endsWith('.json') && name !== 'latest.json');
+  assert.ok(backups.length > 0);
+  for (const backup of backups) {
+    const snapshot = parseSyncFile(fromBytes(await fs.read(`${BACKUP_DIR}/${backup}`))!, stamp).snapshot;
+    assert.deepEqual(snapshot.bankFormats, initial.bankFormats);
+    assert.deepEqual(snapshot.bankTransactions, initial.bankTransactions);
+  }
+});
+
+test('legacy v3 files remain readable and migrate to v4 on a proposal write', async () => {
+  const { fs, ds } = await setup();
+  const old: Record<string, unknown> = { ...seed(), schemaVersion: 3 };
+  delete old.bankFormats;
+  delete old.bankTransactions;
+  await fs.write(SYNC_FILENAME, text(JSON.stringify(old)));
+  assert.equal((await ds.getSnapshot(P, 'u1')).user.id, 'u1');
+  await ds.addProposal(P, { userId: 'u1', kind: 'cliente', payload: { nome: 'Nuovo cliente' } });
+  const migrated = parsed(fs).snapshot;
+  assert.equal(migrated.schemaVersion, 4);
+  assert.deepEqual(migrated.bankFormats, []);
+  assert.deepEqual(migrated.bankTransactions, []);
+});

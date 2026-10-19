@@ -2,7 +2,7 @@
  * Interfaccia `DataSource` (specifica 13.4): l'unica dipendenza dei tool.
  * I tool non conoscono file, cartelle, handle, HTTP o database.
  */
-import type { Cliente, Config, Fattura, Scadenza, User, WorkLog } from '../../src/types';
+import type { BankCsvFormat, BankTransaction, Cliente, Config, Fattura, Scadenza, User, WorkLog } from '../../src/types';
 import type { NewProposal } from '../../src/lib/sync/proposals';
 import type { Proposal, ProposalStatus } from '../../src/lib/sync/schema';
 
@@ -19,6 +19,8 @@ export interface UserSnapshot {
   fatture: Fattura[];
   workLogs: WorkLog[];
   scadenze: Scadenza[];
+  bankFormats: BankCsvFormat[];
+  bankTransactions: BankTransaction[];
   readAt: string;
 }
 

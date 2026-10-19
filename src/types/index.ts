@@ -4,7 +4,7 @@
 export const VACATION_CLIENT_ID = '__vacation__';
 export const MISC_CLIENT_ID = '__misc__';
 
-export type StoreName = 'config' | 'clienti' | 'fatture' | 'workLogs' | 'scadenze' | 'users';
+export type StoreName = 'config' | 'clienti' | 'fatture' | 'workLogs' | 'scadenze' | 'users' | 'bankFormats' | 'bankTransactions';
 
 // Sync metadata (formato file v2): ogni record degli store porta chi e quando
 // lo ha modificato per ultimo. Opzionali perché i dati esistenti non li hanno.
@@ -55,6 +55,12 @@ export interface Cliente extends SyncMeta {
   codiceDestinatario?: string; // Codice SDI a 7 caratteri; senza, l'XML usa 0000000
 }
 
+export interface InvoiceReceipt {
+  amountCents: number;
+  date: string;
+  bankTransactionId?: string;
+}
+
 export interface Fattura extends SyncMeta {
   id: string;
   userId: string;
@@ -63,6 +69,11 @@ export interface Fattura extends SyncMeta {
   clienteNome: string;
   data: string;
   dataIncasso?: string;
+  /** Expected receipt date, never used as an actual fiscal receipt. */
+  dataIncassoPrevista?: string;
+  /** If present, authoritative dated receipts, including partial payments. */
+  receipts?: InvoiceReceipt[];
+  bankTransactionId?: string;
   importo: number; // Always in EUR (for tax calculations)
   importoValuta?: number; // Original amount in foreign currency (only when non-EUR)
   incassato?: boolean;
@@ -294,4 +305,32 @@ export interface Scadenza extends SyncMeta {
   // Acconti values used when generating this scadenza (for display/regeneration)
   accontiIrpefUsed?: number;
   accontiInpsUsed?: number;
+}
+
+export interface BankCsvFormat extends SyncMeta {
+  id: string;
+  userId: string;
+  name: string;
+  delimiter: ';' | ',' | '\t' | '|';
+  encoding: 'utf-8' | 'windows-1252';
+  headerRow: number;
+  dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
+  decimalSeparator: ',' | '.';
+  amountMode: 'signed' | 'split';
+  columns: { date: string; description: string; amount?: string; credit?: string; debit?: string; valueDate?: string; reference?: string };
+}
+
+export interface BankTransaction extends SyncMeta {
+  id: string;
+  userId: string;
+  account: string;
+  date: string;
+  valueDate?: string;
+  description: string;
+  /** Integer cents, positive for inflows and negative for outflows. EUR. */
+  amountCents: number;
+  reference?: string;
+  importKey: string;
+  sourceFile: string;
+  formatId: string;
 }

@@ -1,3 +1,4 @@
+import { collectedInvoices } from './receipts';
 /**
  * Deduzione dei contributi INPS dall'imponibile del forfettario, condivisa da
  * Dashboard, Simulatore, Scadenze e server MCP.
@@ -200,9 +201,9 @@ export interface StimaVersamentiInps {
   descrizione: string;
 }
 
-// Stessa regola della Dashboard: incassata se incassato !== false, anno di dataIncasso o data.
+// Stessa regola della Dashboard: quote effettive per anno, con fallback per le fatture storiche.
 const fatturatoIncassato = (fatture: readonly Fattura[], anno: number, userId?: string): { totale: number; numero: number } => {
-  const incassate = fatture.filter(f => (!userId || f.userId === userId) && f.incassato !== false && new Date(f.dataIncasso || f.data).getFullYear() === anno);
+  const incassate = collectedInvoices(fatture.filter(f => !userId || f.userId === userId), anno);
   return { totale: incassate.reduce((sum, f) => sum + f.importo, 0), numero: incassate.length };
 };
 

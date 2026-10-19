@@ -1,18 +1,19 @@
 /**
- * Formato v3 del file di sync (specifica: docs/fattibilita-mcp.md, sezione 13.2).
+ * Formato v4 del file di sync (specifica: docs/fattibilita-mcp.md, sezione 13.2).
  *
  * Modulo puro: nessuna dipendenza dal DOM o da Node, usabile dall'app,
  * dal server MCP e dai test.
  */
-import type { Cliente, Config, Fattura, Scadenza, StoreName, User, WorkLog } from '../../types';
+import type { BankCsvFormat, BankTransaction, Cliente, Config, Fattura, Scadenza, StoreName, User, WorkLog } from '../../types';
+import { validateBankFormat } from '../utils/bankCsv';
 import { STORES } from '../constants/fiscali';
 import { isIsoDate, validateFatturaRighe } from './validate';
 import { validaStoricoTariffe } from '../utils/tariffe';
 import { validaDeduzioneInpsConfig } from '../utils/deduzioneInps';
 
-export const SYNC_SCHEMA_VERSION = 3 as const;
-/** Versioni leggibili: la v2 non ha righe nelle fatture, per il resto è identica. */
-export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [2, 3];
+export const SYNC_SCHEMA_VERSION = 4 as const;
+/** v4 aggiunge formati CSV e movimenti bancari; v2/v3 vengono migrati in lettura. */
+export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [2, 3, 4];
 
 export type WriterKind = 'app' | 'mcp' | 'restore';
 
@@ -29,7 +30,7 @@ export interface Tombstone {
   deletedBy: string;
 }
 
-export type ProposalKind = 'workLog' | 'fattura' | 'cliente' | 'incasso' | 'scadenzaPagata';
+export type ProposalKind = 'workLog' | 'fattura' | 'cliente' | 'incasso' | 'scadenzaPagata' | 'bankFormat' | 'bankImport';
 export type ProposalStatus = 'pending' | 'applied' | 'rejected' | 'withdrawn' | 'expired';
 
 export interface Proposal {
@@ -43,7 +44,7 @@ export interface Proposal {
   updatedAt: string;
   expiresAt: string;
   createdBy: { writerId: string; client?: string };
-  result: { recordId: string; numero?: string } | null;
+  result: { recordId: string; numero?: string; imported?: number; skipped?: number } | null;
   rejectReason: string | null;
 }
 
@@ -54,6 +55,8 @@ export interface SyncStores {
   fatture: Fattura[];
   workLogs: WorkLog[];
   scadenze: Scadenza[];
+  bankFormats: BankCsvFormat[];
+  bankTransactions: BankTransaction[];
 }
 
 /** Un record di uno store qualsiasi, visto dal merge. */
@@ -109,6 +112,8 @@ export function createEmptySnapshot({ now, writer }: Stamp): SyncSnapshot {
     fatture: [],
     workLogs: [],
     scadenze: [],
+    bankFormats: [],
+    bankTransactions: [],
     tombstones: [],
     proposals: [],
   };
@@ -132,6 +137,26 @@ export function upgradeV1(data: V1File, stamp: Stamp): SyncSnapshot {
 }
 
 function validateFatturaFields(record: Record<string, unknown>, id: string): void {
+  if (record.receipts !== undefined) {
+    if (!Array.isArray(record.receipts)) throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Fattura ${id}: incassi non validi`);
+    let total = 0;
+    const links = new Set<string>();
+    for (const r of record.receipts) {
+      if (!r || typeof r !== 'object' || !Number.isSafeInteger(r.amountCents) || r.amountCents <= 0 || typeof r.date !== 'string' || !isIsoDate(r.date)
+        || (r.bankTransactionId !== undefined && (typeof r.bankTransactionId !== 'string' || !r.bankTransactionId.trim() || links.has(r.bankTransactionId)))) {
+        throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Fattura ${id}: incasso non valido`);
+      }
+      if (r.bankTransactionId) links.add(r.bankTransactionId);
+      total += r.amountCents;
+    }
+    if (!Number.isSafeInteger(total) || typeof record.importo !== 'number' || total > Math.round(record.importo * 100)) throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Fattura ${id}: incassi superiori al totale`);
+  }
+  if (record.dataIncassoPrevista !== undefined && (typeof record.dataIncassoPrevista !== 'string' || !isIsoDate(record.dataIncassoPrevista))) {
+    throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Fattura ${id}: data prevista non valida`, { store: 'fatture', id });
+  }
+  if (record.bankTransactionId !== undefined && (typeof record.bankTransactionId !== 'string' || !record.bankTransactionId.trim())) {
+    throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Fattura ${id}: collegamento bancario non valido`, { store: 'fatture', id });
+  }
   if (record.righe !== undefined) {
     const check = validateFatturaRighe(record.righe);
     if (!check.ok) throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Fattura ${id}: ${check.reason}`, { store: 'fatture', id });
@@ -173,6 +198,16 @@ function validateStore(store: StoreName, value: unknown): Record<string, unknown
       throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Id duplicato ${id} nello store ${store}`, { store, id });
     }
     seen.add(id);
+    if (store === 'bankFormats') {
+      try { validateBankFormat(record as BankCsvFormat); } catch (e) { throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Formato CSV ${id}: ${(e as Error).message}`); }
+    }
+    if (store === 'bankTransactions') {
+      const t = record as BankTransaction;
+      if (!isIsoDate(t.date) || (t.valueDate !== undefined && !isIsoDate(t.valueDate)) || !Number.isSafeInteger(t.amountCents) || t.amountCents === 0 ||
+          ![t.userId, t.account, t.description, t.importKey, t.sourceFile, t.formatId].every(v => typeof v === 'string' && v.trim())) {
+        throw new SyncSchemaError('SOURCE_UNAVAILABLE', `Movimento bancario ${id} non valido`);
+      }
+    }
     if (store === 'fatture') validateFatturaFields(record as Record<string, unknown>, id);
     if (store === 'clienti') validateClienteFields(record as Record<string, unknown>, id);
     if (store === 'config') validateConfigFields(record as Record<string, unknown>, id);
@@ -213,7 +248,7 @@ export function parseSyncFile(text: string, stamp: Stamp): ParsedSyncFile {
   const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
   for (const store of STORES) {
     // In v2 ogni store è obbligatorio: null o assente non valgono "vuoto".
-    (snapshot[store] as unknown[]) = validateStore(store, obj[store]);
+    (snapshot[store] as unknown[]) = validateStore(store, version < 4 && (store === 'bankFormats' || store === 'bankTransactions') && obj[store] === undefined ? [] : obj[store]);
   }
   snapshot.updatedAt = typeof obj.updatedAt === 'string' ? obj.updatedAt : stamp.now;
   snapshot.writer = isWriter(obj.writer) ? obj.writer : { ...stamp.writer };
@@ -224,7 +259,7 @@ export function parseSyncFile(text: string, stamp: Stamp): ParsedSyncFile {
   return { snapshot, upgradedFromV1: false };
 }
 
-const PROPOSAL_KINDS: ReadonlySet<string> = new Set<ProposalKind>(['workLog', 'fattura', 'cliente', 'incasso', 'scadenzaPagata']);
+const PROPOSAL_KINDS: ReadonlySet<string> = new Set<ProposalKind>(['workLog', 'fattura', 'cliente', 'incasso', 'scadenzaPagata', 'bankFormat', 'bankImport']);
 const PROPOSAL_STATUSES: ReadonlySet<string> = new Set<ProposalStatus>(['pending', 'applied', 'rejected', 'withdrawn', 'expired']);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

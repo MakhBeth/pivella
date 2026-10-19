@@ -31,13 +31,13 @@ const V1_FILE = {
   scadenze: [],
 };
 
-test('schema version is 3', () => {
-  assert.equal(SYNC_SCHEMA_VERSION, 3);
+test('schema version is 4', () => {
+  assert.equal(SYNC_SCHEMA_VERSION, 4);
 });
 
-test('upgradeV1 wraps a v1 file in a v3 envelope and stamps every record', () => {
+test('upgradeV1 wraps a v1 file in a v4 envelope and stamps every record', () => {
   const snap = upgradeV1(V1_FILE, { now: NOW, writer: WRITER });
-  assert.equal(snap.schemaVersion, 3);
+  assert.equal(snap.schemaVersion, 4);
   assert.equal(snap.updatedAt, NOW);
   assert.deepEqual(snap.writer, WRITER);
   assert.equal(snap.restoredAt, null);
@@ -62,7 +62,7 @@ test('upgradeV1 tolerates missing stores', () => {
 test('parseSyncFile detects v1 and reports the upgrade', () => {
   const { snapshot, upgradedFromV1 } = parseSyncFile(JSON.stringify(V1_FILE), { now: NOW, writer: WRITER });
   assert.equal(upgradedFromV1, true);
-  assert.equal(snapshot.schemaVersion, 3);
+  assert.equal(snapshot.schemaVersion, 4);
 });
 
 test('parseSyncFile returns a v2 file untouched', () => {
@@ -74,10 +74,10 @@ test('parseSyncFile returns a v2 file untouched', () => {
 });
 
 test('parseSyncFile rejects a newer schema version', () => {
-  const text = JSON.stringify({ ...createEmptySnapshot({ now: NOW, writer: WRITER }), schemaVersion: 4 });
+  const text = JSON.stringify({ ...createEmptySnapshot({ now: NOW, writer: WRITER }), schemaVersion: 5 });
   assert.throws(
     () => parseSyncFile(text, { now: NOW, writer: WRITER }),
-    (err: unknown) => err instanceof SyncSchemaError && err.code === 'SOURCE_UNAVAILABLE' && err.details?.schemaVersion === 4
+    (err: unknown) => err instanceof SyncSchemaError && err.code === 'SOURCE_UNAVAILABLE' && err.details?.schemaVersion === 5
   );
 });
 
@@ -113,7 +113,7 @@ test('snapshotsEquivalent ignores record order', () => {
 test('serializeSnapshot produces pretty JSON that parses back', () => {
   const snap = createEmptySnapshot({ now: NOW, writer: WRITER });
   const text = serializeSnapshot(snap);
-  assert.ok(text.includes('\n  "schemaVersion": 3'));
+  assert.ok(text.includes('\n  "schemaVersion": 4'));
   assert.deepEqual(JSON.parse(text), snap);
 });
 
@@ -226,7 +226,7 @@ test('a v2 file is read by v3 and written back as v3', () => {
   const v2 = { ...createEmptySnapshot({ now: NOW, writer: WRITER }), schemaVersion: 2 };
   v2.fatture.push({ id: 'f1', userId: 'u1', clienteId: 'c1', clienteNome: 'Acme', data: '2026-01-10', importo: 100 });
   const { snapshot } = parseSyncFile(JSON.stringify(v2), { now: NOW, writer: WRITER });
-  assert.equal(snapshot.schemaVersion, 3);
+  assert.equal(snapshot.schemaVersion, 4);
   assert.equal(snapshot.fatture[0].righe, undefined);
 });
 

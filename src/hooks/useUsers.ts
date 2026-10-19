@@ -141,6 +141,9 @@ export function useUsers(dbManager: IndexedDBManager, dbReady: boolean) {
         await dbManager.delete('workLogs', w.id);
       }
 
+      for (const store of ['bankFormats', 'bankTransactions'] as const) {
+        for (const item of await dbManager.getAllForUser(store, userId)) await dbManager.delete(store, item.id);
+      }
       const scadenze = await dbManager.getAll('scadenze');
       for (const s of scadenze.filter((s: any) => s.userId === userId)) {
         await dbManager.delete('scadenze', s.id);

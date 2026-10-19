@@ -21,9 +21,21 @@ Work days and invoices stay separate on purpose: the assistant can read both, bu
 
 It can also generate documents for an invoice already saved: "Generate the FatturaPA XML for invoice 12" or "Send me a courtesy PDF of invoice 12". The two document tools, `genera_fattura_xml` and `genera_fattura_cortesia`, write the file into `documenti/<year>` in the sync folder, or into a folder you name, and never overwrite an existing file. They only write the document: your Pivella data is untouched.
 
+## Banking tools
+
+- `list_bank_formats`: list saved CSV definitions and their field mappings for a profile.
+- `list_bank_transactions`: filter imported transactions by account, date range and inflow/outflow, with pagination and EUR totals over the entire filter.
+- `preview_bank_import`: validate CSV text against a saved format, inspect rows and duplicates, and calculate totals for new transactions without writing anything.
+- `propose_bank_format`: propose a new reusable CSV definition. Confirm it in Pivella, then retrieve its ID with `list_bank_formats`.
+- `propose_bank_import`: propose an import using a saved format. Pivella displays the account, document, rows and totals for review; it imports only after confirmation.
+
+Pass `userId` from `list_users`. Import tools accept `formatId`, `account`, `sourceFile` (a display filename) and `csv` (the CSV text, already decoded using the format's encoding). They do not read an arbitrary local path. MCP imports are limited to **1 MB and 1,000 transactions per proposal**; the app's CSV importer accepts larger documents up to 10 MB.
+
+Use the same account name on subsequent imports and map the bank's unique transaction ID when available. Without it, identical transactions in partial statements may be considered duplicates. Duplicates are checked again at confirmation, including transactions imported manually since the proposal was created. A changed or deleted format blocks confirmation until a new proposal is created. Rejecting a proposal leaves the transactions untouched. Banking imports do not mark invoices as paid, and the net flow is not the bank balance.
+
 ## Compatibility
 
-pivella-mcp 1.0 requires Pivella 7.0 and vice versa: the sync file moves to schema version 3. Update both together.
+pivella-mcp 1.3 supports sync schema version 4, including bank CSV formats and bank transactions. Update the MCP server together with the app version that introduces **Flussi di cassa**. Files using schemas v1, v2 and v3 remain readable; older MCP versions cannot read v4. Existing proposal writes preserve all banking data.
 
 ## Install
 
@@ -164,3 +176,5 @@ mcp/src/cli.ts, bin.ts      startup, check, writer id, entry point
 ```
 
 The modules shared with the app live in `src/lib/sync` (`validate.ts`, `proposals.ts`, `applyProposal.ts`, `proposalFlow.ts`). The full tool contract is in `docs/fattibilita-mcp.md` (Italian). Tests: `npm test`.
+
+Gli incassi parziali registrati nell’app sono inclusi nei totali MCP: `list_fatture` distingue importo incassato e residuo, mentre `get_riepilogo_anno` attribuisce ogni quota al proprio anno. `propose_incasso` su una fattura parzialmente incassata propone il saldo del solo residuo.

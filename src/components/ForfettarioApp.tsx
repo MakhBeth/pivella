@@ -38,6 +38,8 @@ import "@fontsource/space-mono/400.css";
 import "@fontsource/space-mono/700.css";
 import "../styles/theme.css";
 
+const FlussiCassa = lazy(() => import("./pages/FlussiCassa").then(m => ({ default: m.FlussiCassa })));
+
 // Lazy load pages
 const Dashboard = lazy(() =>
   import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })),
@@ -141,6 +143,7 @@ const CalendarDayModal = lazy(() =>
 function ForfettarioAppInner() {
   const {
     toast,
+    currentUserId,
     exportData,
     importData,
     clienti,
@@ -297,7 +300,7 @@ function ForfettarioAppInner() {
   };
 
   // Check if current page is in the "Altro" menu
-  const isAltroPageActive = ["fattura-cortesia", "scadenze", "simulatore"].includes(currentPage);
+  const isAltroPageActive = ["fattura-cortesia", "scadenze", "simulatore", "flussi-cassa"].includes(currentPage);
 
   // Upload handlers
   const saveImport = async (
@@ -465,6 +468,9 @@ function ForfettarioAppInner() {
             >
               <Calculator size={20} aria-hidden="true" /> Simulatore
             </button>
+            <button type="button" className={`nav-item nav-item-desktop ${currentPage === "flussi-cassa" ? "active" : ""}`} onClick={() => setCurrentPage("flussi-cassa")} aria-current={currentPage === "flussi-cassa" ? "page" : undefined}>
+              <Download size={20} aria-hidden="true" /> Flussi di cassa
+            </button>
             {/* Mobile only: Altro dropup menu */}
             <div
               className="nav-item-altro-wrapper"
@@ -521,6 +527,9 @@ function ForfettarioAppInner() {
                   aria-current={currentPage === "simulatore" ? "page" : undefined}
                 >
                   <Calculator size={18} aria-hidden="true" /> Simulatore
+                </button>
+                <button ref={el => { altroMenuItemsRef.current[3] = el; }} type="button" className={`altro-menu-item ${currentPage === "flussi-cassa" ? "active" : ""}`} onClick={() => handleAltroItemClick("flussi-cassa")} role="menuitem" tabIndex={isAltroMenuOpen ? 0 : -1} aria-current={currentPage === "flussi-cassa" ? "page" : undefined}>
+                  <Download size={18} aria-hidden="true" /> Flussi di cassa
                 </button>
               </div>
             </div>
@@ -611,6 +620,7 @@ function ForfettarioAppInner() {
 
             {currentPage === "fattura-cortesia" && <FatturaCortesia />}
 
+            {currentPage === "flussi-cassa" && <FlussiCassa key={currentUserId} />}
             {currentPage === "scadenze" && <Scadenze />}
 
             {currentPage === "simulatore" && <Simulatore />}

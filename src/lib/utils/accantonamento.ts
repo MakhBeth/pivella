@@ -1,3 +1,4 @@
+import { collectedInvoices } from './receipts';
 /**
  * Quanto accantonare per l'anno N, per cassa. Il dovuto di N è coperto in
  * parte dagli acconti di N già versati (o previsti) durante l'anno; il resto è
@@ -44,8 +45,7 @@ export function calcolaFiscaleAnno(config: ConfigAnno, anno: number, fatture: re
   deduzione: DeduzioneInps;
 } {
   const userId = config.userId || undefined;
-  const fatturato = round2(fatture
-    .filter(f => (!userId || f.userId === userId) && f.incassato !== false && new Date(f.dataIncasso || f.data).getFullYear() === anno)
+  const fatturato = round2(collectedInvoices(fatture.filter(f => !userId || f.userId === userId), anno)
     .reduce((sum, f) => sum + f.importo, 0));
   const aliquota = getAliquotaImpostaSostitutiva({ annoApertura: config.annoApertura, annoImposta: anno, aliquotaOverride: config.aliquotaOverride });
   const deduzione = risolviDeduzioneInps(config, anno, scadenze, fatture);

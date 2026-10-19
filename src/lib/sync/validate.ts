@@ -1,3 +1,6 @@
+import { remainingCents } from '../utils/receipts';
+import { validateBankFormatPayload, validateBankImportPayload, type BankFormatPayload, type BankImportPayload } from './bankProposals';
+import type { BankCsvFormat, BankTransaction } from '../../types';
 /**
  * Regole di validazione delle proposte (13.1), condivise tra il server MCP
  * che le crea e l'app che le rivaluta prima di applicarle: una proposta nel
@@ -13,6 +16,8 @@ export interface ValidationContext {
   clienti: Cliente[];
   fatture: Fattura[];
   scadenze: Scadenza[];
+  bankFormats?: BankCsvFormat[];
+  bankTransactions?: BankTransaction[];
   /** Data odierna `YYYY-MM-DD`, iniettata per i test. */
   today: string;
 }
@@ -102,6 +107,8 @@ export interface PayloadByKind {
   cliente: ClientePayload;
   incasso: IncassoPayload;
   scadenzaPagata: ScadenzaPagataPayload;
+  bankFormat: BankFormatPayload;
+  bankImport: BankImportPayload;
 }
 
 export const WORK_LOG_MAX_FUTURE_DAYS = 30;
@@ -438,7 +445,7 @@ function validateIncasso(raw: Record<string, unknown>, ctx: ValidationContext): 
   const fattura = ctx.fatture.find((f) => f.id === fatturaId);
   if (!fattura) throw new ProposalValidationError('NOT_FOUND', [{ field: 'fatturaId', reason: 'fattura inesistente per questo profilo' }]);
   // Semantica dell'app: `incassato` assente vale incassata; solo `false` è da incassare.
-  if (fattura.incassato !== false) c.add('fatturaId', 'fattura già incassata');
+  if (remainingCents(fattura) === 0) c.add('fatturaId', 'fattura già incassata');
   if (dataIncasso! < fattura.data) c.add('dataIncasso', 'non prima della data della fattura');
   c.throwIfAny();
   return { fatturaId: fatturaId!, dataIncasso: dataIncasso! };
@@ -465,6 +472,13 @@ function validateScadenzaPagata(raw: Record<string, unknown>, ctx: ValidationCon
 export function validateProposalPayload<K extends ProposalKind>(kind: K, payload: unknown, ctx: ValidationContext): PayloadByKind[K] {
   const raw = asObject(payload);
   switch (kind) {
+    case 'bankFormat':
+    case 'bankImport':
+      try {
+        return (kind === 'bankFormat' ? validateBankFormatPayload(raw) : validateBankImportPayload(raw, ctx.bankFormats ?? [])) as PayloadByKind[K];
+      } catch (error) {
+        throw new ProposalValidationError('VALIDATION', [{ field: kind, reason: (error as Error).message }]);
+      }
     case 'workLog':
       return validateWorkLog(raw, ctx) as PayloadByKind[K];
     case 'fattura':

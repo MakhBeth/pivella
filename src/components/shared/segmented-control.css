@@ -1,0 +1,8 @@
+.theme-switch.segmented-control { flex-direction:row; flex-wrap:wrap; margin-bottom:20px; }
+.segmented-control .theme-switch-btn { min-height:40px; justify-content:center; }
+.segmented-control .theme-switch-btn:focus-visible { outline:2px solid var(--accent-primary); outline-offset:2px; }
+.segmented-control-icon { display:inline-flex; flex-shrink:0; }
+.segmented-control-count { display:inline-block; margin-left:6px; padding:0 6px; border-radius:6px; background:var(--bg-hover); color:var(--text-primary); font-size:.75rem; }
+@media(max-width:600px) {
+  .segmented-control .theme-switch-btn { flex:1 1 auto; padding:10px; gap:6px; }
+}

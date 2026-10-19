@@ -92,8 +92,9 @@ async function fails(ctx: ToolContext, name: string, args: unknown): Promise<{ c
   return out.error!;
 }
 
-test('the registry exposes the nineteen tools of the contract', () => {
+test('the registry exposes the twenty-four tools of the contract', () => {
   assert.deepEqual(TOOLS.map((t) => t.name), [
+    'list_bank_formats', 'list_bank_transactions', 'preview_bank_import', 'propose_bank_format', 'propose_bank_import',
     'list_users', 'get_config', 'list_clienti', 'list_fatture', 'get_fattura', 'list_work_logs', 'list_scadenze',
     'get_riepilogo_anno', 'get_giornate_per_cliente', 'list_proposals', 'get_proposal',
     'propose_work_log', 'propose_fattura', 'propose_cliente', 'propose_incasso', 'propose_scadenza_pagata', 'withdraw_proposal',
@@ -516,4 +517,20 @@ test('get_riepilogo_anno reports the cash set-aside with the same function as th
   assert.equal(a.dovuto.totale, out.totaleStimato);
   assert.equal(a.saldo.totale, Math.round((a.dovuto.totale - a.acconti.totale) * 100) / 100);
   assert.equal(a.totale, Math.round((a.saldo.totale + a.accontiSuccessivi.totale) * 100) / 100);
+});
+
+test('partial receipts are counted by year and residual in MCP summaries', async () => {
+  const { fs, ctx, syncDir } = await setup();
+  try {
+    const s = seed();
+    s.fatture = [{ id: 'partial', userId: 'u1', clienteId: 'c1', clienteNome: 'Acme', data: '2026-01-01', importo: 1000, incassato: false, receipts: [
+      { amountCents: 20000, date: '2026-12-31', bankTransactionId: 'bank-a' },
+      { amountCents: 30000, date: '2027-01-01', bankTransactionId: 'bank-b' },
+    ] }];
+    await fs.write(SYNC_FILENAME, text(JSON.stringify(s)));
+    const listed = await ok(ctx, 'list_fatture', { userId: 'u1' });
+    assert.deepEqual(listed.totali, { importo: 1000, incassato: 500, daIncassare: 500 });
+    assert.equal((await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2026 })).fatturato, 200);
+    assert.equal((await ok(ctx, 'get_riepilogo_anno', { userId: 'u1', anno: 2027 })).fatturato, 300);
+  } finally { await rm(syncDir, { recursive: true, force: true }); }
 });

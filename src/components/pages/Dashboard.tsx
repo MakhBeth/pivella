@@ -1,3 +1,4 @@
+import { collectedInvoices, remainingCents } from '../../lib/utils/receipts';
 import { CassaWarning } from '../shared/CassaWarning';
 import { useState } from 'react';
 import { Users, Clock, AlertTriangle } from '../shared/icons';
@@ -274,15 +275,11 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
   });
   const annoPiuVecchio = annoCorrente - MAX_HISTORICAL_YEARS + 1;
 
-  const fattureAnnoCorrente = fatture.filter(f => {
-    if (f.incassato === false) return false;
-    const dataRiferimento = f.dataIncasso || f.data;
-    return new Date(dataRiferimento).getFullYear() === annoSelezionato;
-  });
+  const fattureAnnoCorrente = collectedInvoices(fatture, annoSelezionato);
   const totaleFatturato = fattureAnnoCorrente.reduce((sum, f) => sum + f.importo, 0);
 
-  const fattureDaIncassare = fatture.filter(f => f.incassato === false);
-  const totaleDaIncassare = fattureDaIncassare.reduce((sum, f) => sum + f.importo, 0);
+  const fattureDaIncassare = fatture.filter(f => remainingCents(f) > 0);
+  const totaleDaIncassare = fattureDaIncassare.reduce((sum, f) => sum + remainingCents(f) / 100, 0);
   const percentualeLimite = (totaleFatturato / LIMITE_FATTURATO) * 100;
   const rimanenteLimite = LIMITE_FATTURATO - totaleFatturato;
 
@@ -308,12 +305,7 @@ export function Dashboard({ annoSelezionato, setAnnoSelezionato }: DashboardProp
 
   const mesiData = Array.from({ length: 12 }, (_, i) => ({
     mese: new Date(annoSelezionato, i, 1).toLocaleString('it-IT', { month: 'short' }),
-    totale: fatture.filter(f => {
-      if (f.incassato === false) return false;
-      const dataRiferimento = f.dataIncasso || f.data;
-      const d = new Date(dataRiferimento);
-      return d.getMonth() === i && d.getFullYear() === annoSelezionato;
-    }).reduce((sum, f) => sum + f.importo, 0)
+    totale: collectedInvoices(fatture, annoSelezionato, i).reduce((sum, f) => sum + f.importo, 0)
   }));
 
   return (

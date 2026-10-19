@@ -331,7 +331,7 @@ export class IndexedDBManager {
     try {
       return await this.openDatabase();
     } catch (error: any) {
-      // L'aggiornamento dello schema WebMCP non deve mai cancellare dati se bloccato.
+      // A blocked upgrade must never delete existing data.
       if (error.name === 'TimeoutError' || error.name === 'BlockedError') {
         console.warn('[DB] Database blocked; preserving existing data.');
         throw new Error('Database occupato: chiudi le altre schede di Pivella e riprova. I dati sono conservati.');
@@ -422,6 +422,9 @@ export class IndexedDBManager {
         }
         if (!db.objectStoreNames.contains(WEBMCP_PROPOSALS_STORE)) {
           db.createObjectStore(WEBMCP_PROPOSALS_STORE, { keyPath: 'id' });
+        }
+        for (const store of STORES) {
+          if (!db.objectStoreNames.contains(store)) db.createObjectStore(store, { keyPath: 'id' });
         }
         console.log('[DB] Upgrade complete');
       };

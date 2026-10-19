@@ -157,3 +157,27 @@ This started as an experiment in pure vibecoding. V1 was built entirely with the
 It didn't go badly until: I found conflicts to resolve... in the `node_modules` folder, a couple of "undefined is not a function" (sigh), and most importantly, hallucinations. So I had to bring out Claude Code and managed to rewrite the project so it wasn't a complete mess anymore.
 
 The vibecoding experiment failed on some CSS and UI bugs that I just couldn't solve with prompting alone, but the product is still nice and it's a tool I'm proud of. Let's see how it goes.
+
+## Importazione dei movimenti bancari
+
+Apri **Flussi di cassa** (su mobile: **Altro → Flussi di cassa**).
+
+1. Crea un **Nuovo formato** e carica un CSV di esempio, oppure inserisci le intestazioni delle colonne.
+2. Imposta separatore, codifica UTF-8/Windows-1252, riga delle intestazioni, formato data e separatore decimale.
+3. Mappa data e descrizione, poi un importo con segno oppure due colonne di entrate/uscite positive. Data valuta e riferimento bancario univoco sono facoltativi.
+4. Salva il formato. In **Importa movimenti**, scegli la definizione salvata, indica il conto e carica il CSV.
+5. Controlla l'anteprima e conferma. Gli errori bloccano l'intero import; i movimenti già presenti vengono saltati. I file possono pesare al massimo 10 MB.
+
+I movimenti sono in euro e separati per profilo. Mantieni lo stesso nome per lo stesso conto. Per distinguere con certezza movimenti identici, mappa l'ID univoco della banca: senza questo campo la deduplicazione confronta data, descrizione, importo, data valuta e occorrenze identiche nel documento. Estratti parziali con movimenti indistinguibili possono quindi essere considerati già importati.
+
+Formati e movimenti sono inclusi nei backup e nella sincronizzazione. Il file di sincronizzazione usa lo schema v4, leggibile da questa versione dell'app e del server MCP; i file v1/v2/v3 restano importabili. Aggiorna anche gli altri dispositivi e il server MCP prima di usare lo stesso file di sincronizzazione.
+
+I totali mostrano entrate, uscite e flusso netto dei movimenti filtrati per conto e intervallo di date; non rappresentano il saldo bancario e non modificano automaticamente le fatture.
+
+I **Flussi di cassa** includono una proiezione mensile degli incassi delle fatture non ancora incassate, con data prevista modificabile anche dalla finestra “Modifica Data Incasso” in Fatture. Le previsioni senza data sono mostrate separatamente e non entrano nei totali mensili; le date previste non incidono sui conteggi fiscali.
+
+Dai movimenti in entrata puoi ripartire un pagamento tra più fatture o registrare un acconto: ogni quota ha importo in centesimi e data del movimento. La ripartizione non può superare il bonifico né il residuo delle fatture. Puoi lasciare importi non attribuiti. Modificare o rimuovere una quota aggiorna gli incassi effettivi e il residuo; le proiezioni includono solo il residuo. Le fatture già saldate manualmente non sono proposte per un secondo incasso. Dashboard, Scadenze e riepiloghi MCP conteggiano le quote nell’anno in cui sono state ricevute.
+
+Sono disponibili il grafico cumulato interattivo e la tabella mensile. I filtri **Dal/Al** sono inclusivi e condivisi anche dai movimenti; i preset sono **Ultimo anno**, **Prossimo anno**, **−1 / +1 anno** (predefinito) e **Tutte le date**. La proiezione aggrega tutti i conti, parte da zero nel periodo selezionato e non stima uscite future né saldo bancario. Il filtro conto dell’elenco movimenti riguarda solo quell’elenco.
+
+La sezione è organizzata in **Panoramica**, **Movimenti** e **Incassi attesi**. Importazione e formati CSV sono accessibili da **Importa CSV**. Nei movimenti puoi cercare per descrizione/riferimento/documento e filtrare per conto o stato di riconciliazione; le entrate non interamente attribuite hanno un contatore dedicato. La riconciliazione si apre in un pannello laterale con riepilogo sempre visibile, suggerimenti da confermare e azioni per coprire il residuo o attribuire il disponibile. La chiusura con modifiche non salvate richiede una scelta esplicita. Dal grafico mensile/cumulato puoi aprire i movimenti o gli incassi attesi del mese selezionato.

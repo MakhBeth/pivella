@@ -1,5 +1,9 @@
 import { useWebMcp, type WebMcpStatus } from '../hooks/useWebMcp';
 import { isBrowserProposal } from '../lib/webmcp/browserDataSource';
+import { allocateBankReceipt, type ReceiptAllocation } from '../lib/db/linkBankReceipt';
+import { bankTransactionId } from '../lib/db/importBankRows';
+import { useBankData } from '../hooks/useBankData';
+import { upgradeV1 } from '../lib/sync/schema';
 import React, { createContext, useContext, useCallback, useMemo, ReactNode, useEffect, useRef } from 'react';
 import type { Config, Cliente, Fattura, WorkLog, Toast, Scadenza, StoreName, User } from '../types';
 import { useDatabase } from '../hooks/useDatabase';
@@ -29,7 +33,7 @@ function adjustColorBrightness(hex: string, percent: number): string {
 }
 
 // Define the context value interface
-interface AppContextValue {
+interface AppContextValue extends ReturnType<typeof useBankData> {
   // Database
   dbReady: boolean;
   dbError: Error | null;
@@ -65,6 +69,7 @@ interface AppContextValue {
   setFatture: React.Dispatch<React.SetStateAction<Fattura[]>>;
   addFattura: (fattura: Omit<Fattura, 'userId'> & { userId?: string }) => Promise<void>;
   updateFattura: (fattura: Fattura) => Promise<void>;
+  allocateBankInvoice: (transactionId: string, allocations: ReceiptAllocation[]) => Promise<void>;
   removeFattura: (id: string) => Promise<void>;
 
   // Work Logs
@@ -144,6 +149,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const { workLogs, setWorkLogs, addWorkLog, updateWorkLog, removeWorkLog } = useWorkLogs(dbManager, dbReady, currentUserId);
   const { scadenze, setScadenze, addScadenza, updateScadenza, removeScadenza, removeScadenzeByYear, bulkSaveScadenze, getScadenzeByYear, getPaidAccontiForYear } = useScadenze(dbManager, dbReady, currentUserId);
 
+  const bank = useBankData(dbManager, dbReady, currentUserId);
+  const bankRef = useRef(bank);
+  bankRef.current = bank;
+
   // Refs to hold setters for folder sync callback
   // Le config che arrivano dalla sync sono già nel database: non vanno risalvate.
   const setConfigRef = useRef(applyPersistedConfig);
@@ -194,6 +203,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fatture: withUser(snapshot.fatture),
       workLogs: withUser(snapshot.workLogs),
       scadenze: withUser(snapshot.scadenze),
+      bankFormats: withUser(snapshot.bankFormats),
+      bankTransactions: withUser(snapshot.bankTransactions),
     };
   }, []);
 
@@ -212,11 +223,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dbManager.getAll('workLogs'),
       dbManager.getAll('scadenze'),
     ]);
+    const [formats, transactions] = await Promise.all([dbManager.getAll('bankFormats'), dbManager.getAll('bankTransactions')]);
     setUsersRef.current(allUsers);
     const previous = currentUserIdRef.current;
     const userId = previous && allUsers.some((u: User) => u.id === previous) ? previous : allUsers[0]?.id ?? null;
     if (!userId) return;
     currentUserIdRef.current = userId;
+    bankRef.current.setBankFormats(formats.filter(r => r.userId === userId));
+    bankRef.current.setBankTransactions(transactions.filter(r => r.userId === userId));
     const userConfig = allConfig.find((c: Config) => c.userId === userId);
     if (userConfig) setConfigRef.current(userConfig, { force: true });
     else resetConfigRef.current(userId);
@@ -246,6 +260,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFattureRef.current((prev) => applyStoreChanges(prev, applied.fatture, snapshot.fatture, userId, t('fatture')));
     setWorkLogsRef.current((prev) => applyStoreChanges(prev, applied.workLogs, snapshot.workLogs, userId, t('workLogs')));
     setScadenzeRef.current((prev) => applyStoreChanges(prev, applied.scadenze, snapshot.scadenze, userId, t('scadenze')));
+    bankRef.current.setBankFormats(prev => applyStoreChanges(prev, applied.bankFormats, snapshot.bankFormats, userId, t('bankFormats')));
+    bankRef.current.setBankTransactions(prev => applyStoreChanges(prev, applied.bankTransactions, snapshot.bankTransactions, userId, t('bankTransactions')));
     if (userId && applied.config.upserted.includes(`config_${userId}`)) {
       const userConfig = snapshot.config.find((c) => c.id === `config_${userId}`);
       if (userConfig) setConfigRef.current(userConfig);
@@ -309,14 +325,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!isInitialLoadDone || !syncFolderHandle) return;
 
     // Create a simple hash of current data to detect changes
-    const currentData = JSON.stringify({ users, config, clienti, fatture, workLogs, scadenze });
+    const currentData = JSON.stringify({ users, config, clienti, fatture, workLogs, scadenze, bankFormats: bank.bankFormats, bankTransactions: bank.bankTransactions });
 
     if (prevDataRef.current && prevDataRef.current !== currentData) {
       syncToFolder();
     }
 
     prevDataRef.current = currentData;
-  }, [users, config, clienti, fatture, workLogs, scadenze, isInitialLoadDone, syncFolderHandle, syncToFolder]);
+  }, [users, config, clienti, fatture, workLogs, scadenze, bank.bankFormats, bank.bankTransactions, isInitialLoadDone, syncFolderHandle, syncToFolder]);
 
   // Export/Import handlers
   const exportData = useCallback(async () => {
@@ -340,6 +356,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const importData = useCallback(async (data: Record<string, any[]>) => {
     if (!currentUserId) return;
     try {
+      // Validate before replacing any data; older backups have empty bank stores.
+      const checked = upgradeV1(data, { now: new Date().toISOString(), writer: { id: dbManager.writerId ?? 'app', kind: 'app' } });
+      data = Object.fromEntries(['config', 'clienti', 'fatture', 'workLogs', 'scadenze', 'bankFormats', 'bankTransactions'].map(key => [key, checked[key as StoreName]]));
       // Import data but ensure userId is set to current user
       const dataWithUser: Record<string, any[]> = {};
 
@@ -363,6 +382,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Imported bank records belong to the active profile, with no cross-profile ID collisions.
+      const formatIds = new Map<string, string>();
+      dataWithUser.bankFormats = checked.bankFormats.map(format => {
+        const id = format.userId === currentUserId ? format.id : `bank-format_${currentUserId}_${format.id}`;
+        formatIds.set(format.id, id);
+        return { ...format, id, userId: currentUserId };
+      });
+      dataWithUser.bankTransactions = await Promise.all(checked.bankTransactions.map(async transaction => ({
+        ...transaction,
+        id: await bankTransactionId(currentUserId, transaction.importKey),
+        userId: currentUserId,
+        formatId: formatIds.get(transaction.formatId) ?? transaction.formatId,
+      })));
+
+      const bankIds = new Map(checked.bankTransactions.map((t, i) => [t.id, dataWithUser.bankTransactions[i].id]));
+      dataWithUser.fatture = ((dataWithUser.fatture || []) as Fattura[]).map(f => ({
+        ...f,
+        bankTransactionId: f.bankTransactionId ? bankIds.get(f.bankTransactionId) ?? f.bankTransactionId : undefined,
+        receipts: f.receipts?.map(r => ({ ...r, bankTransactionId: r.bankTransactionId ? bankIds.get(r.bankTransactionId) ?? r.bankTransactionId : undefined })),
+      }));
+
       // Clear current user's data first, then import
       const existingClienti = await dbManager.getAllForUser('clienti', currentUserId);
       for (const c of existingClienti) {
@@ -384,10 +424,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await dbManager.delete('scadenze', s.id);
       }
 
+      for (const store of ['bankFormats', 'bankTransactions'] as const) {
+        const incoming = new Set(dataWithUser[store].map(item => item.id));
+        for (const item of await dbManager.getAllForUser(store, currentUserId)) {
+          if (!incoming.has(item.id)) await dbManager.delete(store, item.id);
+        }
+      }
+
       // Import new data
       for (const [key, items] of Object.entries(dataWithUser)) {
         for (const item of items) {
-          await dbManager.put(key as any, item);
+          await dbManager.put(key as StoreName, dbManager.stamp(item));
         }
       }
 
@@ -407,6 +454,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setWorkLogs(savedWorkLogs || []);
       setScadenze(savedScadenze || []);
 
+      bankRef.current.setBankFormats(await dbManager.getAllForUser('bankFormats', currentUserId));
+      bankRef.current.setBankTransactions(await dbManager.getAllForUser('bankTransactions', currentUserId));
       showToast('Dati importati!');
     } catch (error) {
       showToast('Errore import', 'error');
@@ -467,6 +516,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [currentUser?.color]);
 
   const value: AppContextValue = {
+    ...bank,
     dbReady,
     dbError,
     toast,
@@ -491,6 +541,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFatture,
     addFattura,
     updateFattura,
+    allocateBankInvoice: async (transactionId, allocations) => {
+      if (!currentUserId) throw new Error('Profilo non disponibile.');
+      const saved = await allocateBankReceipt(dbManager, currentUserId, transactionId, allocations);
+      setFatture(prev => prev.map(f => saved.find(s => s.id === f.id) ?? f));
+    },
     removeFattura,
     workLogs,
     setWorkLogs,

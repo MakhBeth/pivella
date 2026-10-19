@@ -52,11 +52,11 @@ export class BrowserDataSource implements DataSource {
     if (!user) throw new DataSourceError('USER_NOT_FOUND', 'Profilo non disponibile.');
     const own = async (store: typeof STORES[number]) =>
       (await request(tx.objectStore(store).getAll())).filter(r => r.userId === userId);
-    const [config, clienti, fatture, workLogs, scadenze] = await Promise.all([
-      own('config'), own('clienti'), own('fatture'), own('workLogs'), own('scadenze'),
+    const [config, clienti, fatture, workLogs, scadenze, bankFormats, bankTransactions] = await Promise.all([
+      own('config'), own('clienti'), own('fatture'), own('workLogs'), own('scadenze'), own('bankFormats'), own('bankTransactions'),
     ]);
     this.checkUser(userId);
-    return { user, config: config[0] ?? null, clienti, fatture, workLogs, scadenze, readAt: this.now().toISOString() };
+    return { user, config: config[0] ?? null, clienti, fatture, workLogs, scadenze, bankFormats, bankTransactions, readAt: this.now().toISOString() };
   }
 
   async listUsers(p: Principal) {
