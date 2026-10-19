@@ -45,6 +45,10 @@ interface ImpostazioniProps {
 
 export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: ImpostazioniProps) {
   const {
+    webMcpEnabled,
+    webMcpStatus,
+    webMcpError,
+    setWebMcpEnabled,
     config,
     clienti,
     removeCliente,
@@ -885,6 +889,29 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
         </div>
       </div>
 
+      <div className="card">
+        <h2 className="card-title">Assistente nel browser</h2>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>
+          Un assistente compatibile con WebMCP può leggere clienti, fatture e riepilogo annuale del profilo selezionato e proporti una fattura.
+          Le proposte richiedono la tua conferma qui sotto. Non serve una cartella di sincronizzazione.
+        </p>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>
+          L’assistente riceve i dati restituiti alle sue richieste. Le proposte WebMCP restano in questo browser; le fatture confermate seguono i normali backup e la sincronizzazione.
+        </p>
+        <button type="button" className="btn btn-secondary" aria-pressed={webMcpEnabled}
+          disabled={webMcpStatus === 'unsupported'} onClick={() => setWebMcpEnabled(!webMcpEnabled)}>
+          {webMcpEnabled ? 'Disattiva assistente nel browser' : 'Attiva assistente nel browser'}
+        </button>
+        <p role="status" style={{ marginTop: 8 }}>
+          {webMcpStatus === 'unsupported' ? 'WebMCP non è disponibile in questo browser. Puoi continuare a usare il server MCP locale.'
+            : webMcpStatus === 'active' ? 'Attivo per il profilo selezionato. Mantieni Pivella aperta mentre usi l’assistente.'
+            : webMcpStatus === 'starting' ? 'Attivazione in corso…'
+            : webMcpStatus === 'error' ? 'Impossibile attivare WebMCP. Disattiva e riattiva per riprovare.' : 'Disattivato.'}
+        </p>
+        {webMcpError && <p role="alert">{webMcpError}</p>}
+      </div>
+      <ProposteInbox />
+
       {/* Sincronizzazione Cartella */}
       <div className="card">
         <h2 className="card-title"><FolderSync size={16} aria-hidden="true" style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle' }} />Sincronizzazione Cartella</h2>
@@ -916,7 +943,6 @@ export function Impostazioni({ setShowModal, setEditingCliente, handleExport }: 
 
         {syncFolderHandle && syncFolderName ? (
           <>
-            <ProposteInbox />
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <FolderOpen size={20} style={{ color: 'var(--accent-green)' }} />
               <div style={{ flex: 1 }}>

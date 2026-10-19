@@ -124,7 +124,7 @@ export function ProposteInbox() {
   return (
     <div id={PROPOSTE_ANCHOR} ref={boxRef} className="backup-info" style={{ marginTop: 0, marginBottom: 16, border: '1px solid var(--accent-blue)', scrollMarginTop: 16 }} aria-live="polite">
       <h2><Sparkles size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} aria-hidden="true" /> Proposte dell'assistente ({pendingProposals.length})</h2>
-      <p>Arrivano dal server MCP di Pivella. Niente viene scritto finché non confermi: ogni proposta viene ricontrollata alla conferma.</p>
+      <p>Arrivano dagli assistenti collegati a Pivella. I dati contabili cambiano solo dopo la tua conferma: ogni proposta viene ricontrollata prima di applicarla.</p>
       <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0 0' }}>
         {pendingProposals.map((p) => {
           const busy = busyId === p.id;
@@ -143,10 +143,10 @@ export function ProposteInbox() {
                 <p role="alert" style={{ color: 'var(--accent-red)', marginTop: 6 }}>{errors[p.id]}</p>
               )}
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <button className="btn btn-primary btn-sm" onClick={() => void decide(p, true)} disabled={busy || isSyncing}>
+                <button className="btn btn-primary btn-sm" onClick={() => void decide(p, true)} disabled={busyId !== null || isSyncing}>
                   <Check size={16} aria-hidden="true" /> {busy ? 'Un attimo...' : 'Conferma'}
                 </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => void decide(p, false)} disabled={busy || isSyncing}>
+                <button className="btn btn-secondary btn-sm" onClick={() => void decide(p, false)} disabled={busyId !== null || isSyncing}>
                   <X size={16} aria-hidden="true" /> Rifiuta
                 </button>
               </div>
