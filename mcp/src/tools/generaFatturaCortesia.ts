@@ -1,9 +1,10 @@
+import { documentoFattura } from './documentShared';
 import { z } from 'zod';
 
 import { buildCourtesyInvoice, buildPdfOptions } from '../../../src/lib/fatturaDocumento';
 import { safeFileComponent, writeExclusive } from '../documents';
 import { renderCourtesyPdf } from '../pdf';
-import { anno, defineTool, documentoFattura, userIdSchema } from './shared';
+import { anno, defineTool, userIdSchema } from './shared';
 
 export const generaFatturaCortesia = defineTool({
   name: 'genera_fattura_cortesia',

@@ -95,6 +95,14 @@ Setup for every client, how it works and how to publish the package: [mcp/README
 
 pivella-mcp 1.0 requires Pivella 7.0 and vice versa: the sync file moves to schema version 3. Update both together.
 
+### Browser assistants (WebMCP, experimental)
+
+In **Impostazioni → Assistente nel browser**, enable WebMCP to let a compatible browser assistant query the selected profile and draft an invoice directly from the open app. No Node installation, MCP server or sync folder is needed. The setting is off by default and can be disabled at any time. Your assistant receives the data returned by its tool calls; its own data handling policy still applies.
+
+The initial tools are `list_users` (selected profile only), `list_clienti`, `list_fatture`, `get_riepilogo_anno`, `propose_fattura`, `list_proposals` and `get_proposal`. Proposals persist in this browser for review in **Impostazioni → Proposte dell’assistente**. Confirming revalidates the current data, assigns the invoice number and downloads the XML; rejecting leaves the accounting data unchanged. Drafts are not included in backups or sync files. Confirmed invoices follow the existing backup and sync flows.
+
+WebMCP needs browser and agent support, and Pivella must remain open. It is not a remote MCP URL that can be added to any MCP client. Unsupported browsers show the integration as unavailable; the local MCP server remains available. For testing browser support, see the [Chrome WebMCP documentation](https://developer.chrome.com/docs/ai/webmcp). The adapter uses `document.modelContext` with registration abort signals, and also supports the earlier `navigator.modelContext` / `unregisterTool` API.
+
 ## 🛠️ Technologies
 
 - **React** 18.2.0 - UI library

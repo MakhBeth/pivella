@@ -3,17 +3,14 @@
  * schemi ricorrenti e risoluzione dei nomi cliente. I tool vedono solo
  * `DataSource`; nulla qui conosce file o trasporto.
  */
-import { homedir } from 'node:os';
-import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 
-import { MISC_CLIENT_ID, VACATION_CLIENT_ID, type Cliente, type Config, type Fattura, type WorkLog } from '../../../src/types';
+import { MISC_CLIENT_ID, VACATION_CLIENT_ID, type Cliente, type Fattura, type WorkLog } from '../../../src/types';
 import { getWorkLogQuantita } from '../../../src/lib/utils/calculations';
-import { DatiEmittenteMancantiError, emittenteMancante, righeOrFallback } from '../../../src/lib/fatturaDocumento';
+import { DatiEmittenteMancantiError } from '../../../src/lib/fatturaDocumento';
 import { ProposalNotPendingError } from '../../../src/lib/sync/proposals';
 import { isIsoDate, MOTIVAZIONE_MAX_LENGTH, ProposalValidationError } from '../../../src/lib/sync/validate';
 import { DataSourceError, LIST_MAX_LIMIT, type DataSource, type ErrorCode, type Principal, type UserSnapshot } from '../datasource';
-import { documentsDir, resolveCartella } from '../documents';
 
 export interface ToolContext {
   ds: DataSource;
@@ -146,28 +143,6 @@ export type FatturaOut = Fattura & { clienteNome: string; incassata: boolean; da
 export function decorateFattura(f: Fattura, resolve: (id: string) => string): FatturaOut {
   const incassata = isIncassata(f);
   return { ...f, clienteNome: resolve(f.clienteId), incassata, dataIncassoEffettiva: incassata ? f.dataIncasso || f.data : null, haRighe: Boolean(f.righe?.length) };
-}
-
-export interface DocumentoFattura { fattura: Fattura; cliente: Cliente | undefined; config: Config; dir: string; avvisi: string[]; fallbackRighe: boolean }
-
-/** Fattura, cliente, config e cartella di destinazione per i tool genera_*. */
-export async function documentoFattura(ctx: ToolContext, userId: string, fatturaId: string, cartella?: string): Promise<DocumentoFattura> {
-  const snap = await snapshotOf(ctx, userId);
-  const fattura = snap.fatture.find((f) => f.id === fatturaId);
-  if (!fattura) throw new DataSourceError('NOT_FOUND', `Fattura ${fatturaId} inesistente per il profilo ${userId}`, { fatturaId });
-  if (!snap.config) throw new DatiEmittenteMancantiError(emittenteMancante(null));
-  const mancanti = emittenteMancante(snap.config);
-  if (mancanti.length > 0) throw new DatiEmittenteMancantiError(mancanti);
-  const cartellaRisolta = cartella !== undefined ? resolveCartella(cartella, homedir()) : undefined;
-  if (cartellaRisolta !== undefined && !isAbsolute(cartellaRisolta)) throw validationError('cartella', 'deve essere un percorso assoluto');
-  if (cartellaRisolta === undefined && !ctx.syncDir) throw validationError('cartella', 'indica una cartella: il server non conosce la cartella di sync');
-  const cliente = snap.clienti.find((c) => c.id === fattura.clienteId);
-  const avvisi: string[] = [];
-  const { fallback } = righeOrFallback(fattura);
-  if (fallback) avvisi.push('La fattura non ha le righe salvate: ho usato una riga unica con il totale. Controlla che corrisponda all\'XML inviato allo SDI.');
-  if (!cliente) avvisi.push(`Cliente ${fattura.clienteId} non trovato: uso solo il nome salvato nella fattura.`);
-  else if (!cliente.indirizzo || !cliente.cap || !cliente.comune) avvisi.push(`Indirizzo del cliente ${cliente.nome} incompleto: l'XML potrebbe essere scartato dallo SDI.`);
-  return { fattura, cliente, config: snap.config, dir: cartellaRisolta ?? documentsDir(ctx.syncDir!, anno(fattura.data)), avvisi, fallbackRighe: fallback };
 }
 
 export function anno(date: string): number {
