@@ -209,6 +209,10 @@ for (const legacy of [false, true]) test(`WebMCP tools use shared validation and
   cancelled.abort();
   await assert.rejects(propose.execute({ userId: 'u1', ...invoice.payload }, { signal: cancelled.signal }), { name: 'AbortError' });
   assert.equal((await f.ds.listProposals(principal, { userId: 'u1' })).total, 0);
+  // L'API legacy passa un ModelContextClient senza signal come secondo argomento.
+  const client = { requestUserInteraction: async () => undefined } as { signal?: AbortSignal };
+  const users = await registered.get('list_users')!.execute({}, client) as { isError: boolean };
+  assert.equal(users.isError, false);
   const invalid = await propose.execute({ userId: 'u1', ...invoice.payload, numero: '999' }) as { isError: boolean; error: { code: string } };
   assert.equal(invalid.isError, true);
   assert.equal(invalid.error.code, 'VALIDATION');

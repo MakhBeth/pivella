@@ -14,7 +14,8 @@ export interface BrowserTool {
   description: string;
   inputSchema: Record<string, unknown>;
   annotations: { readOnlyHint: boolean; untrustedContentHint: boolean };
-  execute: (input: unknown, options?: { signal: AbortSignal }) => Promise<unknown>;
+  // Draft: { signal }; API legacy: ModelContextClient senza signal.
+  execute: (input: unknown, options?: { signal?: AbortSignal }) => Promise<unknown>;
 }
 
 /** Draft corrente: Document + AbortSignal; fallback alla prima API Chromium. */
@@ -53,7 +54,7 @@ export function registerBrowserTools(model: ModelContext, ctx: ToolContext, onPr
           name: def.name, title: def.title, description, inputSchema,
           annotations: { readOnlyHint: def.readOnly, untrustedContentHint: true },
           execute: async (input, options) => {
-            if (controller.signal.aborted || options?.signal.aborted) throw new DOMException('Richiesta annullata', 'AbortError');
+            if (controller.signal.aborted || options?.signal?.aborted) throw new DOMException('Richiesta annullata', 'AbortError');
             const result = await runTool(def, ctx, input);
             if (!def.readOnly && !result.isError) await onProposal();
             if (controller.signal.aborted) throw new DOMException('Contesto cambiato: ripeti la richiesta.', 'AbortError');
