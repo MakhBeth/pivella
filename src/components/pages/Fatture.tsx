@@ -70,16 +70,11 @@ export function FatturePage({ setShowModal, setEditingFattura, onOpenCortesia }:
     }
   });
 
-  // Calculate client summaries for current year
-  const annoCorrente = new Date().getFullYear();
-  const fattureAnnoCorrente = fatture.filter(f => {
-    if (f.incassato === false) return false;
-    const dataRiferimento = f.dataIncasso || f.data;
-    return new Date(dataRiferimento).getFullYear() === annoCorrente;
-  });
+  // Riepilogo degli incassi nel periodo selezionato
+  const fattureIncassateFiltrate = fattureFiltrate.filter(f => f.incassato !== false);
 
   const fatturatoPerCliente = clienti.map(cliente => {
-    const fattureCliente = fattureAnnoCorrente.filter(f => f.clienteId === cliente.id);
+    const fattureCliente = fattureIncassateFiltrate.filter(f => f.clienteId === cliente.id);
     return { ...cliente, totale: fattureCliente.reduce((sum, f) => sum + f.importo, 0), count: fattureCliente.length };
   }).sort((a, b) => b.totale - a.totale);
 
