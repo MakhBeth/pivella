@@ -386,9 +386,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       // Import new data
       for (const [key, items] of Object.entries(dataWithUser)) {
-        for (const item of items) {
-          await dbManager.put(key as any, item);
-        }
+        await dbManager.importRecords(key as StoreName, items);
       }
 
       // Reload all data from DB for current user

@@ -484,6 +484,32 @@ export class IndexedDBManager {
     });
   }
 
+  /** Un import manuale è una nuova scrittura locale, successiva alle cancellazioni precedenti. */
+  async importRecords(storeName: StoreName, records: any[]): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    const meta = await this.ensureSyncMeta();
+    const deletedAt = new Map((await meta.getTombstones())
+      .filter(t => t.store === storeName).map(t => [t.id, t.deletedAt]));
+    const imported = records.map(record => {
+      const stamped = this.stamp(record);
+      const afterRecord = tombstoneTimestamp(stamped.updatedAt, record);
+      return {
+        ...stamped,
+        updatedAt: tombstoneTimestamp(afterRecord, { updatedAt: deletedAt.get(record.id) }),
+      };
+    });
+    const tx = this.db.transaction(storeName, 'readwrite');
+    const done = complete(tx);
+    try {
+      for (const record of imported) tx.objectStore(storeName).put(record);
+    } catch (error) {
+      tx.abort();
+      await done.catch(() => {});
+      throw error;
+    }
+    await done;
+  }
+
   /**
    * Prima il tombstone in PivellaSyncMeta, con `deletedAt` strettamente
    * maggiore dell'`updatedAt` del record, poi la cancellazione (13.8). Un
