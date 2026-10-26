@@ -1,3 +1,5 @@
+import { useWebMcp, type WebMcpStatus } from '../hooks/useWebMcp';
+import { isBrowserProposal } from '../lib/webmcp/browserDataSource';
 import React, { createContext, useContext, useCallback, useMemo, ReactNode, useEffect, useRef } from 'react';
 import type { Config, Cliente, Fattura, WorkLog, Toast, Scadenza, StoreName, User } from '../types';
 import { useDatabase } from '../hooks/useDatabase';
@@ -86,6 +88,11 @@ interface AppContextValue {
   // Import/Export
   exportData: () => Promise<void>;
   importData: (data: Record<string, any[]>) => Promise<void>;
+
+  webMcpEnabled: boolean;
+  webMcpStatus: WebMcpStatus;
+  webMcpError: string | null;
+  setWebMcpEnabled: (enabled: boolean) => void;
 
   // Folder Sync
   syncFolderHandle: FileSystemDirectoryHandle | null;
@@ -272,12 +279,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     prepareRemote
   });
 
+  const webMcp = useWebMcp(dbManager, dbReady && isUsersInitialized, currentUserId);
   const pendingProposals = useMemo(
-    () => (currentUserId ? withExpiry(proposals, new Date().toISOString()).filter((p) => p.userId === currentUserId && p.status === 'pending') : []),
-    [proposals, currentUserId],
+    () => (currentUserId ? withExpiry([...proposals, ...webMcp.proposals], new Date().toISOString()).filter((p) => p.userId === currentUserId && p.status === 'pending') : []),
+    [proposals, webMcp.proposals, currentUserId],
   );
-  const confirmProposal = useCallback((proposalId: string) => decideProposal(proposalId, { kind: 'apply' }), [decideProposal]);
-  const rejectProposal = useCallback((proposalId: string, reason?: string) => decideProposal(proposalId, { kind: 'reject', reason }), [decideProposal]);
+  const decideAssistantProposal = useCallback(async (id: string, apply: boolean, reason?: string) => {
+    if (!isBrowserProposal(id)) return decideProposal(id, apply ? { kind: 'apply' } : { kind: 'reject', reason });
+    const outcome = await webMcp.decide(id, apply ? 'apply' : 'reject');
+    if (outcome.plan) {
+      // Aggiorna solo i record salvati: la config in modifica non viene ricaricata.
+      const savedClienti = outcome.plan.puts.filter(p => p.store === 'clienti').map(p => p.record as Cliente);
+      const savedFatture = outcome.plan.puts.filter(p => p.store === 'fatture').map(p => p.record as Fattura);
+      if (outcome.proposal.userId === currentUserIdRef.current) {
+        setClienti(prev => [...prev.filter(c => !savedClienti.some(s => s.id === c.id)), ...savedClienti]);
+        setFatture(prev => [...prev.filter(f => !savedFatture.some(s => s.id === f.id)), ...savedFatture]);
+      }
+    }
+    return outcome;
+  }, [decideProposal, webMcp.decide, setClienti, setFatture]);
+  const confirmProposal = useCallback((id: string) => decideAssistantProposal(id, true), [decideAssistantProposal]);
+  const rejectProposal = useCallback((id: string, reason?: string) => decideAssistantProposal(id, false, reason), [decideAssistantProposal]);
 
   // Track previous values to detect changes
   const prevDataRef = useRef<string>('');
@@ -495,6 +517,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     listBackups,
     previewBackup,
     restoreBackup,
+    webMcpEnabled: webMcp.enabled,
+    webMcpStatus: webMcp.status,
+    webMcpError: webMcp.error,
+    setWebMcpEnabled: webMcp.toggle,
     pendingProposals,
     confirmProposal,
     rejectProposal,

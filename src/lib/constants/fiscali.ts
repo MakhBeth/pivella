@@ -2,7 +2,9 @@ import type { Config, GestionePrevidenziale } from '../../types';
 
 // Database constants
 export const DB_NAME = 'ForfettarioDB';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
+/** Coda locale WebMCP: esclusa dai record contabili e dal file di sync. */
+export const WEBMCP_PROPOSALS_STORE = 'webmcpProposals';
 export const STORES = ['config', 'clienti', 'fatture', 'workLogs', 'scadenze', 'users'] as const;
 
 // Fiscal constants

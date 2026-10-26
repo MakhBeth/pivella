@@ -1,9 +1,10 @@
+import { documentoFattura } from './documentShared';
 import { z } from 'zod';
 
 import { buildFatturaXMLData } from '../../../src/lib/fatturaDocumento';
 import { generateFatturaXML } from '../../../src/lib/xml/generator';
 import { safeFileComponent, writeExclusive } from '../documents';
-import { defineTool, documentoFattura, userIdSchema } from './shared';
+import { defineTool, userIdSchema } from './shared';
 
 export const generaFatturaXml = defineTool({
   name: 'genera_fattura_xml',
